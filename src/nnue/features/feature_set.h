@@ -135,7 +135,8 @@ namespace Eval::NNUE::Features {
                         reset[perspective] = true;
                         break;
                     case TriggerEvent::kAnyPawnMoved:
-                        reset[perspective] = type_of(dp.piece[0]) == PAWN;
+                        if (dp.dirty_num == 0) continue;
+                        reset[perspective] = type_of(dp.piece[0]) == PAWN || (dp.dirty_num > 1 && type_of(dp.piece[1]) == PAWN);
                         break;
                     default:
                         assert(false);

@@ -18,7 +18,6 @@ namespace Eval::NNUE::Features {
     namespace PawnTraitType {
         enum : uint32_t
         {
-            Scores = 1 << 0,
             Passed = 1 << 1,
             Backward = 1 << 2,
             Doubled = 1 << 3,
@@ -38,7 +37,8 @@ namespace Eval::NNUE::Features {
     namespace Detail
     {
         void append_active_indices(
-            Bitboard& bb,
+            Bitboard bb[2],
+            Color perspective,
             IndexType offset,
             IndexList* active);
 
@@ -56,8 +56,6 @@ namespace Eval::NNUE::Features {
 
         static constexpr std::uint32_t kHashValue = 0x1F3A6B33u;
 
-        static constexpr IndexType kScoreBuckets = 32 * 2;
-
         static constexpr IndexType kNumBitboardTraits =
             + bool(Traits & PawnTraitType::Passed)
             + bool(Traits & PawnTraitType::Backward)
@@ -72,10 +70,9 @@ namespace Eval::NNUE::Features {
             + bool(Traits & PawnTraitType::Support);
 
         static constexpr IndexType kDimensions =
-            SQUARE_NB * COLOR_NB * kNumBitboardTraits
-            + COLOR_NB * kScoreBuckets * bool(Traits & PawnTraitType::Scores);
+            SQUARE_NB * COLOR_NB * kNumBitboardTraits;
 
-        static constexpr IndexType kMaxActiveDimensions = 8 * kNumBitboardTraits + bool(Traits & PawnTraitType::Scores);
+        static constexpr IndexType kMaxActiveDimensions = COLOR_NB * (8 * kNumBitboardTraits);
 
         static constexpr TriggerEvent kRefreshTrigger = TriggerEvent::kAnyPawnMoved;
 
@@ -87,77 +84,69 @@ namespace Eval::NNUE::Features {
             IndexType offset = 0;
             auto* pe = Pawns::probe(pos);
 
-            /* TODO: needs a conversion to a value */ /*
-            if constexpr (Traits & PawnTraitType::Scores)
-            {
-                Detail::append_score_indices(pe->scores[perspective], offset + perspective * kScoreBuckets, active);
-                offset += COLOR_NB * kScoreBuckets;
-            }
-            */
-
             if constexpr (Traits & PawnTraitType::Passed)
             {
-                Detail::append_active_indices(pe->passedPawns[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->passedPawns, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Backward)
             {
-                Detail::append_active_indices(pe->backward[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->backward, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Doubled)
             {
-                Detail::append_active_indices(pe->doubled[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->doubled, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Opposed)
             {
-                Detail::append_active_indices(pe->opposed[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->opposed, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Blocked)
             {
-                Detail::append_active_indices(pe->blocked[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->blocked, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Stoppers)
             {
-                Detail::append_active_indices(pe->stoppers[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->stoppers, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Lever)
             {
-                Detail::append_active_indices(pe->lever[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->lever, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::LeverPush)
             {
-                Detail::append_active_indices(pe->leverPush[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->leverPush, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Neighbours)
             {
-                Detail::append_active_indices(pe->neighbours[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->neighbours, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Phalanx)
             {
-                Detail::append_active_indices(pe->phalanx[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->phalanx, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
 
             if constexpr (Traits & PawnTraitType::Support)
             {
-                Detail::append_active_indices(pe->support[perspective], offset + perspective * SQUARE_NB, active);
+                Detail::append_active_indices(pe->support, perspective, offset, active);
                 offset += SQUARE_NB * COLOR_NB;
             }
         }
