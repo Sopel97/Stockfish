@@ -24,6 +24,8 @@
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_kp.h"
 #include "nnue/features/pawn_traits.h"
+#include "nnue/features/pinners.h"
+#include "nnue/features/blockers_for_king.h"
 
 #include "nnue/layers/input_slice.h"
 #include "nnue/layers/affine_transform.h"
@@ -34,7 +36,11 @@ namespace Eval::NNUE {
     // Input features used in evaluation function
     using RawFeatures = Features::FeatureSet<
         Features::HalfKP<Features::Side::kFriend>,
-        Features::PawnTraits<>>;
+        Features::Pinners,
+        Features::BlockersForKing,
+        Features::PawnTraits<
+            Features::PawnTraitType::Passed
+        >>;
 
     // Number of input feature dimensions after conversion
     constexpr IndexType kTransformedFeatureDimensions = 256;
