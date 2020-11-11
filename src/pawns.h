@@ -19,9 +19,11 @@
 #ifndef PAWNS_H_INCLUDED
 #define PAWNS_H_INCLUDED
 
-#include "misc.h"
-#include "position.h"
+#include "bitboard.h"
 #include "types.h"
+#include "misc.h"
+
+class Position;
 
 namespace Pawns {
 
@@ -39,10 +41,7 @@ struct Entry {
   int blocked_count() const { return blockedCount; }
 
   template<Color Us>
-  Score king_safety(const Position& pos) {
-    return  kingSquares[Us] == pos.square<KING>(Us) && castlingRights[Us] == pos.castling_rights(Us)
-          ? kingSafety[Us] : (kingSafety[Us] = do_king_safety<Us>(pos));
-  }
+  Score king_safety(const Position& pos);
 
   template<Color Us>
   Score do_king_safety(const Position& pos);
@@ -59,6 +58,17 @@ struct Entry {
   Score kingSafety[COLOR_NB];
   int castlingRights[COLOR_NB];
   int blockedCount;
+
+  Bitboard doubled[COLOR_NB];
+  Bitboard backward[COLOR_NB];
+  Bitboard opposed[COLOR_NB];
+  Bitboard blocked[COLOR_NB];
+  Bitboard stoppers[COLOR_NB];
+  Bitboard lever[COLOR_NB];
+  Bitboard leverPush[COLOR_NB];
+  Bitboard neighbours[COLOR_NB];
+  Bitboard phalanx[COLOR_NB];
+  Bitboard support[COLOR_NB];
 };
 
 typedef HashTable<Entry, 131072> Table;

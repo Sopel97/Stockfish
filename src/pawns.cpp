@@ -143,6 +143,21 @@ namespace {
         if (passed)
             e->passedPawns[Us] |= s;
 
+        if (backward)
+            e->backward[Us] |= s;
+
+        if (doubled)
+            e->doubled[Us] |= s;
+
+        e->opposed[Us] |= opposed;
+        e->blocked[Us] |= blocked;
+        e->stoppers[Us] |= stoppers;
+        e->lever[Us] |= lever;
+        e->leverPush[Us] |= leverPush;
+        e->neighbours[Us] |= neighbours;
+        e->phalanx[Us] |= phalanx;
+        e->support[Us] |= support;
+
         // Score this pawn
         if (support | phalanx)
         {
@@ -243,6 +258,16 @@ Score Entry::evaluate_shelter(const Position& pos, Square ksq) const {
 
 /// Entry::do_king_safety() calculates a bonus for king safety. It is called only
 /// when king square changes, which is about 20% of total king_safety() calls.
+
+template<Color Us>
+Score Entry::king_safety(const Position& pos)
+{
+  return  kingSquares[Us] == pos.square<KING>(Us) && castlingRights[Us] == pos.castling_rights(Us)
+        ? kingSafety[Us] : (kingSafety[Us] = do_king_safety<Us>(pos));
+}
+
+template Score Entry::king_safety<WHITE>(const Position& pos);
+template Score Entry::king_safety<BLACK>(const Position& pos);
 
 template<Color Us>
 Score Entry::do_king_safety(const Position& pos) {

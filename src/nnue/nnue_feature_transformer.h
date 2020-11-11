@@ -26,6 +26,8 @@
 
 #include "features/index_list.h"
 
+#include "types.h"
+
 #include <cstring>
 #include <string>
 
