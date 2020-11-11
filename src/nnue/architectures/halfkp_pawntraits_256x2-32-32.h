@@ -40,6 +40,9 @@ namespace Eval::NNUE {
         Features::BlockersForKing,
         Features::PawnTraits<
             Features::PawnTraitType::Passed
+            | Features::PawnTraitType::Backward
+            | Features::PawnTraitType::Doubled
+            | Features::PawnTraitType::Blocked
         >>;
 
     // Number of input feature dimensions after conversion
