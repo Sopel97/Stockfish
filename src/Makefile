@@ -59,6 +59,8 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	nnue/features/a.cpp \
 	nnue/features/pawn_traits.cpp \
 	nnue/features/castling_right.cpp \
+	nnue/features/blockers_for_king.cpp \
+	nnue/features/pinners.cpp \
 	nnue/features/enpassant.cpp \
 	nnue/nnue_test_command.cpp \
 	learn/sfen_packer.cpp \
