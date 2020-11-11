@@ -39,6 +39,7 @@ namespace Eval::NNUE::Features {
         kEnemyKingMoved, // calculate full evaluation when opponent king moves
         kAnyKingMoved, // calculate full evaluation when any king moves
         kAnyPieceMoved, // always calculate full evaluation
+        kAnyPawnMoved,
     };
 
     enum class Side {
