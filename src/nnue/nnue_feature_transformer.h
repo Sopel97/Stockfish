@@ -94,6 +94,7 @@ namespace Eval::NNUE {
     private:
         // Number of output dimensions for one side
         static constexpr IndexType kHalfDimensions = kTransformedFeatureDimensions;
+        static constexpr IndexType kHalfExtraDimensions = kTransformedExtraFeatureDimensions;
 
 #ifdef TILING
         static constexpr IndexType kTileHeight = kNumRegs * sizeof(vec_t) / 2;
@@ -106,24 +107,29 @@ namespace Eval::NNUE {
 
         // Number of input/output dimensions
         static constexpr IndexType kInputDimensions = RawFeatures::kDimensions;
+        static constexpr IndexType kInputExtraDimensions = RawExtraFeatures::kDimensions;
         static constexpr IndexType kOutputDimensions = kHalfDimensions * 2;
+        static constexpr IndexType kOutputExtraDimensions = kHalfExtraDimensions * 2;
+        static constexpr IndexType kOutputTotalDimensions = kOutputDimensions + kOutputExtraDimensions;
 
         // Size of forward propagation buffer
-        static constexpr std::size_t kBufferSize =
-            kOutputDimensions * sizeof(OutputType);
+        static constexpr std::size_t kBufferSize = kOutputTotalDimensions * sizeof(OutputType);
 
         static constexpr int kLayerIndex = 0;
 
         // Hash value embedded in the evaluation file
         static constexpr std::uint32_t get_hash_value() {
 
-            return RawFeatures::kHashValue ^ kOutputDimensions;
+            return RawFeatures::kHashValue ^ kOutputDimensions ^ kOutputExtraDimensions;
         }
 
         static std::string get_name() {
             return RawFeatures::get_name() + "[" +
                 std::to_string(kInputDimensions) + "->" +
-                std::to_string(kHalfDimensions) + "x2]";
+                std::to_string(kHalfDimensions) + "x2],Extra:"
+                + RawExtraFeatures::get_name() + "[" +
+                std::to_string(kInputExtraDimensions) + "->" +
+                std::to_string(kHalfExtraDimensions) + "x2]";
         }
 
         // a string representing the structure
@@ -145,8 +151,14 @@ namespace Eval::NNUE {
             for (std::size_t i = 0; i < kHalfDimensions; ++i)
                 biases_[i] = read_little_endian<BiasType>(stream);
 
+            for (std::size_t i = 0; i < kHalfExtraDimensions; ++i)
+                extra_biases_[i] = read_little_endian<BiasType>(stream);
+
             for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
                 weights_[i] = read_little_endian<WeightType>(stream);
+
+            for (std::size_t i = 0; i < kHalfExtraDimensions * kInputExtraDimensions; ++i)
+                extra_weights_[i] = read_little_endian<WeightType>(stream);
 
             return !stream.fail();
         }
@@ -156,8 +168,14 @@ namespace Eval::NNUE {
             stream.write(reinterpret_cast<const char*>(biases_),
                 kHalfDimensions * sizeof(BiasType));
 
+            stream.write(reinterpret_cast<const char*>(extra_biases_),
+                kHalfExtraDimensions * sizeof(BiasType));
+
             stream.write(reinterpret_cast<const char*>(weights_),
                 kHalfDimensions * kInputDimensions * sizeof(WeightType));
+
+            stream.write(reinterpret_cast<const char*>(extra_weights_),
+                kHalfExtraDimensions * kInputExtraDimensions * sizeof(WeightType));
 
             return !stream.fail();
         }
@@ -185,14 +203,17 @@ namespace Eval::NNUE {
               refresh_accumulator(pos);
 
             const auto& accumulation = pos.state()->accumulator.accumulation;
+            const auto& extra_accumulation = pos.state()->accumulator.extra_accumulation;
 
 #if defined(USE_AVX2)
             constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
+            constexpr IndexType kNumExtraChunks = kHalfExtraDimensions / kSimdWidth;
             constexpr int kControl = 0b11011000;
             const __m256i kZero = _mm256_setzero_si256();
 
 #elif defined(USE_SSE2)
             constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
+            constexpr IndexType kNumExtraChunks = kHalfExtraDimensions / kSimdWidth;
 
 #ifdef USE_SSE41
             const __m128i kZero = _mm_setzero_si128();
@@ -202,10 +223,12 @@ namespace Eval::NNUE {
 
 #elif defined(USE_MMX)
             constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
+            constexpr IndexType kNumExtraChunks = kHalfExtraDimensions / kSimdWidth;
             const __m64 k0x80s = _mm_set1_pi8(-128);
 
 #elif defined(USE_NEON)
             constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
+            constexpr IndexType kNumExtraChunks = kHalfExtraDimensions / (kSimdWidth / 2);
             const int8x8_t kZero = {0};
 #endif
 
@@ -303,6 +326,101 @@ namespace Eval::NNUE {
 #endif
 
             }
+
+            for (IndexType p = 0; p < 2; ++p) {
+                const IndexType offset = kOutputDimensions + kHalfExtraDimensions * p;
+
+#if defined(USE_AVX2)
+                auto out = reinterpret_cast<__m256i*>(&output[offset]);
+                for (IndexType j = 0; j < kNumExtraChunks; ++j) {
+                    __m256i sum0 = _mm256_loadA_si256(
+                        &reinterpret_cast<const __m256i*>(extra_accumulation[perspectives[p]][0])[j * 2 + 0]);
+                    __m256i sum1 = _mm256_loadA_si256(
+                      &reinterpret_cast<const __m256i*>(extra_accumulation[perspectives[p]][0])[j * 2 + 1]);
+                    for (IndexType i = 1; i < kExtraRefreshTriggers.size(); ++i) {
+                        sum0 = _mm256_add_epi16(sum0, reinterpret_cast<const __m256i*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 0]);
+                        sum1 = _mm256_add_epi16(sum1, reinterpret_cast<const __m256i*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 1]);
+                    }
+
+                    _mm256_storeA_si256(&out[j], _mm256_permute4x64_epi64(_mm256_max_epi8(
+                        _mm256_packs_epi16(sum0, sum1), kZero), kControl));
+                }
+
+#elif defined(USE_SSE2)
+                auto out = reinterpret_cast<__m128i*>(&output[offset]);
+                for (IndexType j = 0; j < kNumExtraChunks; ++j) {
+                    __m128i sum0 = _mm_load_si128(&reinterpret_cast<const __m128i*>(
+                        extra_accumulation[perspectives[p]][0])[j * 2 + 0]);
+                    __m128i sum1 = _mm_load_si128(&reinterpret_cast<const __m128i*>(
+                        extra_accumulation[perspectives[p]][0])[j * 2 + 1]);
+                    for (IndexType i = 1; i < kExtraRefreshTriggers.size(); ++i) {
+                        sum0 = _mm_add_epi16(sum0, reinterpret_cast<const __m128i*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 0]);
+                        sum1 = _mm_add_epi16(sum1, reinterpret_cast<const __m128i*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 1]);
+                    }
+
+                    const __m128i packedbytes = _mm_packs_epi16(sum0, sum1);
+
+                    _mm_store_si128(&out[j],
+
+#ifdef USE_SSE41
+                        _mm_max_epi8(packedbytes, kZero)
+#else
+                        _mm_subs_epi8(_mm_adds_epi8(packedbytes, k0x80s), k0x80s)
+#endif
+
+                    );
+                }
+
+#elif defined(USE_MMX)
+                auto out = reinterpret_cast<__m64*>(&output[offset]);
+                for (IndexType j = 0; j < kNumExtraChunks; ++j) {
+                    __m64 sum0 = *(&reinterpret_cast<const __m64*>(
+                        extra_accumulation[perspectives[p]][0])[j * 2 + 0]);
+                    __m64 sum1 = *(&reinterpret_cast<const __m64*>(
+                        extra_accumulation[perspectives[p]][0])[j * 2 + 1]);
+                    for (IndexType i = 1; i < kExtraRefreshTriggers.size(); ++i) {
+                        sum0 = _mm_add_pi16(sum0, reinterpret_cast<const __m64*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 0]);
+                        sum1 = _mm_add_pi16(sum1, reinterpret_cast<const __m64*>(
+                            extra_accumulation[perspectives[p]][i])[j * 2 + 1]);
+                    }
+
+                    const __m64 packedbytes = _mm_packs_pi16(sum0, sum1);
+                    out[j] = _mm_subs_pi8(_mm_adds_pi8(packedbytes, k0x80s), k0x80s);
+                }
+
+#elif defined(USE_NEON)
+                const auto out = reinterpret_cast<int8x8_t*>(&output[offset]);
+                for (IndexType j = 0; j < kNumExtraChunks; ++j) {
+                    int16x8_t sum = reinterpret_cast<const int16x8_t*>(
+                        extra_accumulation[perspectives[p]][0])[j];
+
+                    for (IndexType i = 1; i < kExtraRefreshTriggers.size(); ++i) {
+                        sum = vaddq_s16(sum, reinterpret_cast<const int16x8_t*>(
+                            extra_accumulation[perspectives[p]][i])[j]);
+                    }
+
+                    out[j] = vmax_s8(vqmovn_s16(sum), kZero);
+                }
+
+#else
+                for (IndexType j = 0; j < kHalfExtraDimensions; ++j) {
+                    BiasType sum = extra_accumulation[static_cast<int>(perspectives[p])][0][j];
+                    for (IndexType i = 1; i < kExtraRefreshTriggers.size(); ++i) {
+                        sum += extra_accumulation[static_cast<int>(perspectives[p])][i][j];
+                    }
+
+                    output[offset + j] = static_cast<OutputType>(
+                        std::max<int>(0, std::min<int>(127, sum)));
+                }
+#endif
+
+            }
+
 #if defined(USE_MMX)
             _mm_empty();
 #endif
@@ -364,6 +482,30 @@ namespace Eval::NNUE {
                 }
 
             }
+
+            for (IndexType i = 0; i < kExtraRefreshTriggers.size(); ++i) {
+                Features::IndexList active_indices[2];
+                RawExtraFeatures::append_active_indices(pos, kExtraRefreshTriggers[i],
+                                                   active_indices);
+                for (Color perspective : { WHITE, BLACK }) {
+                    if (i == 0) {
+                        std::memcpy(accumulator.extra_accumulation[perspective][i], extra_biases_,
+                                    kHalfExtraDimensions * sizeof(BiasType));
+                    } else {
+                        std::memset(accumulator.extra_accumulation[perspective][i], 0,
+                                    kHalfExtraDimensions * sizeof(BiasType));
+                    }
+
+                    for (const auto index : active_indices[perspective]) {
+                        const IndexType offset = kHalfExtraDimensions * index;
+
+                        for (IndexType j = 0; j < kHalfExtraDimensions; ++j)
+                            accumulator.extra_accumulation[perspective][i][j] += extra_weights_[offset + j];
+                    }
+                }
+
+            }
+
 
 #if defined(USE_MMX)
             _mm_empty();
@@ -469,6 +611,47 @@ namespace Eval::NNUE {
                 }
 #endif
             }
+
+
+            for (IndexType i = 0; i < kExtraRefreshTriggers.size(); ++i) {
+                Features::IndexList removed_indices[2], added_indices[2];
+                bool reset[2] = { false, false };
+                RawExtraFeatures::append_changed_indices(pos, kExtraRefreshTriggers[i],
+                                                    removed_indices, added_indices, reset);
+
+                for (Color perspective : { WHITE, BLACK }) {
+
+                    if (reset[perspective]) {
+                        if (i == 0) {
+                            std::memcpy(accumulator.extra_accumulation[perspective][i], extra_biases_,
+                                        kHalfExtraDimensions * sizeof(BiasType));
+                        } else {
+                            std::memset(accumulator.extra_accumulation[perspective][i], 0,
+                                        kHalfExtraDimensions * sizeof(BiasType));
+                        }
+                    } else {
+                        std::memcpy(accumulator.extra_accumulation[perspective][i],
+                                    prev_accumulator.extra_accumulation[perspective][i],
+                                    kHalfExtraDimensions * sizeof(BiasType));
+                        // Difference calculation for the deactivated features
+                        for (const auto index : removed_indices[perspective]) {
+                            const IndexType offset = kHalfExtraDimensions * index;
+
+                            for (IndexType j = 0; j < kHalfExtraDimensions; ++j)
+                                accumulator.extra_accumulation[perspective][i][j] -= extra_weights_[offset + j];
+                        }
+                    }
+                    { // Difference calculation for the activated features
+                        for (const auto index : added_indices[perspective]) {
+                          const IndexType offset = kHalfExtraDimensions * index;
+
+                          for (IndexType j = 0; j < kHalfExtraDimensions; ++j)
+                              accumulator.extra_accumulation[perspective][i][j] += extra_weights_[offset + j];
+                        }
+                    }
+                }
+            }
+
             accumulator.computed_accumulation = true;
         }
 
@@ -479,8 +662,11 @@ namespace Eval::NNUE {
         friend class Trainer<FeatureTransformer>;
 
         alignas(kCacheLineSize) BiasType biases_[kHalfDimensions];
+        alignas(kCacheLineSize) BiasType extra_biases_[kHalfExtraDimensions];
         alignas(kCacheLineSize)
             WeightType weights_[kHalfDimensions * kInputDimensions];
+        alignas(kCacheLineSize)
+            WeightType extra_weights_[kHalfExtraDimensions * kInputExtraDimensions];
     };
 
 }  // namespace Eval::NNUE

@@ -148,20 +148,34 @@ namespace Eval::NNUE {
             RawFeatures::append_active_indices(pos, trigger, active_indices);
         }
 
+        Features::IndexList extra_active_indices[2];
+        for (const auto trigger : kExtraRefreshTriggers) {
+            RawExtraFeatures::append_active_indices(pos, trigger, extra_active_indices);
+        }
+
         if (pos.side_to_move() != WHITE) {
             active_indices[0].swap(active_indices[1]);
+            extra_active_indices[0].swap(extra_active_indices[1]);
         }
 
         for (const auto color : Colors) {
             std::vector<TrainingFeature> training_features;
+            std::vector<TrainingFeature> extra_training_features;
             for (const auto base_index : active_indices[color]) {
                 static_assert(Features::Factorizer<RawFeatures>::get_dimensions() <
                               (1 << TrainingFeature::kIndexBits), "");
                 Features::Factorizer<RawFeatures>::append_training_features(
                     base_index, &training_features);
             }
+            for (const auto base_index : extra_active_indices[color]) {
+                static_assert(Features::Factorizer<RawExtraFeatures>::get_dimensions() <
+                              (1 << TrainingFeature::kIndexBits), "");
+                Features::Factorizer<RawExtraFeatures>::append_training_features(
+                    base_index, &extra_training_features);
+            }
 
             std::sort(training_features.begin(), training_features.end());
+            std::sort(extra_training_features.begin(), extra_training_features.end());
 
             auto& unique_features = example.training_features[color];
             for (const auto& feature : training_features) {
@@ -171,6 +185,17 @@ namespace Eval::NNUE {
                     unique_features.back() += feature;
                 } else {
                     unique_features.push_back(feature);
+                }
+            }
+
+            auto& extra_unique_features = example.extra_training_features[color];
+            for (const auto& feature : extra_training_features) {
+                if (!extra_unique_features.empty() &&
+                    feature.get_index() == extra_unique_features.back().get_index()) {
+
+                    extra_unique_features.back() += feature;
+                } else {
+                    extra_unique_features.push_back(feature);
                 }
             }
         }

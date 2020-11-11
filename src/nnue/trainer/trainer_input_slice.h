@@ -271,7 +271,7 @@ namespace Eval::NNUE {
 
         // number of input/output dimensions
         static constexpr IndexType kInputDimensions =
-            FeatureTransformer::kOutputDimensions;
+            FeatureTransformer::kOutputTotalDimensions;
         static constexpr IndexType kOutputDimensions = OutputDimensions;
         static_assert(Offset + kOutputDimensions <= kInputDimensions, "");
 
