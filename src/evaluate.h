@@ -22,12 +22,18 @@
 #include <string>
 
 #include "types.h"
+#include "nnue/features/index_list.h"
 
 class Position;
 
 namespace Eval {
+  constexpr int kMaxNumTerms = 128;
+  using TermList = Eval::NNUE::Features::ValueList<Value, kMaxNumTerms>;
+
   std::string trace(const Position& pos);
   Value evaluate(const Position& pos);
+
+  void collect_eval_terms(const Position& pos, TermList& terms);
 
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
   // for the build process (profile-build and fishtest) to work. Do not change the

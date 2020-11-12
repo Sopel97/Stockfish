@@ -42,7 +42,7 @@ using namespace std;
 
 namespace Trace {
 
-  enum Tracing { NO_TRACE, TRACE };
+  enum Tracing { NO_TRACE, TRACE, COLLECT_TERMS };
 
   enum Term { // The first 8 entries are reserved for PieceType
     MATERIAL = 8, IMBALANCE, MOBILITY, THREAT, PASSED, SPACE, WINNABLE, TOTAL, TERM_NB
@@ -181,6 +181,7 @@ namespace {
   public:
     Evaluation() = delete;
     explicit Evaluation(const Position& p) : pos(p) {}
+    explicit Evaluation(const Position& p, TermsList& t) : pos(p), terms(&t) {}
     Evaluation& operator=(const Evaluation&) = delete;
     Value value();
 
@@ -194,6 +195,7 @@ namespace {
     Value winnable(Score score) const;
 
     const Position& pos;
+    TermList* terms;
     Material::Entry* me;
     Pawns::Entry* pe;
     Bitboard mobilityArea[COLOR_NB];
@@ -403,7 +405,7 @@ namespace {
                 score -= WeakQueen;
         }
     }
-    if (T)
+    if (T == TRACE)
         Trace::add(Pt, Us, score);
 
     return score;
@@ -424,8 +426,7 @@ namespace {
     int kingDanger = 0;
     const Square ksq = pos.square<KING>(Us);
 
-    // Init the score with king shelter and enemy pawns storm
-    Score score = pe->king_safety<Us>(pos);
+    Score score = SCORE_ZERO;
 
     // Attacked squares defended at most once by our queen or king
     weak =  attackedBy[Them][ALL_PIECES]
@@ -503,7 +504,7 @@ namespace {
     // Penalty if king flank is under attack, potentially moving toward the king
     score -= FlankAttacks * kingFlankAttack;
 
-    if (T)
+    if (T == TRACE)
         Trace::add(KING, Us, score);
 
     return score;
@@ -604,7 +605,7 @@ namespace {
         score += SliderOnQueen * popcount(b & safe & attackedBy2[Us]) * (1 + queenImbalance);
     }
 
-    if (T)
+    if (T == TRACE)
         Trace::add(THREAT, Us, score);
 
     return score;
@@ -695,7 +696,7 @@ namespace {
         score += bonus - PassedFile * edge_distance(file_of(s));
     }
 
-    if (T)
+    if (T == TRACE)
         Trace::add(PASSED, Us, score);
 
     return score;
@@ -734,7 +735,7 @@ namespace {
     int weight = pos.count<ALL_PIECES>(Us) - 3 + std::min(pe->blocked_count(), 9);
     Score score = make_score(bonus * weight * weight / 16, 0);
 
-    if (T)
+    if (T == TRACE)
         Trace::add(SPACE, Us, score);
 
     return score;
@@ -779,6 +780,11 @@ namespace {
     int u = ((mg > 0) - (mg < 0)) * std::clamp(complexity + 50, -abs(mg), 0);
     int v = ((eg > 0) - (eg < 0)) * std::max(complexity, -abs(eg));
 
+    if (T == COLLECT_TERMS)
+    {
+      terms->push_back(u); terms->push_back(v);
+    }
+
     mg += u;
     eg += v;
 
@@ -815,7 +821,7 @@ namespace {
        + eg * int(PHASE_MIDGAME - me->game_phase()) * ScaleFactor(sf) / SCALE_FACTOR_NORMAL;
     v /= PHASE_MIDGAME;
 
-    if (T)
+    if (T == TRACE)
     {
         Trace::add(WINNABLE, make_score(u, eg * ScaleFactor(sf) / SCALE_FACTOR_NORMAL - eg_value(score)));
         Trace::add(TOTAL, make_score(mg, eg * ScaleFactor(sf) / SCALE_FACTOR_NORMAL));
@@ -845,19 +851,38 @@ namespace {
     // Initialize score by reading the incrementally updated scores included in
     // the position object (material + piece square tables) and the material
     // imbalance. Score is computed internally from the white point of view.
-    Score score = pos.psq_score() + me->imbalance() + pos.this_thread()->contempt;
+    Score psq = pos.psq_score();
+    Score imb = me->imbalance();
+    Score cont = pos.this_thread()->contempt;
+    Score score = psq + imb + cont;
+    if (T == COLLECT_TERMS)
+    {
+      terms->push_back(mg_value(psq)); terms->push_back(eg_value(psq));
+      terms->push_back(mg_value(imb)); terms->push_back(eg_value(imb));
+      terms->push_back(mg_value(cont)); terms->push_back(eg_value(cont));
+    }
 
     // Probe the pawn hash table
     pe = Pawns::probe(pos);
-    score += pe->pawn_score(WHITE) - pe->pawn_score(BLACK);
+    Score wpawns = pe->pawn_score(WHITE);
+    Score bpawns = pe->pawn_score(BLACK);
+    Score scorepawns = wpawns - bpawns;
+    score += scorepawns - scorepawns;
+    if (T == COLLECT_TERMS)
+    {
+      terms->push_back(mg_value(scorepawns)); terms->push_back(eg_value(scorepawns));
+    }
 
     // Early exit if score is high
     auto lazy_skip = [&](Value lazyThreshold) {
         return abs(mg_value(score) + eg_value(score)) / 2 > lazyThreshold + pos.non_pawn_material() / 64;
     };
 
-    if (lazy_skip(LazyThreshold1))
-        goto make_v;
+    if constexpr (T != COLLECT_TERMS)
+    {
+      if (lazy_skip(LazyThreshold1))
+          goto make_v;
+    }
 
     // Main evaluation begins here
     initialize<WHITE>();
@@ -865,34 +890,98 @@ namespace {
 
     // Pieces evaluated first (also populates attackedBy, attackedBy2).
     // Note that the order of evaluation of the terms is left unspecified.
-    score +=  pieces<WHITE, KNIGHT>() - pieces<BLACK, KNIGHT>()
-            + pieces<WHITE, BISHOP>() - pieces<BLACK, BISHOP>()
-            + pieces<WHITE, ROOK  >() - pieces<BLACK, ROOK  >()
-            + pieces<WHITE, QUEEN >() - pieces<BLACK, QUEEN >();
 
-    score += mobility[WHITE] - mobility[BLACK];
+    if (T == COLLECT_TERMS)
+    {
+      Score wn = pieces<WHITE, KNIGHT>(); Score bn = pieces<BLACK, KNIGHT>();
+      Score wb = pieces<WHITE, BISHOP>(); Score bb = pieces<BLACK, BISHOP>();
+      Score wr = pieces<WHITE, ROOK>(); Score br = pieces<BLACK, ROOK>();
+      Score wq = pieces<WHITE, QUEEN>(); Score bq = pieces<BLACK, QUEEN>();
+      Score n = wn - bn;
+      Score b = wb - bb;
+      Score r = wr - br;
+      Score q = wq - bq;
+      score += n + b + r + q;
+      terms->push_back(mg_value(n)); terms->push_back(eg_value(n));
+      terms->push_back(mg_value(b)); terms->push_back(eg_value(b));
+      terms->push_back(mg_value(r)); terms->push_back(eg_value(r));
+      terms->push_back(mg_value(q)); terms->push_back(eg_value(q));
 
-    // More complex interactions that require fully populated attack bitboards
-    score +=  king<   WHITE>() - king<   BLACK>()
-            + passed< WHITE>() - passed< BLACK>();
+      Score m = mobility[WHITE] - mobility[BLACK];
+      score += m;
+      terms->push_back(mg_value(m)); terms->push_back(eg_value(m));
 
-    if (lazy_skip(LazyThreshold2))
-        goto make_v;
+      Score wks = pe->king_safety<WHITE>(pos);
+      Score bks = pe->king_safety<BLACK>(pos);
+      Score ks = wks - bks;
+      score += ks;
+      terms->push_back(mg_value(ks)); terms->push_back(eg_value(ks));
 
-    score +=  threats<WHITE>() - threats<BLACK>()
-            + space<  WHITE>() - space<  BLACK>();
+      Score wk = king<WHITE>();
+      Score bk = king<BLACK>();
+      Score k = wk - bk;
+      score += k;
+      terms->push_back(mg_value(k)); terms->push_back(eg_value(k));
+
+      Score wp = passed<WHITE>();
+      Score bp = passed<BLACK>();
+      Score p = wp - bp;
+      score += k;
+      terms->push_back(mg_value(p)); terms->push_back(eg_value(p));
+
+      Score wt = threats<WHITE>();
+      Score bt = threats<BLACK>();
+      Score t = wt - bt;
+      score += t;
+      terms->push_back(mg_value(t)); terms->push_back(eg_value(t));
+
+      Score ws = space<WHITE>();
+      Score bs = space<BLACK>();
+      Score s = ws - bs;
+      score += s;
+      terms->push_back(mg_value(s)); terms->push_back(eg_value(s));
+    }
+    else
+    {
+      score +=  pieces<WHITE, KNIGHT>() - pieces<BLACK, KNIGHT>()
+              + pieces<WHITE, BISHOP>() - pieces<BLACK, BISHOP>()
+              + pieces<WHITE, ROOK  >() - pieces<BLACK, ROOK  >()
+              + pieces<WHITE, QUEEN >() - pieces<BLACK, QUEEN >();
+
+      score += mobility[WHITE] - mobility[BLACK];
+
+      score += pe->king_safety<WHITE>(pos) - pe->king_safety<BLACK>(pos);
+
+      // More complex interactions that require fully populated attack bitboards
+      score +=  king<   WHITE>() - king<   BLACK>()
+              + passed< WHITE>() - passed< BLACK>();
+
+      if constexpr (T != COLLECT_TERMS)
+      {
+        if (lazy_skip(LazyThreshold2))
+            goto make_v;
+      }
+
+      score +=  threats<WHITE>() - threats<BLACK>()
+              + space<  WHITE>() - space<  BLACK>();
+    }
 
 make_v:
     // Derive single value from mg and eg parts of score
     Value v = winnable(score);
 
     // In case of tracing add all remaining individual evaluation terms
-    if (T)
+    if (T == TRACE)
     {
         Trace::add(MATERIAL, pos.psq_score());
         Trace::add(IMBALANCE, me->imbalance());
         Trace::add(PAWN, pe->pawn_score(WHITE), pe->pawn_score(BLACK));
         Trace::add(MOBILITY, mobility[WHITE], mobility[BLACK]);
+    }
+
+    if (T == COLLECT_TERMS)
+    {
+      terms->push_back(v);
     }
 
     // Evaluation grain
@@ -958,6 +1047,11 @@ Value Eval::evaluate(const Position& pos) {
   v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 
   return v;
+}
+
+void Eval::collect_eval_terms(const Position& pos, TermsList& terms)
+{
+  Value v = Evaluation<COLLECT_TERMS>(pos, terms).value();
 }
 
 /// trace() is like evaluate(), but instead of returning a value, it returns
