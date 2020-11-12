@@ -24,6 +24,7 @@
 #include "misc.h"
 #include "uci.h"
 #include "types.h"
+#include "evaluate.h"
 
 #include <iostream>
 #include <string>
@@ -211,7 +212,10 @@ namespace Eval::NNUE {
         alignas(kCacheLineSize) TransformedFeatureType
             transformed_features[FeatureTransformer::kBufferSize];
 
-        feature_transformer->transform(pos, transformed_features);
+        TermList terms{};
+        collect_eval_terms(pos, terms);
+
+        feature_transformer->transform(pos, transformed_features, terms);
 
         alignas(kCacheLineSize) char buffer[Network::kBufferSize];
 

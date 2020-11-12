@@ -27,6 +27,8 @@
 #include "features/index_list.h"
 
 #include "types.h"
+#include "evaluate.h"
+#include "position.h"
 
 #include <cstring>
 #include <string>
@@ -106,7 +108,9 @@ namespace Eval::NNUE {
 
         // Number of input/output dimensions
         static constexpr IndexType kInputDimensions = RawFeatures::kDimensions;
-        static constexpr IndexType kOutputDimensions = kHalfDimensions * 2;
+        static constexpr IndexType kValueOutputs = Eval::kMaxNumTerms;
+        static constexpr IndexType kOutputDimensions = kHalfDimensions * 2 + kValueOutputs;
+        static constexpr IndexType kValueScale = 8;
 
         // Size of forward propagation buffer
         static constexpr std::size_t kBufferSize =
@@ -179,7 +183,7 @@ namespace Eval::NNUE {
         }
 
         // Convert input features
-        void transform(const Position& pos, OutputType* output) const {
+        void transform(const Position& pos, OutputType* output, Eval::TermList& terms) const {
 
             if (!update_accumulator_if_possible(pos))
               refresh_accumulator(pos);
@@ -306,6 +310,24 @@ namespace Eval::NNUE {
 #if defined(USE_MMX)
             _mm_empty();
 #endif
+
+            auto convert_value = [mul = (pos.side_to_move() == WHITE) ? 1 : -1](Value v)
+            {
+                v *= mul;
+                v /= kValueScale;
+                return static_cast<OutputType>(
+                        std::max<int>(-127, std::min<int>(127, v)));
+            };
+
+            for(int j = 0; j < terms.size(); ++j)
+            {
+                output[kHalfDimensions * 2 + j] = convert_value(terms[j]);
+            }
+
+            for(int j = terms.size(); j < kValueOutputs; ++j)
+            {
+                output[kHalfDimensions * 2 + j] = 0;
+            }
         }
 
     private:

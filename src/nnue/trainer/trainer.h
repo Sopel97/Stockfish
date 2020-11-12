@@ -4,6 +4,8 @@
 #include "nnue/nnue_common.h"
 #include "nnue/features/index_list.h"
 
+#include "evaluate.h"
+
 #include <sstream>
 
 #if defined(USE_BLAS)
@@ -67,10 +69,12 @@ namespace Eval::NNUE {
     // Structure that represents one sample of training data
     struct Example {
         std::vector<TrainingFeature> training_features[2];
+        Eval::TermList terms;
         Learner::PackedSfenValue psv;
         Value discrete_nn_eval;
         int sign;
         double weight;
+        Color stm;
     };
 
     // Message used for setting hyperparameters

@@ -161,8 +161,6 @@ namespace Eval::NNUE {
                     return _mm_cvtss_f32(_mm_max_ps(max_x_x_13_20, max_x_x_20_13));
                 };
 
-                const int total_size = batch.size() * kOutputDimensions;
-
                 const __m128 kZero4 = _mm_set1_ps(+kZero);
                 const __m128 kOne4 = _mm_set1_ps(+kOne);
 
@@ -171,33 +169,37 @@ namespace Eval::NNUE {
                 __m128 max_pre_activation0 = _mm_set1_ps(max_pre_activation_);
                 __m128 max_pre_activation1 = _mm_set1_ps(max_pre_activation_);
 
-                for (int i = 0; i < total_size; i += 16)
+                for (IndexType b = 0; b < batch.size(); ++b)
                 {
-                    __m128 out0 = _mm_loadu_ps(&output_[i +  0]);
-                    __m128 out1 = _mm_loadu_ps(&output_[i +  4]);
-                    __m128 out2 = _mm_loadu_ps(&output_[i +  8]);
-                    __m128 out3 = _mm_loadu_ps(&output_[i + 12]);
+                    const IndexType batch_offset = kOutputDimensions * b;
+                    for (int i = 0; i < kHalfDimensions * 2; i += 16)
+                    {
+                        __m128 out0 = _mm_loadu_ps(&output_[batch_offset + i +  0]);
+                        __m128 out1 = _mm_loadu_ps(&output_[batch_offset + i +  4]);
+                        __m128 out2 = _mm_loadu_ps(&output_[batch_offset + i +  8]);
+                        __m128 out3 = _mm_loadu_ps(&output_[batch_offset + i + 12]);
 
-                    __m128 min01 = _mm_min_ps(out0, out1);
-                    __m128 min23 = _mm_min_ps(out2, out3);
+                        __m128 min01 = _mm_min_ps(out0, out1);
+                        __m128 min23 = _mm_min_ps(out2, out3);
 
-                    __m128 max01 = _mm_max_ps(out0, out1);
-                    __m128 max23 = _mm_max_ps(out2, out3);
+                        __m128 max01 = _mm_max_ps(out0, out1);
+                        __m128 max23 = _mm_max_ps(out2, out3);
 
-                    min_pre_activation0 = _mm_min_ps(min_pre_activation0, min01);
-                    min_pre_activation1 = _mm_min_ps(min_pre_activation1, min23);
-                    max_pre_activation0 = _mm_max_ps(max_pre_activation0, max01);
-                    max_pre_activation1 = _mm_max_ps(max_pre_activation1, max23);
+                        min_pre_activation0 = _mm_min_ps(min_pre_activation0, min01);
+                        min_pre_activation1 = _mm_min_ps(min_pre_activation1, min23);
+                        max_pre_activation0 = _mm_max_ps(max_pre_activation0, max01);
+                        max_pre_activation1 = _mm_max_ps(max_pre_activation1, max23);
 
-                    out0 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out0));
-                    out1 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out1));
-                    out2 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out2));
-                    out3 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out3));
+                        out0 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out0));
+                        out1 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out1));
+                        out2 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out2));
+                        out3 = _mm_max_ps(kZero4, _mm_min_ps(kOne4, out3));
 
-                    _mm_storeu_ps(&output_[i +  0], out0);
-                    _mm_storeu_ps(&output_[i +  4], out1);
-                    _mm_storeu_ps(&output_[i +  8], out2);
-                    _mm_storeu_ps(&output_[i + 12], out3);
+                        _mm_storeu_ps(&output_[batch_offset + i +  0], out0);
+                        _mm_storeu_ps(&output_[batch_offset + i +  4], out1);
+                        _mm_storeu_ps(&output_[batch_offset + i +  8], out2);
+                        _mm_storeu_ps(&output_[batch_offset + i + 12], out3);
+                    }
                 }
 
                 min_pre_activation_ = m128_hmin_ps(_mm_min_ps(min_pre_activation0, min_pre_activation1));
@@ -256,7 +258,7 @@ namespace Eval::NNUE {
             // clipped ReLU
             for (IndexType b = 0; b < batch.size(); ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
-                for (IndexType i = 0; i < kOutputDimensions; ++i) {
+                for (IndexType i = 0; i < kHalfDimensions * 2; ++i) {
                     const IndexType index = batch_offset + i;
                     min_pre_activation_ = std::min(min_pre_activation_, output_[index]);
                     max_pre_activation_ = std::max(max_pre_activation_, output_[index]);
@@ -268,6 +270,28 @@ namespace Eval::NNUE {
             }
 
 #endif
+
+            for(IndexType b = 0; b < batch.size(); ++b)
+            {
+                auto convert_value = [mul = batch[b].stm == WHITE ? 1 : -1](Value v)
+                {
+                    v *= mul;
+                    v /= kValueScale;
+                    return std::max<float>(-kOne, std::min<float>(+kOne, float(v) / kActivationScale));
+                };
+
+                const IndexType offset = kOutputDimensions * b + kHalfDimensions * 2;
+                auto& terms = batch[b].terms;
+                for(IndexType i = 0; i < terms.size(); ++i)
+                {
+                    output_[offset + i] = convert_value(terms[i]);
+                }
+                // change this to zero out everything and the training progresses...
+                for(IndexType i = terms.size(); i < kValueOutputs; ++i)
+                {
+                    output_[offset + i] = 0.0f;
+                }
+            }
 
             return output_.data();
         }
@@ -292,40 +316,44 @@ namespace Eval::NNUE {
 
                 const IndexType total_size = batch_->size() * kOutputDimensions;
 
-                for (IndexType i = 0; i < total_size; i += 16)
+                for (IndexType b = 0; b < batch_->size(); ++b)
                 {
-                    __m128 out0 = _mm_loadu_ps(&output_[i + 0]);
-                    __m128 out1 = _mm_loadu_ps(&output_[i + 4]);
-                    __m128 out2 = _mm_loadu_ps(&output_[i + 8]);
-                    __m128 out3 = _mm_loadu_ps(&output_[i + 12]);
+                    const IndexType batch_offset = kOutputDimensions * b;
+                    for (int i = 0; i < kHalfDimensions * 2; i += 16)
+                    {
+                        __m128 out0 = _mm_loadu_ps(&output_[batch_offset + i + 0]);
+                        __m128 out1 = _mm_loadu_ps(&output_[batch_offset + i + 4]);
+                        __m128 out2 = _mm_loadu_ps(&output_[batch_offset + i + 8]);
+                        __m128 out3 = _mm_loadu_ps(&output_[batch_offset + i + 12]);
 
-                    __m128 clipped0 = _mm_or_ps(_mm_cmple_ps(out0, kZero4), _mm_cmpge_ps(out0, kOne4));
-                    __m128 clipped1 = _mm_or_ps(_mm_cmple_ps(out1, kZero4), _mm_cmpge_ps(out1, kOne4));
-                    __m128 clipped2 = _mm_or_ps(_mm_cmple_ps(out2, kZero4), _mm_cmpge_ps(out2, kOne4));
-                    __m128 clipped3 = _mm_or_ps(_mm_cmple_ps(out3, kZero4), _mm_cmpge_ps(out3, kOne4));
+                        __m128 clipped0 = _mm_or_ps(_mm_cmple_ps(out0, kZero4), _mm_cmpge_ps(out0, kOne4));
+                        __m128 clipped1 = _mm_or_ps(_mm_cmple_ps(out1, kZero4), _mm_cmpge_ps(out1, kOne4));
+                        __m128 clipped2 = _mm_or_ps(_mm_cmple_ps(out2, kZero4), _mm_cmpge_ps(out2, kOne4));
+                        __m128 clipped3 = _mm_or_ps(_mm_cmple_ps(out3, kZero4), _mm_cmpge_ps(out3, kOne4));
 
-                    __m128 grad0 = _mm_loadu_ps(&gradients[i + 0]);
-                    __m128 grad1 = _mm_loadu_ps(&gradients[i + 4]);
-                    __m128 grad2 = _mm_loadu_ps(&gradients[i + 8]);
-                    __m128 grad3 = _mm_loadu_ps(&gradients[i + 12]);
+                        __m128 grad0 = _mm_loadu_ps(&gradients[batch_offset + i + 0]);
+                        __m128 grad1 = _mm_loadu_ps(&gradients[batch_offset + i + 4]);
+                        __m128 grad2 = _mm_loadu_ps(&gradients[batch_offset + i + 8]);
+                        __m128 grad3 = _mm_loadu_ps(&gradients[batch_offset + i + 12]);
 
-                    grad0 = _mm_andnot_ps(clipped0, grad0);
-                    grad1 = _mm_andnot_ps(clipped1, grad1);
-                    grad2 = _mm_andnot_ps(clipped2, grad2);
-                    grad3 = _mm_andnot_ps(clipped3, grad3);
+                        grad0 = _mm_andnot_ps(clipped0, grad0);
+                        grad1 = _mm_andnot_ps(clipped1, grad1);
+                        grad2 = _mm_andnot_ps(clipped2, grad2);
+                        grad3 = _mm_andnot_ps(clipped3, grad3);
 
-                    _mm_storeu_ps(&gradients_[i + 0], grad0);
-                    _mm_storeu_ps(&gradients_[i + 4], grad1);
-                    _mm_storeu_ps(&gradients_[i + 8], grad2);
-                    _mm_storeu_ps(&gradients_[i + 12], grad3);
+                        _mm_storeu_ps(&gradients_[batch_offset + i + 0], grad0);
+                        _mm_storeu_ps(&gradients_[batch_offset + i + 4], grad1);
+                        _mm_storeu_ps(&gradients_[batch_offset + i + 8], grad2);
+                        _mm_storeu_ps(&gradients_[batch_offset + i + 12], grad3);
 
-                    const int clipped_mask =
-                        (_mm_movemask_ps(clipped0) << 0)
-                        | (_mm_movemask_ps(clipped1) << 4)
-                        | (_mm_movemask_ps(clipped2) << 8)
-                        | (_mm_movemask_ps(clipped3) << 12);
+                        const int clipped_mask =
+                            (_mm_movemask_ps(clipped0) << 0)
+                            | (_mm_movemask_ps(clipped1) << 4)
+                            | (_mm_movemask_ps(clipped2) << 8)
+                            | (_mm_movemask_ps(clipped3) << 12);
 
-                    num_clipped_ += popcount(clipped_mask);
+                        num_clipped_ += popcount(clipped_mask);
+                    }
                 }
             }
 
@@ -333,7 +361,7 @@ namespace Eval::NNUE {
 
             for (IndexType b = 0; b < batch_->size(); ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
-                for (IndexType i = 0; i < kOutputDimensions; ++i) {
+                for (IndexType i = 0; i < kHalfDimensions * 2; ++i) {
                     const IndexType index = batch_offset + i;
                     const bool clipped = (output_[index] <= kZero) | (output_[index] >= kOne);
                     gradients_[index] = gradients[index] * !clipped;
@@ -343,7 +371,7 @@ namespace Eval::NNUE {
 
 #endif
 
-            num_total_ += batch_->size() * kOutputDimensions;
+            num_total_ += batch_->size() * kHalfDimensions * 2;
 
             // Since the weight matrix updates only the columns corresponding to the features that appeared in the input,
             // Correct the learning rate and adjust the scale without using momentum
@@ -603,6 +631,8 @@ namespace Eval::NNUE {
             Features::Factorizer<RawFeatures>::get_dimensions();
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
         static constexpr IndexType kHalfDimensions = LayerType::kHalfDimensions;
+        static constexpr IndexType kValueOutputs = LayerType::kValueOutputs;
+        static constexpr IndexType kValueScale = LayerType::kValueScale;
 
         // Coefficient used for parameterization
         static constexpr LearnFloatType kActivationScale =

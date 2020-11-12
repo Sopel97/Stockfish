@@ -22,12 +22,12 @@
 #include <string>
 
 #include "types.h"
-#include "nnue/features/index_list.h"
+#include "nnue/features/value_list.h"
 
 class Position;
 
 namespace Eval {
-  constexpr int kMaxNumTerms = 128;
+  constexpr int kMaxNumTerms = 64;
   using TermList = Eval::NNUE::Features::ValueList<Value, kMaxNumTerms>;
 
   std::string trace(const Position& pos);

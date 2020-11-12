@@ -181,7 +181,7 @@ namespace {
   public:
     Evaluation() = delete;
     explicit Evaluation(const Position& p) : pos(p) {}
-    explicit Evaluation(const Position& p, TermsList& t) : pos(p), terms(&t) {}
+    explicit Evaluation(const Position& p, Eval::TermList& t) : pos(p), terms(&t) {}
     Evaluation& operator=(const Evaluation&) = delete;
     Value value();
 
@@ -195,7 +195,7 @@ namespace {
     Value winnable(Score score) const;
 
     const Position& pos;
-    TermList* terms;
+    Eval::TermList* terms;
     Material::Entry* me;
     Pawns::Entry* pe;
     Bitboard mobilityArea[COLOR_NB];
@@ -782,7 +782,7 @@ namespace {
 
     if (T == COLLECT_TERMS)
     {
-      terms->push_back(u); terms->push_back(v);
+      terms->push_back(Value(u)); terms->push_back(Value(v));
     }
 
     mg += u;
@@ -1049,7 +1049,7 @@ Value Eval::evaluate(const Position& pos) {
   return v;
 }
 
-void Eval::collect_eval_terms(const Position& pos, TermsList& terms)
+void Eval::collect_eval_terms(const Position& pos, TermList& terms)
 {
   Value v = Evaluation<COLLECT_TERMS>(pos, terms).value();
 }

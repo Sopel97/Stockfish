@@ -17,6 +17,7 @@
 #include "position.h"
 #include "uci.h"
 #include "misc.h"
+#include "evaluate.h"
 #include "thread_win32_osx.h"
 #include "thread.h"
 
@@ -142,6 +143,7 @@ namespace Eval::NNUE {
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;
+        example.stm = pos.side_to_move();
 
         Features::IndexList active_indices[2];
         for (const auto trigger : kRefreshTriggers) {
@@ -174,6 +176,8 @@ namespace Eval::NNUE {
                 }
             }
         }
+
+        Eval::collect_eval_terms(pos, example.terms);
 
         std::lock_guard<std::mutex> lock(examples_mutex);
         examples.push_back(std::move(example));
