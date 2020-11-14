@@ -88,6 +88,14 @@ namespace Eval::NNUE {
                     const float scaleeg = float(PHASE_MIDGAME - (*batch_)[b].phase) * (*batch_)[b].scale_factor / SCALE_FACTOR_NORMAL / PHASE_MIDGAME;
                     gradients_[indexmg] = gradients[indexout] * scalemg;
                     gradients_[indexeg] = gradients[indexout] * scaleeg;
+
+                    min_scalemg_ = std::min(min_scalemg_, scalemg);
+                    min_scaleeg_ = std::min(min_scaleeg_, scaleeg);
+                    max_scalemg_ = std::max(max_scalemg_, scalemg);
+                    max_scaleeg_ = std::max(max_scaleeg_, scaleeg);
+                    tot_scalemg_ += scalemg;
+                    tot_scaleeg_ += scaleeg;
+                    tot_count_ += 1;
                 }
             }
 
@@ -107,10 +115,37 @@ namespace Eval::NNUE {
         }
 
         void reset_stats() {
+            min_scalemg_ = std::numeric_limits<float>::max();
+            min_scaleeg_ = std::numeric_limits<float>::max();
+            max_scalemg_ = std::numeric_limits<float>::lowest();
+            max_scaleeg_ = std::numeric_limits<float>::lowest();
+            tot_scalemg_ = 0.0f;
+            tot_scaleeg_ = 0.0f;
+            tot_count_ = 0;
         }
 
         // Check if there are any problems with learning
         void check_health() {
+            auto out = sync_region_cout.new_region();
+
+            out << "INFO (check_health):"
+                << " layer " << LayerType::kLayerIndex
+                << " - " << LayerType::get_name()
+                << std::endl;
+
+            out << "  - min_scalemg = " << min_scalemg_
+                << " , max_scalemg = " << max_scalemg_
+                << std::endl;
+
+            out << "  - min_scaleeg = " << min_scaleeg_
+                << " , max_scaleeg = " << max_scaleeg_
+                << std::endl;
+
+            out << "  - avg_scalemg = " << tot_scalemg_ / (tot_count_)
+                << " , avg_scaleeg = " << tot_scaleeg_ / (tot_count_)
+                << std::endl;
+
+            out.unlock();
 
             reset_stats();
         }
@@ -135,6 +170,14 @@ namespace Eval::NNUE {
 
         // buffer for back propagation
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;
+
+        LearnFloatType min_scalemg_;
+        LearnFloatType min_scaleeg_;
+        LearnFloatType max_scalemg_;
+        LearnFloatType max_scaleeg_;
+        LearnFloatType tot_scalemg_;
+        LearnFloatType tot_scaleeg_;
+        uint64_t tot_count_;
     };
 
 }  // namespace Eval::NNUE
