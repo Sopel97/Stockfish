@@ -20,7 +20,7 @@
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
 // Defines the network structure
-#include "architectures/halfkp_256x2-32-32.h"
+#include "architectures/halfka_256x2-32-32.h"
 
 // Input features and network structure used in NNUE evaluation function
 namespace Eval::NNUE {
