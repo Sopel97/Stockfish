@@ -59,13 +59,12 @@ namespace Eval::NNUE {
                     const IndexType indexout = kOutputDimensions * b + i;
                     const IndexType indexmg = kInputDimensions * b + 2 * i;
                     const IndexType indexeg = indexmg + 1;
-                    float mg = input[indexmg];
-                    float eg = input[indexeg];
+                    const float scalemg = float((*batch_)[b].phase) * (1.0f / PHASE_MIDGAME);
+                    const float scaleeg = 1.0f - scalemg;
 
                     float v =
-                         mg * batch[b].phase
-                       + eg * (PHASE_MIDGAME - batch[b].phase) * batch[b].scale_factor / SCALE_FACTOR_NORMAL;
-                    v /= PHASE_MIDGAME;
+                         input[indexmg] * scalemg
+                       + input[indexeg] * scaleeg;
 
                     output_[indexout] = v;
                 }
@@ -84,8 +83,9 @@ namespace Eval::NNUE {
                     const IndexType indexout = kOutputDimensions * b + i;
                     const IndexType indexmg = kInputDimensions * b + 2 * i;
                     const IndexType indexeg = indexmg + 1;
-                    const float scalemg = float((*batch_)[b].phase) / PHASE_MIDGAME;
-                    const float scaleeg = float(PHASE_MIDGAME - (*batch_)[b].phase) * (*batch_)[b].scale_factor / SCALE_FACTOR_NORMAL / PHASE_MIDGAME;
+                    const float scalemg = float((*batch_)[b].phase) * (1.0f / PHASE_MIDGAME);
+                    const float scaleeg = 1.0f - scalemg;
+
                     gradients_[indexmg] = gradients[indexout] * scalemg;
                     gradients_[indexeg] = gradients[indexout] * scaleeg;
 

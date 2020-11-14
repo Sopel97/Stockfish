@@ -92,11 +92,11 @@ namespace Eval::NNUE::Layers {
 
         // Forward propagation
         const OutputType* propagate(
-            int64_t scale_factor, int64_t phase,
+            int64_t phase,
             const TransformedFeatureType* transformed_features, char* buffer) const {
 
             const auto input = reinterpret_cast<const InputType*>(previous_layer_.propagate(
-                scale_factor, phase,
+                phase,
                 transformed_features, buffer + kSelfBufferSize));
             const auto output = reinterpret_cast<OutputType*>(buffer);
 
@@ -107,7 +107,7 @@ namespace Eval::NNUE::Layers {
 
                 int64_t v =
                      mg * phase
-                   + eg * (PHASE_MIDGAME - phase) * scale_factor / SCALE_FACTOR_NORMAL;
+                   + eg * (PHASE_MIDGAME - phase);
                 v /= PHASE_MIDGAME;
                 output[i] = v;
             }

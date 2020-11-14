@@ -215,8 +215,11 @@ namespace Eval::NNUE {
 
         alignas(kCacheLineSize) char buffer[Network::kBufferSize];
 
-        auto [phase, scale_factor] = Eval::phase_scale_factor(pos);
-        const auto output = network->propagate(scale_factor, phase, transformed_features, buffer);
+        Value npm_w = pos.non_pawn_material(WHITE);
+        Value npm_b = pos.non_pawn_material(BLACK);
+        Value npm   = std::clamp(npm_w + npm_b, EndgameLimit, MidgameLimit);
+        auto phase = Phase(((npm - EndgameLimit) * PHASE_MIDGAME) / (MidgameLimit - EndgameLimit));
+        const auto output = network->propagate(phase, transformed_features, buffer);
 
         return static_cast<Value>(output[0] / FV_SCALE);
     }

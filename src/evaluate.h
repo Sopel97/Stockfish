@@ -29,7 +29,6 @@ class Position;
 namespace Eval {
   std::string trace(const Position& pos);
   Value evaluate(const Position& pos);
-  std::pair<int64_t, int64_t> phase_scale_factor(const Position& pos);
 
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
   // for the build process (profile-build and fishtest) to work. Do not change the

@@ -143,9 +143,11 @@ namespace Eval::NNUE {
         example.psv = psv;
         example.weight = weight;
 
-        auto [phase, scale_factor] = Eval::phase_scale_factor(pos);
+        Value npm_w = pos.non_pawn_material(WHITE);
+        Value npm_b = pos.non_pawn_material(BLACK);
+        Value npm   = std::clamp(npm_w + npm_b, EndgameLimit, MidgameLimit);
+        auto phase = Phase(((npm - EndgameLimit) * PHASE_MIDGAME) / (MidgameLimit - EndgameLimit));
         example.phase = phase;
-        example.scale_factor = scale_factor;
 
         Features::IndexList active_indices[2];
         for (const auto trigger : kRefreshTriggers) {

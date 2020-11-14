@@ -71,7 +71,6 @@ namespace Eval::NNUE {
         Value discrete_nn_eval;
         int sign;
         double weight;
-        int64_t scale_factor;
         int64_t phase;
     };
 
