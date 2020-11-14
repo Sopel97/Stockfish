@@ -11,6 +11,7 @@
 #include "trainer/trainer_input_slice.h"
 #include "trainer/trainer_affine_transform.h"
 #include "trainer/trainer_clipped_relu.h"
+#include "trainer/trainer_scale_factor_interpolate.h"
 #include "trainer/trainer_sum.h"
 
 #include "position.h"
@@ -141,6 +142,10 @@ namespace Eval::NNUE {
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;
+
+        auto [phase, scale_factor] = Eval::phase_scale_factor(pos);
+        example.phase = phase;
+        example.scale_factor = scale_factor;
 
         Features::IndexList active_indices[2];
         for (const auto trigger : kRefreshTriggers) {

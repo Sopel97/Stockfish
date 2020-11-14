@@ -120,9 +120,11 @@ namespace Eval::NNUE::Layers {
 
         // Forward propagation
         const OutputType* propagate(
+            int64_t scale_factor, int64_t phase,
             const TransformedFeatureType* transformed_features, char* buffer) const {
 
             const auto input = previous_layer_.propagate(
+                scale_factor, phase,
                 transformed_features, buffer + kSelfBufferSize);
             const auto output = reinterpret_cast<OutputType*>(buffer);
 

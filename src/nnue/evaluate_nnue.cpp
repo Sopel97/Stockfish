@@ -215,7 +215,8 @@ namespace Eval::NNUE {
 
         alignas(kCacheLineSize) char buffer[Network::kBufferSize];
 
-        const auto output = network->propagate(transformed_features, buffer);
+        auto [phase, scale_factor] = Eval::phase_scale_factor(pos);
+        const auto output = network->propagate(scale_factor, phase, transformed_features, buffer);
 
         return static_cast<Value>(output[0] / FV_SCALE);
     }

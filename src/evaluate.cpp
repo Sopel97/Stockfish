@@ -960,6 +960,39 @@ Value Eval::evaluate(const Position& pos) {
   return v;
 }
 
+std::pair<int64_t, int64_t> Eval::phase_scale_factor(const Position& pos)
+{
+  auto me = Material::probe(pos);
+  Color strongSide = me->value > VALUE_DRAW ? WHITE : BLACK;
+  int64_t sf = me->scale_factor(pos, strongSide);
+
+  // If scale factor is not already specific, scale down via general heuristics
+  if (sf == SCALE_FACTOR_NORMAL)
+  {
+      if (pos.opposite_bishops())
+      {
+          if (   pos.non_pawn_material(WHITE) == BishopValueMg
+              && pos.non_pawn_material(BLACK) == BishopValueMg)
+              sf = 18 + 4 * 0 /*popcount(pe->passed_pawns(strongSide))*/;
+          else
+              sf = 22 + 3 * pos.count<ALL_PIECES>(strongSide);
+      }
+      else if (  pos.non_pawn_material(WHITE) == RookValueMg
+              && pos.non_pawn_material(BLACK) == RookValueMg
+              && pos.count<PAWN>(strongSide) - pos.count<PAWN>(~strongSide) <= 1
+              && bool(KingSide & pos.pieces(strongSide, PAWN)) != bool(QueenSide & pos.pieces(strongSide, PAWN))
+              && (attacks_bb<KING>(pos.square<KING>(~strongSide)) & pos.pieces(~strongSide, PAWN)))
+          sf = 36;
+      else if (pos.count<QUEEN>() == 1)
+          sf = 37 + 3 * (pos.count<QUEEN>(WHITE) == 1 ? pos.count<BISHOP>(BLACK) + pos.count<KNIGHT>(BLACK)
+                                                      : pos.count<BISHOP>(WHITE) + pos.count<KNIGHT>(WHITE));
+      else
+          sf = std::min<int64_t>(sf, 36 + 7 * pos.count<PAWN>(strongSide));
+  }
+
+  return { int64_t(me->game_phase()), sf };
+}
+
 /// trace() is like evaluate(), but instead of returning a value, it returns
 /// a string (suitable for outputting to stdout) that contains the detailed
 /// descriptions and values of each evaluation term. Useful for debugging.
