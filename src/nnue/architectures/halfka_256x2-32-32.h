@@ -27,6 +27,7 @@
 #include "nnue/layers/input_slice.h"
 #include "nnue/layers/affine_transform.h"
 #include "nnue/layers/clipped_relu.h"
+#include "nnue/layers/scale_factor_interpolate.h"
 
 namespace Eval::NNUE {
 
@@ -42,8 +43,8 @@ namespace Eval::NNUE {
         // Define network structure
         using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
-        using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
-        using OutputLayer = AffineTransform<HiddenLayer2, 1>;
+        using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 64>>;
+        using OutputLayer = ScaleFactorInterpolate<AffineTransform<HiddenLayer2, 2, true>>;
 
     }  // namespace Layers
 

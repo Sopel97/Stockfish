@@ -17,11 +17,11 @@
 namespace Eval::NNUE {
 
     // Learning: Affine transformation layer
-    template <typename PreviousLayer, IndexType OutputDimensions>
-    class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions>> {
+    template <typename PreviousLayer, IndexType OutputDimensions, bool IsOutput>
+    class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions, IsOutput>> {
     private:
         // Type of layer to learn
-        using LayerType = Layers::AffineTransform<PreviousLayer, OutputDimensions>;
+        using LayerType = Layers::AffineTransform<PreviousLayer, OutputDimensions, IsOutput>;
 
     public:
         // factory function
@@ -348,7 +348,7 @@ namespace Eval::NNUE {
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
 
         // If the output dimensionality is 1, the output layer
-        static constexpr bool kIsOutputLayer = kOutputDimensions == 1;
+        static constexpr bool kIsOutputLayer = LayerType::kIsOutput;
 
         // Coefficient used for parameterization
         static constexpr LearnFloatType kActivationScale =

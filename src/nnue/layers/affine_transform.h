@@ -30,7 +30,7 @@
 namespace Eval::NNUE::Layers {
 
     // Affine transformation layer
-    template <typename PreviousLayer, IndexType OutputDimensions>
+    template <typename PreviousLayer, IndexType OutputDimensions, bool IsOutput = OutputDimensions == 1>
     class AffineTransform {
     public:
         // Input/output type
@@ -39,6 +39,8 @@ namespace Eval::NNUE::Layers {
         using OutputType = std::int32_t;
 
         static_assert(std::is_same<InputType, std::uint8_t>::value, "");
+
+        static constexpr bool kIsOutput = IsOutput;
 
         // Number of input/output dimensions
         static constexpr IndexType kInputDimensions =
