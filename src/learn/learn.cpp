@@ -294,28 +294,8 @@ namespace Learner
 
     static double calc_grad(Value shallow, Value teacher_signal, int result, int ply)
     {
-        // elmo (WCSC27) method
-        // Correct with the actual game wins and losses.
-        const double q = winning_percentage(shallow, ply);
-        const double p = calculate_p(teacher_signal, ply);
-        const double t = calculate_t(result);
-        const double lambda = calculate_lambda(teacher_signal);
-
-        double grad;
-        if (use_wdl)
-        {
-            const double dce_p = calc_d_cross_entropy_of_winning_percentage(p, shallow, ply);
-            const double dce_t = calc_d_cross_entropy_of_winning_percentage(t, shallow, ply);
-            grad = lambda * dce_p + (1.0 - lambda) * dce_t;
-        }
-        else
-        {
-            // Use the actual win rate as a correction term.
-            // This is the idea of ​​elmo (WCSC27), modern O-parts.
-            grad = lambda * (q - p) + (1.0 - lambda) * (q - t);
-        }
-
-        return grad;
+        return (double)(std::clamp(shallow, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN)
+            - std::clamp(teacher_signal, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN)) / 2400.0;
     }
 
     // Calculate cross entropy during learning
