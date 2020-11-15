@@ -197,7 +197,7 @@ namespace Eval::NNUE {
             cblas_sgemm(
                 CblasRowMajor, CblasTrans, CblasNoTrans,
                 kAffineOutputDimensions, kInputDimensions, batch_size_,
-                kAffineRatio,
+                1.0f,
                 gradients, kOutputDimensions,
                 batch_input_, kInputDimensions,
                 momentum_,
@@ -234,7 +234,7 @@ namespace Eval::NNUE {
                 thread_pool,
                 Blas::MatrixLayout::RowMajor, Blas::MatrixTranspose::Trans, Blas::MatrixTranspose::NoTrans,
                 kAffineOutputDimensions, kInputDimensions, batch_size_,
-                kAffineRatio,
+                1.0f,
                 gradients, kOutputDimensions,
                 batch_input_, kInputDimensions,
                 momentum_,
@@ -383,7 +383,7 @@ namespace Eval::NNUE {
         static constexpr IndexType kSkip = LayerType::kSkip;
         static constexpr IndexType kAffineOutputDimensions = LayerType::kAffineOutputDimensions;
 
-        static constexpr LearnFloatType kAffineRatio = static_cast<LearnFloatType>(kAffineOutputDimensions) / kOutputDimensions;
+        static constexpr LearnFloatType kAffineRatio = kSkip ? 0.5f : 1.0f;
 
         // If the output dimensionality is 1, the output layer
         static constexpr bool kIsOutputLayer = kOutputDimensions == 1;
