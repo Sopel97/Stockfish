@@ -174,7 +174,7 @@ namespace Eval::NNUE {
             cblas_sgemm(
                 CblasColMajor, CblasNoTrans, CblasNoTrans,
                 kInputDimensions, batch_size_, kAffineOutputDimensions,
-                kAffineRatio,
+                1.0f,
                 weights_, kInputDimensions,
                 gradients, kOutputDimensions,
                 0.0,
@@ -211,7 +211,7 @@ namespace Eval::NNUE {
                 thread_pool,
                 Blas::MatrixLayout::ColMajor, Blas::MatrixTranspose::NoTrans, Blas::MatrixTranspose::NoTrans,
                 kInputDimensions, batch_size_, kAffineOutputDimensions,
-                kAffineRatio,
+                1.0f,
                 weights_, kInputDimensions,
                 gradients, kOutputDimensions,
                 0.0,
@@ -263,11 +263,11 @@ namespace Eval::NNUE {
                     const IndexType batch_offset = kOutputDimensions * b + kAffineOutputDimensions;
 #if defined(USE_BLAS)
                     cblas_saxpy(
-                        kInputDimensions, 1.0f - kAffineRatio, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
+                        kInputDimensions, 1.0f, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
                     );
 #else
                     Blas::saxpy(
-                        kInputDimensions, 1.0f - kAffineRatio, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
+                        kInputDimensions, 1.0f, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
                     );
 #endif
                 }
@@ -382,8 +382,6 @@ namespace Eval::NNUE {
 
         static constexpr IndexType kSkip = LayerType::kSkip;
         static constexpr IndexType kAffineOutputDimensions = LayerType::kAffineOutputDimensions;
-
-        static constexpr LearnFloatType kAffineRatio = kSkip ? 0.5f : 1.0f;
 
         // If the output dimensionality is 1, the output layer
         static constexpr bool kIsOutputLayer = kOutputDimensions == 1;
