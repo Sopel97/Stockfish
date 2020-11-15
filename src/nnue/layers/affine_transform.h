@@ -49,6 +49,12 @@ namespace Eval::NNUE::Layers {
         static constexpr IndexType kPaddedInputDimensions =
             ceil_to_multiple<IndexType>(kInputDimensions, kMaxSimdWidth);
 
+        static constexpr IndexType kWeightScaleBits =
+            6
+            + (kInputDimensions >= 64)
+            + (kInputDimensions >= 256)
+            + (kInputDimensions >= 1024);
+
         // Size of forward propagation buffer used in this layer
         static constexpr std::size_t kSelfBufferSize =
             ceil_to_multiple(kOutputDimensions * sizeof(OutputType), kCacheLineSize);

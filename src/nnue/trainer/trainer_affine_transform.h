@@ -298,9 +298,19 @@ namespace Eval::NNUE {
 
         // Weight saturation and parameterization
         void quantize_parameters() {
+            int clipped = 0;
             for (IndexType i = 0; i < kOutputDimensions * kInputDimensions; ++i) {
+                auto w = weights_[i];
                 weights_[i] = std::max(-kMaxWeightMagnitude,
                                        std::min(+kMaxWeightMagnitude, weights_[i]));
+                clipped += (w != weights_[i]);
+            }
+
+            if (clipped)
+            {
+                auto out = sync_region_cout.new_region();
+                out << "Warning: Quantization of layer " << LayerType::kLayerIndex
+                    << " clipped " << clipped << " weights.\n";
             }
 
             for (IndexType i = 0; i < kOutputDimensions; ++i) {
@@ -346,6 +356,8 @@ namespace Eval::NNUE {
         // number of input/output dimensions
         static constexpr IndexType kInputDimensions = LayerType::kInputDimensions;
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
+
+        static constexpr IndexType kWeightScaleBits = LayerType::kWeightScaleBits;
 
         // If the output dimensionality is 1, the output layer
         static constexpr bool kIsOutputLayer = kOutputDimensions == 1;

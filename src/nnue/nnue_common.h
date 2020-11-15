@@ -75,7 +75,6 @@ namespace Eval::NNUE {
 
     // Constant used in evaluation value calculation
     constexpr int FV_SCALE = 16;
-    constexpr int kWeightScaleBits = 6;
 
     // Size of cache line (in bytes)
     constexpr std::size_t kCacheLineSize = 64;
