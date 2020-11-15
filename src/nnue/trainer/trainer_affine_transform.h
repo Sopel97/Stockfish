@@ -17,11 +17,11 @@
 namespace Eval::NNUE {
 
     // Learning: Affine transformation layer
-    template <typename PreviousLayer, IndexType OutputDimensions>
-    class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions>> {
+    template <typename PreviousLayer, IndexType OutputDimensions, bool Skip>
+    class Trainer<Layers::AffineTransform<PreviousLayer, OutputDimensions, Skip>> {
     private:
         // Type of layer to learn
-        using LayerType = Layers::AffineTransform<PreviousLayer, OutputDimensions>;
+        using LayerType = Layers::AffineTransform<PreviousLayer, OutputDimensions, Skip>;
 
     public:
         // factory function
@@ -76,7 +76,7 @@ namespace Eval::NNUE {
                 const double kSigma = 1.0 / std::sqrt(kInputDimensions);
                 auto distribution = std::normal_distribution<double>(0.0, kSigma);
 
-                for (IndexType i = 0; i < kOutputDimensions; ++i) {
+                for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                     double sum = 0.0;
                       for (IndexType j = 0; j < kInputDimensions; ++j) {
                           const auto weight = static_cast<LearnFloatType>(distribution(rng));
@@ -106,13 +106,13 @@ namespace Eval::NNUE {
             for (IndexType b = 0; b < batch_size_; ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
                 cblas_scopy(
-                    kOutputDimensions, biases_, 1, &output_[batch_offset], 1
+                    kAffineOutputDimensions, biases_, 1, &output_[batch_offset], 1
                 );
             }
 
             cblas_sgemm(
                 CblasColMajor, CblasTrans, CblasNoTrans,
-                kOutputDimensions, batch_size_, kInputDimensions,
+                kAffineOutputDimensions, batch_size_, kInputDimensions,
                 1.0,
                 weights_, kInputDimensions,
                 batch_input_, kInputDimensions,
@@ -125,14 +125,14 @@ namespace Eval::NNUE {
                 const IndexType batch_offset = kOutputDimensions * b;
                 Blas::scopy(
                     thread_pool,
-                    kOutputDimensions, biases_, 1, &output_[batch_offset], 1
+                    kAffineOutputDimensions, biases_, 1, &output_[batch_offset], 1
                 );
             }
 
             Blas::sgemm(
                 thread_pool,
                 Blas::MatrixLayout::ColMajor, Blas::MatrixTranspose::Trans, Blas::MatrixTranspose::NoTrans,
-                kOutputDimensions, batch_size_, kInputDimensions,
+                kAffineOutputDimensions, batch_size_, kInputDimensions,
                 1.0,
                 weights_, kInputDimensions,
                 batch_input_, kInputDimensions,
@@ -141,6 +141,23 @@ namespace Eval::NNUE {
             );
 
 #endif
+
+            if constexpr (kSkip)
+            {
+                for (IndexType b = 0; b < batch_size_; ++b) {
+                    const IndexType batch_offset = kOutputDimensions * b + kAffineOutputDimensions;
+#if defined(USE_BLAS)
+                    cblas_scopy(
+                        kInputDimensions, &batch_input_[kInputDimensions * b], 1, &output_[batch_offset], 1
+                    );
+#else
+                    Blas::scopy(
+                        kInputDimensions, &batch_input_[kInputDimensions * b], 1, &output_[batch_offset], 1
+                    );
+#endif
+                }
+            }
+
             return output_.data();
         }
 
@@ -156,8 +173,8 @@ namespace Eval::NNUE {
 
             cblas_sgemm(
                 CblasColMajor, CblasNoTrans, CblasNoTrans,
-                kInputDimensions, batch_size_, kOutputDimensions,
-                1.0,
+                kInputDimensions, batch_size_, kAffineOutputDimensions,
+                kAffineRatio,
                 weights_, kInputDimensions,
                 gradients, kOutputDimensions,
                 0.0,
@@ -166,21 +183,21 @@ namespace Eval::NNUE {
 
             // update
             cblas_sscal(
-                kOutputDimensions, momentum_, biases_diff_, 1
+                kAffineOutputDimensions, momentum_, biases_diff_, 1
             );
 
             for (IndexType b = 0; b < batch_size_; ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
                 cblas_saxpy(
-                    kOutputDimensions, 1.0,
+                    kAffineOutputDimensions, 1.0,
                     &gradients[batch_offset], 1, biases_diff_, 1
                 );
             }
 
             cblas_sgemm(
                 CblasRowMajor, CblasTrans, CblasNoTrans,
-                kOutputDimensions, kInputDimensions, batch_size_,
-                1.0,
+                kAffineOutputDimensions, kInputDimensions, batch_size_,
+                kAffineRatio,
                 gradients, kOutputDimensions,
                 batch_input_, kInputDimensions,
                 momentum_,
@@ -193,8 +210,8 @@ namespace Eval::NNUE {
             Blas::sgemm(
                 thread_pool,
                 Blas::MatrixLayout::ColMajor, Blas::MatrixTranspose::NoTrans, Blas::MatrixTranspose::NoTrans,
-                kInputDimensions, batch_size_, kOutputDimensions,
-                1.0,
+                kInputDimensions, batch_size_, kAffineOutputDimensions,
+                kAffineRatio,
                 weights_, kInputDimensions,
                 gradients, kOutputDimensions,
                 0.0,
@@ -204,20 +221,20 @@ namespace Eval::NNUE {
 
             Blas::sscal(
                 thread_pool,
-                kOutputDimensions, momentum_, biases_diff_, 1
+                kAffineOutputDimensions, momentum_, biases_diff_, 1
             );
 
             for (IndexType b = 0; b < batch_size_; ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
-                Blas::saxpy(thread_pool, kOutputDimensions, 1.0,
+                Blas::saxpy(thread_pool, kAffineOutputDimensions, 1.0,
                           &gradients[batch_offset], 1, biases_diff_, 1);
             }
 
             Blas::sgemm(
                 thread_pool,
                 Blas::MatrixLayout::RowMajor, Blas::MatrixTranspose::Trans, Blas::MatrixTranspose::NoTrans,
-                kOutputDimensions, kInputDimensions, batch_size_,
-                1.0,
+                kAffineOutputDimensions, kInputDimensions, batch_size_,
+                kAffineRatio,
                 gradients, kOutputDimensions,
                 batch_input_, kInputDimensions,
                 momentum_,
@@ -226,19 +243,35 @@ namespace Eval::NNUE {
 
 #endif
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 const double d = local_learning_rate * biases_diff_[i];
                 biases_[i] -= d;
                 abs_biases_diff_sum_ += std::abs(d);
             }
-            num_biases_diffs_ += kOutputDimensions;
+            num_biases_diffs_ += kAffineOutputDimensions;
 
-            for (IndexType i = 0; i < kOutputDimensions * kInputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions * kInputDimensions; ++i) {
                 const double d = local_learning_rate * weights_diff_[i];
                 weights_[i] -= d;
                 abs_weights_diff_sum_ += std::abs(d);
             }
-            num_weights_diffs_ += kOutputDimensions * kInputDimensions;
+            num_weights_diffs_ += kAffineOutputDimensions * kInputDimensions;
+
+            if constexpr (kSkip)
+            {
+                for (IndexType b = 0; b < batch_size_; ++b) {
+                    const IndexType batch_offset = kOutputDimensions * b + kAffineOutputDimensions;
+#if defined(USE_BLAS)
+                    cblas_saxpy(
+                        kInputDimensions, 1.0f - kAffineRatio, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
+                    );
+#else
+                    Blas::saxpy(
+                        kInputDimensions, 1.0f - kAffineRatio, &gradients[batch_offset], 1, &gradients_[kInputDimensions * b], 1
+                    );
+#endif
+                }
+            }
 
             previous_layer_trainer_->backpropagate(thread_pool, gradients_.data(), learning_rate);
         }
@@ -298,17 +331,17 @@ namespace Eval::NNUE {
 
         // Weight saturation and parameterization
         void quantize_parameters() {
-            for (IndexType i = 0; i < kOutputDimensions * kInputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions * kInputDimensions; ++i) {
                 weights_[i] = std::max(-kMaxWeightMagnitude,
                                        std::min(+kMaxWeightMagnitude, weights_[i]));
             }
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 target_layer_->biases_[i] =
                     round<typename LayerType::BiasType>(biases_[i] * kBiasScale);
             }
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 const auto offset = kInputDimensions * i;
                 const auto padded_offset = LayerType::kPaddedInputDimensions * i;
                 for (IndexType j = 0; j < kInputDimensions; ++j) {
@@ -321,12 +354,12 @@ namespace Eval::NNUE {
 
         // read parameterized integer
         void dequantize_parameters() {
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 biases_[i] = static_cast<LearnFloatType>(
                     target_layer_->biases_[i] / kBiasScale);
             }
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 const auto offset = kInputDimensions * i;
                 const auto padded_offset = LayerType::kPaddedInputDimensions * i;
                 for (IndexType j = 0; j < kInputDimensions; ++j) {
@@ -346,6 +379,11 @@ namespace Eval::NNUE {
         // number of input/output dimensions
         static constexpr IndexType kInputDimensions = LayerType::kInputDimensions;
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
+
+        static constexpr IndexType kSkip = LayerType::kSkip;
+        static constexpr IndexType kAffineOutputDimensions = LayerType::kAffineOutputDimensions;
+
+        static constexpr LearnFloatType kAffineRatio = static_cast<LearnFloatType>(kAffineOutputDimensions) / kOutputDimensions;
 
         // If the output dimensionality is 1, the output layer
         static constexpr bool kIsOutputLayer = kOutputDimensions == 1;
@@ -382,12 +420,12 @@ namespace Eval::NNUE {
         LayerType* const target_layer_;
 
         // parameter
-        alignas(kCacheLineSize) LearnFloatType biases_[kOutputDimensions];
-        alignas(kCacheLineSize) LearnFloatType weights_[kOutputDimensions * kInputDimensions];
+        alignas(kCacheLineSize) LearnFloatType biases_[kAffineOutputDimensions];
+        alignas(kCacheLineSize) LearnFloatType weights_[kAffineOutputDimensions * kInputDimensions];
 
         // Buffer used for updating parameters
-        alignas(kCacheLineSize) LearnFloatType biases_diff_[kOutputDimensions];
-        alignas(kCacheLineSize) LearnFloatType weights_diff_[kOutputDimensions * kInputDimensions];
+        alignas(kCacheLineSize) LearnFloatType biases_diff_[kAffineOutputDimensions];
+        alignas(kCacheLineSize) LearnFloatType weights_diff_[kAffineOutputDimensions * kInputDimensions];
 
         // Forward propagation buffer
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> output_;

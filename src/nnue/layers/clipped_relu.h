@@ -46,6 +46,10 @@ namespace Eval::NNUE::Layers {
 
         static constexpr IndexType kOutputDimensions = kInputDimensions;
 
+        static constexpr IndexType kReluDimensions = PreviousLayer::kReluDimensions;
+        static constexpr IndexType kCopyDimensions = kOutputDimensions - kReluDimensions;
+
+
         // Size of forward propagation buffer used in this layer
         static constexpr std::size_t kSelfBufferSize =
             ceil_to_multiple(kOutputDimensions * sizeof(OutputType), kCacheLineSize);
@@ -64,8 +68,16 @@ namespace Eval::NNUE::Layers {
         }
 
         static std::string get_name() {
-            return "ClippedReLU[" +
-                std::to_string(kOutputDimensions) + "]";
+            if (kReluDimensions != kOutputDimensions)
+            {
+                return "ClippedReLU[" +
+                    std::to_string(kReluDimensions) +
+                    "+" + std::to_string(kCopyDimensions) + "]";
+            }
+            {
+                return "ClippedReLU[" +
+                    std::to_string(kOutputDimensions) + "]";
+            }
         }
 
         // A string that represents the structure from the input layer to this layer
@@ -102,7 +114,7 @@ namespace Eval::NNUE::Layers {
             const auto output = reinterpret_cast<OutputType*>(buffer);
 
 #if defined(USE_AVX2)
-            constexpr IndexType kNumChunks = kInputDimensions / kSimdWidth;
+            constexpr IndexType kNumChunks = kReluDimensions / kSimdWidth;
             const __m256i kZero = _mm256_setzero_si256();
             const __m256i kOffsets = _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0);
             const auto in = reinterpret_cast<const __m256i*>(input);
@@ -121,7 +133,7 @@ namespace Eval::NNUE::Layers {
             constexpr IndexType kStart = kNumChunks * kSimdWidth;
 
 #elif defined(USE_SSE2)
-            constexpr IndexType kNumChunks = kInputDimensions / kSimdWidth;
+            constexpr IndexType kNumChunks = kReluDimensions / kSimdWidth;
 
 #if defined(USE_SSE41)
             const __m128i kZero = _mm_setzero_si128();
@@ -152,7 +164,7 @@ namespace Eval::NNUE::Layers {
             constexpr IndexType kStart = kNumChunks * kSimdWidth;
 
 #elif defined(USE_MMX)
-            constexpr IndexType kNumChunks = kInputDimensions / kSimdWidth;
+            constexpr IndexType kNumChunks = kReluDimensions / kSimdWidth;
             const __m64 k0x80s = _mm_set1_pi8(-128);
             const auto in = reinterpret_cast<const __m64*>(input);
             const auto out = reinterpret_cast<__m64*>(output);
@@ -170,7 +182,7 @@ namespace Eval::NNUE::Layers {
             constexpr IndexType kStart = kNumChunks * kSimdWidth;
 
 #elif defined(USE_NEON)
-            constexpr IndexType kNumChunks = kInputDimensions / (kSimdWidth / 2);
+            constexpr IndexType kNumChunks = kReluDimensions / (kSimdWidth / 2);
             const int8x8_t kZero = {0};
             const auto in = reinterpret_cast<const int32x4_t*>(input);
             const auto out = reinterpret_cast<int8x8_t*>(output);
@@ -186,10 +198,20 @@ namespace Eval::NNUE::Layers {
             constexpr IndexType kStart = 0;
 #endif
 
-            for (IndexType i = kStart; i < kInputDimensions; ++i) {
+            for (IndexType i = kStart; i < kReluDimensions; ++i) {
                 output[i] = static_cast<OutputType>(
                     std::max(0, std::min(127, input[i] >> kWeightScaleBits)));
             }
+
+            if constexpr (kReluDimensions != kOutputDimensions)
+            {
+                const auto inp = reinterpret_cast<const InputType*>(input);
+                for(IndexType i = kReluDimensions; i < kOutputDimensions; ++i)
+                {
+                    output[i] = inp[i];
+                }
+            }
+
             return output;
         }
 

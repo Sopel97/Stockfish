@@ -42,8 +42,9 @@ namespace Eval::NNUE {
         // Define network structure
         using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
-        using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
-        using OutputLayer = AffineTransform<HiddenLayer2, 1>;
+        using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32, true>>;
+        using HiddenLayer3 = ClippedReLU<AffineTransform<HiddenLayer2, 32, true>>;
+        using OutputLayer = AffineTransform<HiddenLayer3, 1>;
 
     }  // namespace Layers
 

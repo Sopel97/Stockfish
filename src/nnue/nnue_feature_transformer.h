@@ -106,6 +106,8 @@ namespace Eval::NNUE {
         static constexpr IndexType kInputDimensions = RawFeatures::kDimensions;
         static constexpr IndexType kOutputDimensions = kHalfDimensions * 2;
 
+        static constexpr IndexType kReluDimensions = kOutputDimensions;
+
         // Size of forward propagation buffer
         static constexpr std::size_t kBufferSize =
             kOutputDimensions * sizeof(OutputType);

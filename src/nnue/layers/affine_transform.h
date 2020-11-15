@@ -30,7 +30,7 @@
 namespace Eval::NNUE::Layers {
 
     // Affine transformation layer
-    template <typename PreviousLayer, IndexType OutputDimensions>
+    template <typename PreviousLayer, IndexType OutputDimensions, bool Skip = false>
     class AffineTransform {
     public:
         // Input/output type
@@ -40,11 +40,18 @@ namespace Eval::NNUE::Layers {
 
         static_assert(std::is_same<InputType, std::uint8_t>::value, "");
 
+        static constexpr bool kSkip = Skip;
+
         // Number of input/output dimensions
         static constexpr IndexType kInputDimensions =
             PreviousLayer::kOutputDimensions;
 
-        static constexpr IndexType kOutputDimensions = OutputDimensions;
+        static constexpr IndexType kAffineOutputDimensions = OutputDimensions;
+        static constexpr IndexType kOutputDimensions =
+            kAffineOutputDimensions
+            + (kSkip ? kInputDimensions : 0);
+
+        static constexpr IndexType kReluDimensions = kAffineOutputDimensions;
 
         static constexpr IndexType kPaddedInputDimensions =
             ceil_to_multiple<IndexType>(kInputDimensions, kMaxSimdWidth);
@@ -69,9 +76,19 @@ namespace Eval::NNUE::Layers {
         }
 
         static std::string get_name() {
-            return "AffineTransform[" +
-                std::to_string(kOutputDimensions) + "<-" +
-                std::to_string(kInputDimensions) + "]";
+            if (kSkip)
+            {
+                return "AffineTransform[" +
+                    std::to_string(kAffineOutputDimensions) + "+" +
+                    std::to_string(kInputDimensions) +
+                    "<-" + std::to_string(kInputDimensions) + "]";
+            }
+            else
+            {
+                return "AffineTransform[" +
+                    std::to_string(kOutputDimensions) + "<-" +
+                    std::to_string(kInputDimensions) + "]";
+            }
         }
 
         // A string that represents the structure from the input layer to this layer
@@ -94,10 +111,10 @@ namespace Eval::NNUE::Layers {
             if (!previous_layer_.read_parameters(stream))
                 return false;
 
-            for (std::size_t i = 0; i < kOutputDimensions; ++i)
+            for (std::size_t i = 0; i < kAffineOutputDimensions; ++i)
                 biases_[i] = read_little_endian<BiasType>(stream);
 
-            for (std::size_t i = 0; i < kOutputDimensions * kPaddedInputDimensions; ++i)
+            for (std::size_t i = 0; i < kAffineOutputDimensions * kPaddedInputDimensions; ++i)
                 weights_[i] = read_little_endian<WeightType>(stream);
 
             return !stream.fail();
@@ -109,10 +126,10 @@ namespace Eval::NNUE::Layers {
                 return false;
 
             stream.write(reinterpret_cast<const char*>(biases_),
-                kOutputDimensions * sizeof(BiasType));
+                kAffineOutputDimensions * sizeof(BiasType));
 
             stream.write(reinterpret_cast<const char*>(weights_),
-                kOutputDimensions * kPaddedInputDimensions *
+                kAffineOutputDimensions * kPaddedInputDimensions *
                 sizeof(WeightType));
 
             return !stream.fail();
@@ -159,7 +176,7 @@ namespace Eval::NNUE::Layers {
             const auto input_vector = reinterpret_cast<const int8x8_t*>(input);
 #endif
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
+            for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
                 const IndexType offset = i * kPaddedInputDimensions;
 
 #if defined(USE_AVX512)
@@ -302,9 +319,20 @@ namespace Eval::NNUE::Layers {
 #endif
 
             }
+
+            if constexpr (kSkip)
+            {
+                const auto inp = reinterpret_cast<const InputType*>(input);
+                for (IndexType i = 0; i < kInputDimensions; ++i)
+                {
+                    output[kAffineOutputDimensions + i] = static_cast<OutputType>(inp[i]);
+                }
+            }
+
 #if defined(USE_MMX)
             _mm_empty();
 #endif
+
             return output;
         }
 
@@ -317,8 +345,8 @@ namespace Eval::NNUE::Layers {
 
         PreviousLayer previous_layer_;
 
-        alignas(kCacheLineSize) BiasType biases_[kOutputDimensions];
-        alignas(kCacheLineSize) WeightType weights_[kOutputDimensions * kPaddedInputDimensions];
+        alignas(kCacheLineSize) BiasType biases_[kAffineOutputDimensions];
+        alignas(kCacheLineSize) WeightType weights_[kAffineOutputDimensions * kPaddedInputDimensions];
     };
 
 }  // namespace Eval::NNUE::Layers
