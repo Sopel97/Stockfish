@@ -44,7 +44,8 @@ namespace Eval::NNUE {
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
         using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32, true>>;
         using HiddenLayer3 = ClippedReLU<AffineTransform<HiddenLayer2, 32, true>>;
-        using OutputLayer = AffineTransform<HiddenLayer3, 1>;
+        using HiddenLayer4 = ClippedReLU<AffineTransform<HiddenLayer3, 32, true>>;
+        using OutputLayer = AffineTransform<HiddenLayer4, 1>;
 
     }  // namespace Layers
 
