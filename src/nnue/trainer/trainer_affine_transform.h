@@ -84,7 +84,9 @@ namespace Eval::NNUE {
                           sum += weight;
                       }
 
-                    biases_[i] = static_cast<LearnFloatType>(0.5 - 0.5 * sum);
+                    biases_[i] = kIsOutputLayer ?
+                        0.0 :
+                        static_cast<LearnFloatType>(0.5 - 0.5 * sum);
                 }
             }
 
@@ -201,7 +203,6 @@ namespace Eval::NNUE {
                 &gradients_[0], kInputDimensions
             );
 
-
             Blas::sscal(
                 thread_pool,
                 kOutputDimensions, momentum_, biases_diff_, 1
@@ -226,10 +227,13 @@ namespace Eval::NNUE {
 
 #endif
 
-            for (IndexType i = 0; i < kOutputDimensions; ++i) {
-                const double d = local_learning_rate * biases_diff_[i];
-                biases_[i] -= d;
-                abs_biases_diff_sum_ += std::abs(d);
+            if (!kIsOutputLayer)
+            {
+                for (IndexType i = 0; i < kOutputDimensions; ++i) {
+                    const double d = local_learning_rate * biases_diff_[i];
+                    biases_[i] -= d;
+                    abs_biases_diff_sum_ += std::abs(d);
+                }
             }
             num_biases_diffs_ += kOutputDimensions;
 
@@ -367,7 +371,7 @@ namespace Eval::NNUE {
             std::numeric_limits<std::int8_t>::max();
 
         static constexpr LearnFloatType kBiasScale = kIsOutputLayer ?
-            (kPonanzaConstant * FV_SCALE) :
+            ((1 << kWeightScaleBits) * (kPonanzaConstant * FV_SCALE)) :
             ((1 << kWeightScaleBits) * kActivationScale);
 
         static constexpr LearnFloatType kWeightScale = kBiasScale / kActivationScale;

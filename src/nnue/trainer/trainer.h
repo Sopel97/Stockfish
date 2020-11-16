@@ -15,7 +15,7 @@ static_assert(std::is_same<LearnFloatType, float>::value, "");
 namespace Eval::NNUE {
 
     // Ponanza constant used in the relation between evaluation value and winning percentage
-    constexpr double kPonanzaConstant = 600.0;
+    constexpr double kPonanzaConstant = 512.0;
 
     // Class that represents one index of learning feature
     class TrainingFeature {

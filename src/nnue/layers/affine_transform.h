@@ -165,6 +165,21 @@ namespace Eval::NNUE::Layers {
             const auto input_vector = reinterpret_cast<const int8x8_t*>(input);
 #endif
 
+            if constexpr (OutputDimensions == 1)
+            {
+                for (IndexType i = 0; i < kOutputDimensions; ++i) {
+                    const IndexType offset = i * kPaddedInputDimensions;
+                    OutputType sum = biases_[i];
+                    for (IndexType j = 0; j < kInputDimensions; ++j) {
+                        sum += weights_[offset + j] * input[j];
+                    }
+
+                    static_assert(-1 >> 1 == -1);
+                    output[i] = sum >> kWeightScaleBits;
+                }
+                return output;
+            }
+
             for (IndexType i = 0; i < kOutputDimensions; ++i) {
                 const IndexType offset = i * kPaddedInputDimensions;
 
@@ -316,7 +331,7 @@ namespace Eval::NNUE::Layers {
 
     private:
         using BiasType = OutputType;
-        using WeightType = std::int8_t;
+        using WeightType = std::conditional_t<OutputDimensions == 1, std::int16_t, std::int8_t>;
 
         // Make the learning class a friend
         friend class Trainer<AffineTransform>;
