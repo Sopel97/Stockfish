@@ -650,7 +650,7 @@ namespace Learner
 
                 local_loss_sum += loss;
 
-                Eval::NNUE::add_example(pos, rootColor, shallow_value, ps, 1.0);
+                Eval::NNUE::add_example(pos, rootColor, shallow_value, ps, 1.0, prng.rand(2));
             };
 
             if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))

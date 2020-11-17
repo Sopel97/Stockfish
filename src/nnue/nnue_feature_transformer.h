@@ -314,7 +314,7 @@ namespace Eval::NNUE {
             for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
                 Features::IndexList active_indices[2];
                 RawFeatures::append_active_indices(pos, kRefreshTriggers[i],
-                                                   active_indices);
+                                                   active_indices, false);
                 for (Color perspective : { WHITE, BLACK }) {
 #ifdef TILING
                     for (unsigned j = 0; j < kHalfDimensions / kTileHeight; ++j) {

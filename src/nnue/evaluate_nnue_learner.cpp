@@ -129,7 +129,8 @@ namespace Eval::NNUE {
         Color rootColor,
         Value discrete_nn_eval,
         const Learner::PackedSfenValue& psv,
-        double weight) {
+        double weight,
+        bool mirror) {
 
         Example example;
         if (rootColor == pos.side_to_move()) {
@@ -144,7 +145,7 @@ namespace Eval::NNUE {
 
         Features::IndexList active_indices[2];
         for (const auto trigger : kRefreshTriggers) {
-            RawFeatures::append_active_indices(pos, trigger, active_indices);
+            RawFeatures::append_active_indices(pos, trigger, active_indices, mirror);
         }
 
         if (pos.side_to_move() != WHITE) {

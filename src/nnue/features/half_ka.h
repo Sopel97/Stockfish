@@ -56,7 +56,8 @@ namespace Eval::NNUE::Features {
         static void append_active_indices(
             const Position& pos,
             Color perspective,
-            IndexList* active);
+            IndexList* active,
+            bool mirror);
 
         // Get a list of indices for recently changed features
         static void append_changed_indices(
@@ -67,7 +68,7 @@ namespace Eval::NNUE::Features {
 
     private:
         // Index of a feature for a given king position and another piece on some square
-        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k);
+        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k, bool mirror);
     };
 
 }  // namespace Eval::NNUE::Features

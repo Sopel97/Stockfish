@@ -30,7 +30,8 @@ namespace Eval::NNUE {
         Color rootColor,
         Value discrete_nn_eval,
     	const Learner::PackedSfenValue& psv,
-        double weight);
+        double weight,
+        bool mirror);
 
     // update the evaluation function parameters
     void update_parameters(

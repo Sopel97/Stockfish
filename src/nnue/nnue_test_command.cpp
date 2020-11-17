@@ -48,7 +48,7 @@ namespace Eval::NNUE {
                 for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
                     Features::IndexList active_indices[2];
                     RawFeatures::append_active_indices(position, kRefreshTriggers[i],
-                                                     active_indices);
+                                                     active_indices, false);
 
                     for (const auto perspective : Colors) {
                         for (const auto index : active_indices[perspective]) {

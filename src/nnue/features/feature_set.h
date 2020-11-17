@@ -96,11 +96,11 @@ namespace Eval::NNUE::Features {
         // Get a list of indices for active features
         template <typename IndexListType>
         static void append_active_indices(
-            const Position& pos, TriggerEvent trigger, IndexListType active[2]) {
+            const Position& pos, TriggerEvent trigger, IndexListType active[2], bool mirror) {
 
             for (Color perspective : { WHITE, BLACK }) {
                 Derived::collect_active_indices(
-                    pos, trigger, perspective, &active[perspective]);
+                    pos, trigger, perspective, &active[perspective], mirror);
             }
         }
 
@@ -141,7 +141,7 @@ namespace Eval::NNUE::Features {
 
                 if (reset[perspective]) {
                     Derived::collect_active_indices(
-                        pos, trigger, perspective, &added[perspective]);
+                        pos, trigger, perspective, &added[perspective], false);
                 } else {
                     Derived::collect_changed_indices(
                         pos, trigger, perspective,
@@ -194,12 +194,13 @@ namespace Eval::NNUE::Features {
             const Position& pos,
             const TriggerEvent trigger,
             const Color perspective,
-            IndexListType* const active) {
+            IndexListType* const active,
+            bool mirror) {
 
-            Tail::collect_active_indices(pos, trigger, perspective, active);
+            Tail::collect_active_indices(pos, trigger, perspective, active, mirror);
             if (Head::kRefreshTrigger == trigger) {
                 const auto start = active->size();
-                Head::append_active_indices(pos, perspective, active);
+                Head::append_active_indices(pos, perspective, active, mirror);
 
                 for (auto i = start; i < active->size(); ++i) {
                     (*active)[i] += Tail::kDimensions;
@@ -271,10 +272,11 @@ namespace Eval::NNUE::Features {
             const Position& pos,
             const TriggerEvent trigger,
             const Color perspective,
-            IndexList* const active) {
+            IndexList* const active,
+            bool mirror) {
 
             if (FeatureType::kRefreshTrigger == trigger) {
-              FeatureType::append_active_indices(pos, perspective, active);
+              FeatureType::append_active_indices(pos, perspective, active, mirror);
             }
         }
 
