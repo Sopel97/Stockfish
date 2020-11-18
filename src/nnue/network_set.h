@@ -35,6 +35,10 @@
 #include <cstring>
 #include <utility>
 
+#ifndef TRAINED_NET_ID
+#define TRAINED_NET_ID 0
+#endif
+
 namespace Eval::NNUE {
 
     template <typename T>

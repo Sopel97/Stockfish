@@ -3,6 +3,8 @@
 #ifndef K_P_CR_256X2_32_32_H
 #define K_P_CR_256X2_32_32_H
 
+#include "nnue/network_set.h"
+
 #include "nnue/features/feature_set.h"
 #include "nnue/features/k.h"
 #include "nnue/features/p.h"
@@ -31,7 +33,10 @@ namespace Eval::NNUE {
 
     }  // namespace Layers
 
-    using Network = Layers::OutputLayer;
+    using Network = NetworkSet<Layers::OutputLayer>;
+
+    constexpr int kTrainedNetworkId = TRAINED_NET_ID;
+    constexpr bool kFreezeFeatureTransformer = false;
 
 }  // namespace Eval::NNUE
 #endif // K_P_CR_256X2_32_32_H

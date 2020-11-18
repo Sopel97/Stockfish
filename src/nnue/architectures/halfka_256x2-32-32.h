@@ -21,6 +21,8 @@
 #ifndef NNUE_HALFKA_256X2_32_32_H_INCLUDED
 #define NNUE_HALFKA_256X2_32_32_H_INCLUDED
 
+#include "nnue/network_set.h"
+
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_ka.h"
 
@@ -47,7 +49,10 @@ namespace Eval::NNUE {
 
     }  // namespace Layers
 
-    using Network = Layers::OutputLayer;
+    using Network = NetworkSet<Layers::OutputLayer>;
+
+    constexpr int kTrainedNetworkId = TRAINED_NET_ID;
+    constexpr bool kFreezeFeatureTransformer = false;
 
 }  // namespace Eval::NNUE
 
