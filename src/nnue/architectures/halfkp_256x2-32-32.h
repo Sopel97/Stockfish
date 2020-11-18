@@ -21,6 +21,8 @@
 #ifndef NNUE_HALFKP_256X2_32_32_H_INCLUDED
 #define NNUE_HALFKP_256X2_32_32_H_INCLUDED
 
+#include "nnue/network_set.h"
+
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_kp.h"
 
@@ -45,9 +47,16 @@ namespace Eval::NNUE {
         using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
         using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 
+        // Define network structure
+        using InputLayerB = InputSlice<kTransformedFeatureDimensions * 2>;
+        using OutputLayerB = AffineTransform<InputLayerB, 1>;
+
     }  // namespace Layers
 
-    using Network = Layers::OutputLayer;
+    using Network = NetworkSet<Layers::OutputLayer, Layers::OutputLayerB>;
+
+    constexpr int kTrainedNetworkId = 0;
+    constexpr bool kFreezeFeatureTransformer = kTrainedNetworkId != 0;
 
 }  // namespace Eval::NNUE
 

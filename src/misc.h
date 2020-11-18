@@ -34,6 +34,7 @@
 #include <deque>
 
 #include "types.h"
+#include "bitboard.h"
 
 const std::string engine_info(bool to_uci = false);
 const std::string compiler_info();
@@ -62,6 +63,23 @@ struct HashTable {
 
 private:
   std::vector<Entry> table = std::vector<Entry>(Size); // Allocate on the heap
+};
+
+// Deleter for automating release of memory area
+template <typename T>
+struct AlignedDeleter {
+    void operator()(T* ptr) const {
+        ptr->~T();
+        std_aligned_free(ptr);
+    }
+};
+
+template <typename T>
+struct LargePageDeleter {
+    void operator()(T* ptr) const {
+        ptr->~T();
+        aligned_large_pages_free(ptr);
+    }
 };
 
 

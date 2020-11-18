@@ -57,7 +57,7 @@ namespace Eval::NNUE {
     LargePagePtr<FeatureTransformer> feature_transformer;
 
     // Evaluation function
-    AlignedPtr<Network> network;
+    Network networks;
 
     // Evaluation function file name
     std::string fileName;
@@ -80,63 +80,11 @@ namespace Eval::NNUE {
     UseNNUEMode useNNUE;
     std::string eval_file_loaded = "None";
 
-    namespace Detail {
-
-        // Initialize the evaluation function parameters
-        template <typename T>
-        void initialize(AlignedPtr<T>& pointer) {
-
-            pointer.reset(reinterpret_cast<T*>(std_aligned_alloc(alignof(T), sizeof(T))));
-            std::memset(pointer.get(), 0, sizeof(T));
-        }
-
-        template <typename T>
-        void initialize(LargePagePtr<T>& pointer) {
-
-            static_assert(alignof(T) <= 4096, "aligned_large_pages_alloc() may fail for such a big alignment requirement of T");
-
-            pointer.reset(reinterpret_cast<T*>(aligned_large_pages_alloc(sizeof(T))));
-            std::memset(pointer.get(), 0, sizeof(T));
-        }
-
-        // Read evaluation function parameters
-        template <typename T>
-        bool read_parameters(std::istream& stream, T& reference) {
-
-            std::uint32_t header;
-            header = read_little_endian<std::uint32_t>(stream);
-
-            if (!stream || header != T::get_hash_value())
-                return false;
-
-            return reference.read_parameters(stream);
-        }
-
-        // write evaluation function parameters
-        template <typename T>
-        bool write_parameters(std::ostream& stream, const AlignedPtr<T>& pointer) {
-            constexpr std::uint32_t header = T::get_hash_value();
-
-            stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
-
-            return pointer->write_parameters(stream);
-        }
-
-        template <typename T>
-        bool write_parameters(std::ostream& stream, const LargePagePtr<T>& pointer) {
-            constexpr std::uint32_t header = T::get_hash_value();
-
-            stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
-
-            return pointer->write_parameters(stream);
-        }
-    }  // namespace Detail
-
     // Initialize the evaluation function parameters
     void initialize() {
 
         Detail::initialize(feature_transformer);
-        Detail::initialize(network);
+        networks.initialize();
     }
 
     // Read network header
@@ -186,7 +134,7 @@ namespace Eval::NNUE {
         if (!Detail::read_parameters(stream, *feature_transformer))
             return false;
 
-        if (!Detail::read_parameters(stream, *network))
+        if (!networks.read_parameters(stream))
             return false;
 
         return stream && stream.peek() == std::ios::traits_type::eof();
@@ -200,24 +148,20 @@ namespace Eval::NNUE {
         if (!Detail::write_parameters(stream, feature_transformer))
             return false;
 
-        if (!Detail::write_parameters(stream, network))
+        if (!networks.write_parameters(stream))
             return false;
 
         return !stream.fail();
     }
     // Evaluation function. Perform differential calculation.
-    Value evaluate(const Position& pos) {
+    Value evaluate(const Position& pos, int i) {
 
         alignas(kCacheLineSize) TransformedFeatureType
             transformed_features[FeatureTransformer::kBufferSize];
 
         feature_transformer->transform(pos, transformed_features);
 
-        alignas(kCacheLineSize) char buffer[Network::kBufferSize];
-
-        const auto output = network->propagate(transformed_features, buffer);
-
-        return static_cast<Value>(output[0] / FV_SCALE);
+        return networks.evaluate(transformed_features, i);
     }
 
     // Load eval, from a file stream or a memory stream

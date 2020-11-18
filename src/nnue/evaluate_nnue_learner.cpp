@@ -36,8 +36,10 @@ namespace Eval::NNUE {
         // random number generator
         std::mt19937 rng;
 
+        using TrainedNetwork = typename Network::NetworkTypeById<kTrainedNetworkId>;
+
         // learner
-        std::shared_ptr<Trainer<Network>> trainer;
+        std::shared_ptr<Trainer<TrainedNetwork>> trainer;
 
         // Tell the learner options such as hyperparameters
         void send_messages(std::vector<Message> messages) {
@@ -70,9 +72,10 @@ namespace Eval::NNUE {
         out << std::endl;
 
         assert(feature_transformer);
-        assert(network);
 
-        trainer = Trainer<Network>::create(network.get(), feature_transformer.get());
+        auto& network = networks.get<kTrainedNetworkId>();
+
+        trainer = Trainer<TrainedNetwork>::create(&network, feature_transformer.get());
         rng.seed(PRNG(seed).rand<uint64_t>());
 
         if (Options["SkipLoadingEval"]) {

@@ -20,6 +20,7 @@
 #define NNUE_EVALUATE_NNUE_H_INCLUDED
 
 #include "nnue_feature_transformer.h"
+#include "network_set.h"
 
 #include "misc.h"
 
@@ -39,23 +40,6 @@ namespace Eval::NNUE {
     constexpr std::uint32_t kHashValue =
         FeatureTransformer::get_hash_value() ^ Network::get_hash_value();
 
-    // Deleter for automating release of memory area
-    template <typename T>
-    struct AlignedDeleter {
-        void operator()(T* ptr) const {
-            ptr->~T();
-            std_aligned_free(ptr);
-        }
-    };
-
-    template <typename T>
-    struct LargePageDeleter {
-        void operator()(T* ptr) const {
-            ptr->~T();
-            aligned_large_pages_free(ptr);
-        }
-    };
-
     template <typename T>
     using AlignedPtr = std::unique_ptr<T, AlignedDeleter<T>>;
 
@@ -66,7 +50,7 @@ namespace Eval::NNUE {
     extern LargePagePtr<FeatureTransformer> feature_transformer;
 
     // Evaluation function
-    extern AlignedPtr<Network> network;
+    extern Network networks;
 
     // Evaluation function file name
     extern std::string fileName;
@@ -97,7 +81,7 @@ namespace Eval::NNUE {
     // write evaluation function parameters
     bool write_parameters(std::ostream& stream);
 
-    Value evaluate(const Position& pos);
+    Value evaluate(const Position& pos, int i);
     bool load_eval(std::string name, std::istream& stream);
     void init();
 
