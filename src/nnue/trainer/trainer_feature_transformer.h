@@ -72,6 +72,10 @@ namespace Eval::NNUE {
         // Initialize the parameters with random numbers
         template <typename RNG>
         void initialize(RNG& rng) {
+            // We do not want to initialize the feature transformer after the first run ever.
+            if (!Options["SkipLoadingEval"])
+                return;
+
             std::fill(std::begin(weights_), std::end(weights_), +kZero);
 
             const double kSigma = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);

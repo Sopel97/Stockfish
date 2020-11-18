@@ -93,6 +93,10 @@ void init(OptionsMap& o) {
   // It ends abnormally before executing this command.
   // Therefore, with this hidden option, you can suppress the loading of the evaluation function when ucinewgame,
   // Hit the test eval convert command.
+  // Use this for training a second network in a multinet.
+  // This is needed because SkipLoadingEval true prevents
+  // initialization.
+  o["InitializeSubnetwork"] << Option(false);
   o["SkipLoadingEval"]       << Option(false);
   // When learning the evaluation function, you can change the folder to save the evaluation function.
   // Evalsave by default. This folder shall be prepared in advance.

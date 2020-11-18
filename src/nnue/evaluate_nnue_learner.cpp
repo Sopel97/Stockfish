@@ -89,7 +89,7 @@ namespace Eval::NNUE {
         trainer = Trainer<TrainedNetwork>::create(&network, feature_transformer.get());
         rng.seed(PRNG(seed).rand<uint64_t>());
 
-        if (Options["SkipLoadingEval"]) {
+        if (Options["SkipLoadingEval"] || Options["InitializeSubnetwork"]) {
             out << "INFO (initialize_training): Performing random net initialization.\n";
             trainer->initialize(rng);
         }
