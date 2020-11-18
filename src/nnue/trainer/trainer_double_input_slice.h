@@ -1,6 +1,10 @@
 ﻿#ifndef _NNUE_TRAINER_DOUBLE_INPUT_SLICE_H_
 #define _NNUE_TRAINER_DOUBLE_INPUT_SLICE_H_
 
+#include "shared_input_trainer.h"
+
+#include "nnue/layers/double_input_slice.h"
+
 #include "trainer.h"
 
 #include "extra/stockfish_blas.h"
@@ -137,7 +141,7 @@ namespace Eval::NNUE {
         static constexpr IndexType kHalfOutputDimensions = HalfOutputDimensions;
         static constexpr IndexType kOutputDimensions = HalfOutputDimensions * 2;
         static_assert(Offset + Stride + kHalfOutputDimensions <= kInputDimensions, "");
-        static_assert(Offset + kHalfOutputDimensions <= Stride)
+        static_assert(Offset + kHalfOutputDimensions <= Stride);
 
         // number of samples in mini-batch
         IndexType batch_size_;
