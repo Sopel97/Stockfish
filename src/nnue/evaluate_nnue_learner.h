@@ -5,10 +5,21 @@
 
 #include "misc.h"
 
+#include "trainer/features/factorizer.h"
+
+#include <type_traits>
+
 struct ThreadPool;
 
 // Interface used for learning NNUE evaluation function
 namespace Eval::NNUE {
+
+    using TrainedNetwork = typename Network::NetworkTypeById<kTrainedNetworkId>;
+    using TrainerFeatures =
+        std::conditional_t<
+            kFreezeFeatureTransformer,
+            Features::ExplicitNoFactorizer<RawFeatures>,
+            Features::Factorizer<RawFeatures>>;
 
     // Initialize learning
     void initialize_training(

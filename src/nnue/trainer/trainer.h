@@ -87,7 +87,7 @@ namespace Eval::NNUE {
     };
 
     // determine whether to accept the message
-    bool receive_message(const std::string& name, Message* message) {
+    inline bool receive_message(const std::string& name, Message* message) {
         const auto subscript = "[" + std::to_string(message->num_peekers) + "]";
 
         if (message->name.substr(0, name.size() + 1) == name + "[") {

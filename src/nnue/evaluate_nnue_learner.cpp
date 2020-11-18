@@ -36,8 +36,6 @@ namespace Eval::NNUE {
         // random number generator
         std::mt19937 rng;
 
-        using TrainedNetwork = typename Network::NetworkTypeById<kTrainedNetworkId>;
-
         // learner
         std::shared_ptr<Trainer<TrainedNetwork>> trainer;
 
@@ -67,7 +65,7 @@ namespace Eval::NNUE {
         out << std::endl;
 
         out << "Factorizers:\n"
-            << Features::Factorizer<RawFeatures>::get_factorizers_string() << std::endl;
+            << TrainerFeatures::get_factorizers_string() << std::endl;
 
         out << std::endl;
 
@@ -157,9 +155,9 @@ namespace Eval::NNUE {
         for (const auto color : Colors) {
             std::vector<TrainingFeature> training_features;
             for (const auto base_index : active_indices[color]) {
-                static_assert(Features::Factorizer<RawFeatures>::get_dimensions() <
+                static_assert(TrainerFeatures::get_dimensions() <
                               (1 << TrainingFeature::kIndexBits), "");
-                Features::Factorizer<RawFeatures>::append_training_features(
+                TrainerFeatures::append_training_features(
                     base_index, &training_features);
             }
 

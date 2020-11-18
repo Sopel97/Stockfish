@@ -345,59 +345,62 @@ namespace Eval::NNUE {
 
             num_total_ += batch_->size() * kOutputDimensions;
 
-            // Since the weight matrix updates only the columns corresponding to the features that appeared in the input,
-            // Correct the learning rate and adjust the scale without using momentum
-            const LearnFloatType effective_learning_rate =
-                static_cast<LearnFloatType>(local_learning_rate / (1.0 - momentum_));
-
+            if constexpr (!kFreezeFeatureTransformer)
+            {
 #if defined(USE_BLAS)
 
-            cblas_sscal(
-                kHalfDimensions, momentum_, biases_diff_, 1
-            );
+                cblas_sscal(
+                    kHalfDimensions, momentum_, biases_diff_, 1
+                );
 
-            for (IndexType b = 0; b < batch_->size(); ++b) {
-                const IndexType batch_offset = kOutputDimensions * b;
-                for (IndexType c = 0; c < 2; ++c) {
-                    const IndexType output_offset = batch_offset + kHalfDimensions * c;
-                    cblas_saxpy(
-                        kHalfDimensions, 1.0,
-                        &gradients_[output_offset], 1, biases_diff_, 1
-                    );
+                for (IndexType b = 0; b < batch_->size(); ++b) {
+                    const IndexType batch_offset = kOutputDimensions * b;
+                    for (IndexType c = 0; c < 2; ++c) {
+                        const IndexType output_offset = batch_offset + kHalfDimensions * c;
+                        cblas_saxpy(
+                            kHalfDimensions, 1.0,
+                            &gradients_[output_offset], 1, biases_diff_, 1
+                        );
+                    }
                 }
-            }
 
-            cblas_saxpy(
-                kHalfDimensions, -local_learning_rate,
-                biases_diff_, 1, biases_, 1
-            );
+                cblas_saxpy(
+                    kHalfDimensions, -local_learning_rate,
+                    biases_diff_, 1, biases_, 1
+                );
 
 #else
 
-            Blas::sscal(
-                thread_pool,
-                kHalfDimensions, momentum_, biases_diff_, 1
-            );
+                Blas::sscal(
+                    thread_pool,
+                    kHalfDimensions, momentum_, biases_diff_, 1
+                );
 
-            for (IndexType b = 0; b < batch_->size(); ++b) {
-                const IndexType batch_offset = kOutputDimensions * b;
-                for (IndexType c = 0; c < 2; ++c) {
-                    const IndexType output_offset = batch_offset + kHalfDimensions * c;
-                    Blas::saxpy(
-                        thread_pool,
-                        kHalfDimensions, 1.0,
-                        &gradients_[output_offset], 1, biases_diff_, 1
-                    );
+                for (IndexType b = 0; b < batch_->size(); ++b) {
+                    const IndexType batch_offset = kOutputDimensions * b;
+                    for (IndexType c = 0; c < 2; ++c) {
+                        const IndexType output_offset = batch_offset + kHalfDimensions * c;
+                        Blas::saxpy(
+                            thread_pool,
+                            kHalfDimensions, 1.0,
+                            &gradients_[output_offset], 1, biases_diff_, 1
+                        );
+                    }
                 }
-            }
 
-            Blas::saxpy(
-                thread_pool,
-                kHalfDimensions, -local_learning_rate,
-                biases_diff_, 1, biases_, 1
-            );
+                Blas::saxpy(
+                    thread_pool,
+                    kHalfDimensions, -local_learning_rate,
+                    biases_diff_, 1, biases_, 1
+                );
 
 #endif
+            }
+
+            // Since the weight matrix updates only the columns corresponding to the features that appeared in the input,
+            // Correct the learning rate and adjust the scale without using momentum
+            [[maybe_unused]] const LearnFloatType effective_learning_rate =
+                static_cast<LearnFloatType>(local_learning_rate / (1.0 - momentum_));
 
             thread_pool.execute_with_workers(
                 [&, num_threads = thread_pool.size()](Thread& th) {
@@ -425,29 +428,32 @@ namespace Eval::NNUE {
                                 // (even a different cache line)
                                 observed_features.set(feature_index);
 
-                                const IndexType weights_offset =
-                                    kHalfDimensions * feature_index;
+                                if constexpr (!kFreezeFeatureTransformer)
+                                {
+                                    const IndexType weights_offset =
+                                        kHalfDimensions * feature_index;
 
-                                const auto scale = static_cast<LearnFloatType>(
-                                    effective_learning_rate / feature.get_count());
+                                    const auto scale = static_cast<LearnFloatType>(
+                                        effective_learning_rate / feature.get_count());
 
 #if defined (USE_BLAS)
 
-                                cblas_saxpy(
-                                    kHalfDimensions, -scale,
-                                    &gradients_[output_offset], 1,
-                                    &weights_[weights_offset], 1
-                                );
+                                    cblas_saxpy(
+                                        kHalfDimensions, -scale,
+                                        &gradients_[output_offset], 1,
+                                        &weights_[weights_offset], 1
+                                    );
 
 #else
 
-                                Blas::saxpy(
-                                    kHalfDimensions, -scale,
-                                    &gradients_[output_offset], 1,
-                                    &weights_[weights_offset], 1
-                                );
+                                    Blas::saxpy(
+                                        kHalfDimensions, -scale,
+                                        &gradients_[output_offset], 1,
+                                        &weights_[weights_offset], 1
+                                    );
 
 #endif
+                                }
                             }
                         }
                     }
@@ -477,14 +483,13 @@ namespace Eval::NNUE {
                 target_layer_->biases_[i] =
                     round<typename LayerType::BiasType>(biases_[i] * kBiasScale);
             }
-
             std::vector<TrainingFeature> training_features;
 
             Threads.for_each_index_with_workers(
                 0, RawFeatures::kDimensions,
                 [this, training_features](Thread&, int j) mutable {
                     training_features.clear();
-                    Features::Factorizer<RawFeatures>::append_training_features(
+                    TrainerFeatures::append_training_features(
                         j, &training_features);
 
                     for (IndexType i = 0; i < kHalfDimensions; ++i) {
@@ -535,10 +540,13 @@ namespace Eval::NNUE {
 
         // Set the weight corresponding to the feature that does not appear in the learning data to 0
         void clear_unobserved_feature_weights() {
-            for (IndexType i = 0; i < kInputDimensions; ++i) {
-                if (!observed_features.test(i)) {
-                    std::fill(std::begin(weights_) + kHalfDimensions * i,
-                              std::begin(weights_) + kHalfDimensions * (i + 1), +kZero);
+            if constexpr (!kFreezeFeatureTransformer)
+            {
+                for (IndexType i = 0; i < kInputDimensions; ++i) {
+                    if (!observed_features.test(i)) {
+                        std::fill(std::begin(weights_) + kHalfDimensions * i,
+                                  std::begin(weights_) + kHalfDimensions * (i + 1), +kZero);
+                    }
                 }
             }
 
@@ -593,14 +601,18 @@ namespace Eval::NNUE {
             out << "  - clipped " << static_cast<double>(num_clipped_) / num_total_ * 100.0 << "% of outputs"
                 << std::endl;
 
+            if constexpr (kFreezeFeatureTransformer)
+                out << "  - weights and biases frozen" << std::endl;
+
             out.unlock();
 
             reset_stats();
         }
 
         // number of input/output dimensions
-        static constexpr IndexType kInputDimensions =
-            Features::Factorizer<RawFeatures>::get_dimensions();
+        // We don't need the factorizer when the factorizer is frozen
+        static constexpr IndexType kInputDimensions = TrainerFeatures::get_dimensions();
+
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
         static constexpr IndexType kHalfDimensions = LayerType::kHalfDimensions;
 

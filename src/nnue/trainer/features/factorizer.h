@@ -35,6 +35,31 @@ namespace Eval::NNUE::Features {
         }
     };
 
+    template <typename FeatureType>
+    class ExplicitNoFactorizer {
+    public:
+        static constexpr std::string get_name() {
+            return "NoFactorizer<" + FeatureType::get_name() + ">";
+        }
+
+        static constexpr std::string get_factorizers_string() {
+            return "  - " + get_name();
+        }
+
+        // Get the dimensionality of the learning feature
+        static constexpr IndexType get_dimensions() {
+            return FeatureType::kDimensions;
+        }
+
+        // Get index of learning feature and scale of learning rate
+        static void append_training_features(
+            IndexType base_index, std::vector<TrainingFeature>* training_features) {
+
+            assert(base_index <FeatureType::kDimensions);
+            training_features->emplace_back(base_index);
+        }
+    };
+
     // Learning feature information
     struct FeatureProperties {
         bool active;
@@ -43,7 +68,7 @@ namespace Eval::NNUE::Features {
 
     // Add the original input features to the learning features
     template <typename FeatureType>
-    IndexType append_base_feature(
+    inline IndexType append_base_feature(
         FeatureProperties properties, IndexType base_index,
         std::vector<TrainingFeature>* training_features) {
 
@@ -55,7 +80,7 @@ namespace Eval::NNUE::Features {
 
     // If the learning rate scale is not 0, inherit other types of learning features
     template <typename FeatureType>
-    IndexType inherit_features_if_required(
+    inline IndexType inherit_features_if_required(
         IndexType index_offset, FeatureProperties properties, IndexType base_index,
         std::vector<TrainingFeature>* training_features) {
 
@@ -81,7 +106,7 @@ namespace Eval::NNUE::Features {
 
     // Return the index difference as needed, without adding learning features
     // Call instead of InheritFeaturesIfRequired() if there are no corresponding features
-    IndexType skip_features(FeatureProperties properties) {
+    inline IndexType skip_features(FeatureProperties properties) {
         if (!properties.active)
             return 0;
 

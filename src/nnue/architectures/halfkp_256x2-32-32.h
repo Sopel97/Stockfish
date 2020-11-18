@@ -55,7 +55,7 @@ namespace Eval::NNUE {
 
     using Network = NetworkSet<Layers::OutputLayer, Layers::OutputLayerB>;
 
-    constexpr int kTrainedNetworkId = 0;
+    constexpr int kTrainedNetworkId = 1;
     constexpr bool kFreezeFeatureTransformer = kTrainedNetworkId != 0;
 
 }  // namespace Eval::NNUE

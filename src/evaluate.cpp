@@ -915,7 +915,7 @@ Value Eval::evaluate(const Position& pos) {
   Value v;
 
   if (NNUE::useNNUE == NNUE::UseNNUEMode::Pure) {
-      v = NNUE::evaluate(pos, 0);
+      v = NNUE::evaluate(pos, NNUE::kTrainedNetworkId);
 
       // Guarantee evaluation does not hit the tablebase range
       v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
@@ -929,7 +929,7 @@ Value Eval::evaluate(const Position& pos) {
       // Scale and shift NNUE for compatibility with search and classical evaluation
       auto  adjusted_NNUE = [&](){
          int mat = pos.non_pawn_material() + PieceValue[MG][PAWN] * pos.count<PAWN>();
-         return NNUE::evaluate(pos, 0) * (720 + mat / 32) / 1024 + Tempo;
+         return NNUE::evaluate(pos, NNUE::kTrainedNetworkId) * (720 + mat / 32) / 1024 + Tempo;
       };
 
       // If there is PSQ imbalance use classical eval, with small probability if it is small
@@ -1007,7 +1007,7 @@ std::string Eval::trace(const Position& pos) {
 
   if (NNUE::useNNUE != NNUE::UseNNUEMode::False)
   {
-      v = NNUE::evaluate(pos, 0);
+      v = NNUE::evaluate(pos, NNUE::kTrainedNetworkId);
       v = pos.side_to_move() == WHITE ? v : -v;
       ss << "\nNNUE evaluation:      " << to_cp(v) << " (white side)\n";
   }
