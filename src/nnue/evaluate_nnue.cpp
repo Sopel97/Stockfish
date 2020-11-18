@@ -74,7 +74,7 @@ namespace Eval::NNUE {
     std::string get_layers_info() {
         return
             FeatureTransformer::get_layers_info()
-            + '\n' + Network::get_layers_info();
+            + "\n\n" + Network::get_layers_info();
     }
 
     UseNNUEMode useNNUE;

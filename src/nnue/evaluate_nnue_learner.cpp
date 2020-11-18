@@ -69,6 +69,18 @@ namespace Eval::NNUE {
 
         out << std::endl;
 
+        out << "Trained network id: " << kTrainedNetworkId << std::endl;
+
+        out << "Trained layers:\n"
+            << TrainedNetwork::get_layers_info() << std::endl;
+
+        out << std::endl;
+
+        if constexpr (kFreezeFeatureTransformer)
+        {
+            out << "Feature transformer weights and biases frozen.\n";
+        }
+
         assert(feature_transformer);
 
         auto& network = networks.get<kTrainedNetworkId>();
