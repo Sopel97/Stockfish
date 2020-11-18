@@ -21,6 +21,10 @@
 #ifndef NNUE_HALFKP_256X2_32_32_H_INCLUDED
 #define NNUE_HALFKP_256X2_32_32_H_INCLUDED
 
+#ifndef TRAINED_NET_ID
+#define TRAINED_NET_ID 0
+#endif
+
 #include "nnue/network_set.h"
 
 #include "nnue/features/feature_set.h"
@@ -55,7 +59,7 @@ namespace Eval::NNUE {
 
     using Network = NetworkSet<Layers::OutputLayer, Layers::OutputLayerB>;
 
-    constexpr int kTrainedNetworkId = 1;
+    constexpr int kTrainedNetworkId = TRAINED_NET_ID;
     constexpr bool kFreezeFeatureTransformer = kTrainedNetworkId != 0;
 
 }  // namespace Eval::NNUE

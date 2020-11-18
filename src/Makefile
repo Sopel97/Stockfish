@@ -81,6 +81,7 @@ VPATH = syzygy:nnue:nnue/features:eval:extra:learn
 # sanitize = undefined/thread/no (-fsanitize )
 #                     --- ( undefined )    --- enable undefined behavior checks
 #                     --- ( thread    )    --- enable threading error  checks
+# net = 0..           --- -DTRAINED_NET_ID --- the index of the network to be trained
 # optimize = yes/no   --- (-O3/-fast etc.) --- Enable/Disable optimizations
 # arch = (name)       --- (-arch)          --- Target architecture
 # bits = 64/32        --- -DIS_64BIT       --- 64-/32-bit operating system
@@ -139,6 +140,7 @@ vnni256 = no
 vnni512 = no
 neon = no
 STRIP = strip
+net = 0
 
 ### 2.2 Architecture specific
 
@@ -496,6 +498,8 @@ else
 	CXXFLAGS += -g
 endif
 
+CXXFLAGS += -DTRAINED_NET_ID=$(net)
+
 ### 3.2.3 Debugging with undefined behavior sanitizers
 ifneq ($(sanitize),no)
         CXXFLAGS += -g3 -fsanitize=$(sanitize)
@@ -829,6 +833,7 @@ config-sanity:
 	@echo ""
 	@echo "Config:"
 	@echo "debug: '$(debug)'"
+	@echo "net: '$(net)'"
 	@echo "sanitize: '$(sanitize)'"
 	@echo "optimize: '$(optimize)'"
 	@echo "arch: '$(arch)'"
