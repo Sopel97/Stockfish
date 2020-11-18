@@ -57,7 +57,7 @@ namespace Eval::NNUE::Layers {
         }
 
         static std::string get_name() {
-            return "InputSlice[" + std::to_string(kOutputDimensions) + "((" +
+            return "DoubleInputSlice[" + std::to_string(kOutputDimensions) + "((" +
                 std::to_string(Offset) + ":" +
                 std::to_string(Offset + kHalfOutputDimensions) + ")+(" +
                 std::to_string(Offset + Stride) + ":" +
