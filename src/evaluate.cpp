@@ -927,9 +927,9 @@ Value Eval::evaluate(const Position& pos) {
   else
   {
       // Scale and shift NNUE for compatibility with search and classical evaluation
-      auto  adjusted_NNUE = [&](){
+      auto  adjusted_NNUE = [&](int i){
          int mat = pos.non_pawn_material() + PieceValue[MG][PAWN] * pos.count<PAWN>();
-         return NNUE::evaluate(pos, NNUE::kTrainedNetworkId) * (720 + mat / 32) / 1024 + Tempo;
+         return NNUE::evaluate(pos, i) * (720 + mat / 32) / 1024 + Tempo;
       };
 
       // If there is PSQ imbalance use classical eval, with small probability if it is small
@@ -938,7 +938,7 @@ Value Eval::evaluate(const Position& pos) {
       bool  largePsq = psq * 16 > (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50;
       bool  classical = largePsq || (psq > PawnValueMg / 4 && !(pos.this_thread()->nodes & 0xB));
 
-      v = classical ? Evaluation<NO_TRACE>(pos).value() : adjusted_NNUE();
+      v = classical ? adjusted_NNUE(1) : adjusted_NNUE(0);
 
       // If the classical eval is small and imbalance large, use NNUE nevertheless.
       // For the case of opposite colored bishops, switch to NNUE eval with
@@ -948,7 +948,7 @@ Value Eval::evaluate(const Position& pos) {
           || (   pos.opposite_bishops()
               && abs(v) * 16 < (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50
               && !(pos.this_thread()->nodes & 0xB))))
-          v = adjusted_NNUE();
+          v = adjusted_NNUE(0);
   }
 
   // Damp down the evaluation linearly when shuffling
