@@ -1,13 +1,13 @@
 ﻿#ifndef _NNUE_TRAINER_INPUT_SLICE_H_
 #define _NNUE_TRAINER_INPUT_SLICE_H_
 
+#include "nnue/layers/input_slice.h"
+
 #include "trainer.h"
 
 #include "extra/stockfish_blas.h"
 
 #include "learn/learn.h"
-
-#include "nnue/layers/input_slice.h"
 
 #include "thread.h"
 

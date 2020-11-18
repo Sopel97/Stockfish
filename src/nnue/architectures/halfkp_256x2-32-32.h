@@ -30,8 +30,8 @@
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_kp.h"
 
-#include "nnue/layers/input_slice.h"
 #include "nnue/layers/double_input_slice.h"
+#include "nnue/layers/input_slice.h"
 #include "nnue/layers/affine_transform.h"
 #include "nnue/layers/clipped_relu.h"
 
