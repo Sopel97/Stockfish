@@ -31,6 +31,7 @@
 #include "nnue/features/half_kp.h"
 
 #include "nnue/layers/input_slice.h"
+#include "nnue/layers/double_input_slice.h"
 #include "nnue/layers/affine_transform.h"
 #include "nnue/layers/clipped_relu.h"
 
@@ -52,8 +53,10 @@ namespace Eval::NNUE {
         using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 
         // Define network structure
-        using InputLayerB = InputSlice<kTransformedFeatureDimensions * 2>;
-        using OutputLayerB = AffineTransform<InputLayerB, 1>;
+        using InputLayerB = DoubleInputSlice<64, kTransformedFeatureDimensions>;
+        using HiddenLayer1B = ClippedReLU<AffineTransform<InputLayerB, 16>>;
+        using HiddenLayer2B = ClippedReLU<AffineTransform<HiddenLayer1B, 16>>;
+        using OutputLayerB = AffineTransform<HiddenLayer2B, 1>;
 
     }  // namespace Layers
 
