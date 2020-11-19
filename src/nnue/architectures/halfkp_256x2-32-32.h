@@ -39,26 +39,19 @@ namespace Eval::NNUE {
         Features::HalfKP<Features::Side::kFriend>>;
 
     // Number of input feature dimensions after conversion
-    constexpr IndexType kTransformedFeatureDimensions = 256;
+    constexpr IndexType kTransformedFeatureDimensions = 256 + 128;
 
     namespace Layers {
 
         // Define network structure
-        using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
+        using InputLayer = DoubleInputSlice<256, kTransformedFeatureDimensions, 0>;
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
         using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
         using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 
-        /*
         // Define network structure
-        using InputLayerB = DoubleInputSlice<64, kTransformedFeatureDimensions>;
+        using InputLayerB = DoubleInputSlice<128, kTransformedFeatureDimensions, 256>;
         using HiddenLayer1B = ClippedReLU<AffineTransform<InputLayerB, 16>>;
-        using HiddenLayer2B = ClippedReLU<AffineTransform<HiddenLayer1B, 16>>;
-        using OutputLayerB = AffineTransform<HiddenLayer2B, 1>;
-        */
-
-        using InputLayerB = InputSlice<kTransformedFeatureDimensions * 2>;
-        using HiddenLayer1B = ClippedReLU<SemiAffineTransform<InputLayerB, 128, 16>>;
         using HiddenLayer2B = ClippedReLU<AffineTransform<HiddenLayer1B, 16>>;
         using OutputLayerB = AffineTransform<HiddenLayer2B, 1>;
 
@@ -67,7 +60,8 @@ namespace Eval::NNUE {
     using Network = NetworkSet<Layers::OutputLayer, Layers::OutputLayerB>;
 
     constexpr int kTrainedNetworkId = TRAINED_NET_ID;
-    constexpr bool kFreezeFeatureTransformer = kTrainedNetworkId != 0;
+    // Both networks use separate parts of the feature transformer.
+    constexpr bool kFreezeFeatureTransformer = false;
 
 }  // namespace Eval::NNUE
 
