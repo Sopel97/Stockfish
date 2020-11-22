@@ -19,7 +19,6 @@
 
 #include "learn.h"
 
-#include "autograd.h"
 #include "sfen_reader.h"
 
 #include "misc.h"
@@ -94,8 +93,66 @@ namespace Learner
     static double elmo_lambda_high = 1.0;
     static double elmo_lambda_limit = 32000;
 
-    // Using stockfish's WDL with win rate model instead of sigmoid
-    static bool use_wdl = false;
+
+    namespace Detail {
+        template <bool AtomicV>
+        struct Loss
+        {
+            using T =
+                std::conditional_t<
+                    AtomicV,
+                    atomic<double>,
+                    double
+                >;
+
+            T cross_entropy_eval{0.0};
+            T cross_entropy_win{0.0};
+            T cross_entropy{0.0};
+            T entropy_eval{0.0};
+            T entropy_win{0.0};
+            T entropy{0.0};
+            T count{0.0};
+
+            template <bool OtherAtomicV>
+            Loss& operator += (const Loss<OtherAtomicV>& rhs)
+            {
+                cross_entropy_eval += rhs.cross_entropy_eval;
+                cross_entropy_win += rhs.cross_entropy_win;
+                cross_entropy += rhs.cross_entropy;
+                entropy_eval += rhs.entropy_eval;
+                entropy_win += rhs.entropy_win;
+                entropy += rhs.entropy;
+                count += rhs.count;
+
+                return *this;
+            }
+
+            void reset()
+            {
+                cross_entropy_eval = 0.0;
+                cross_entropy_win = 0.0;
+                cross_entropy = 0.0;
+                entropy_eval = 0.0;
+                entropy_win = 0.0;
+                entropy = 0.0;
+                count = 0.0;
+            }
+
+            template <typename StreamT>
+            void print(const std::string& prefix, StreamT& s) const
+            {
+                s << "  - " << prefix << "_cross_entropy_eval = " << cross_entropy_eval / count << endl;
+                s << "  - " << prefix << "_cross_entropy_win  = " << cross_entropy_win / count << endl;
+                s << "  - " << prefix << "_entropy_eval       = " << entropy_eval / count << endl;
+                s << "  - " << prefix << "_entropy_win        = " << entropy_win / count << endl;
+                s << "  - " << prefix << "_cross_entropy      = " << cross_entropy / count << endl;
+                s << "  - " << prefix << "_entropy            = " << entropy / count << endl;
+            }
+        };
+    }
+
+    using Loss = Detail::Loss<false>;
+    using AtomicLoss = Detail::Loss<true>;
 
     static void append_files_from_dir(
         std::vector<std::string>& filenames,
@@ -123,6 +180,40 @@ namespace Learner
         }
     }
 
+    // A function that converts the evaluation value to the winning rate [0,1]
+    static double winning_percentage(double value)
+    {
+        // 1/(1+10^(-Eval/4))
+        // = 1/(1+e^(-Eval/4*ln(10))
+        // = sigmoid(Eval/4*ln(10))
+        return Math::sigmoid(value * winning_probability_coefficient);
+    }
+
+    // Training Formula · Issue #71 · nodchip/Stockfish https://github.com/nodchip/Stockfish/issues/71
+    static double get_scaled_signal(double signal)
+    {
+        double scaled_signal = signal;
+
+        // Normalize to [0.0, 1.0].
+        scaled_signal =
+            (scaled_signal - src_score_min_value)
+            / (src_score_max_value - src_score_min_value);
+
+        // Scale to [dest_score_min_value, dest_score_max_value].
+        scaled_signal =
+            scaled_signal * (dest_score_max_value - dest_score_min_value)
+            + dest_score_min_value;
+
+        return scaled_signal;
+    }
+
+    // Teacher winning probability.
+    static double calculate_p(double teacher_signal)
+    {
+        const double scaled_teacher_signal = get_scaled_signal(teacher_signal);
+        return winning_percentage(scaled_teacher_signal);
+    }
+
     static double calculate_lambda(double teacher_signal)
     {
         // If the evaluation value in deep search exceeds elmo_lambda_limit
@@ -135,345 +226,66 @@ namespace Learner
         return lambda;
     }
 
-    // We use our own simple static autograd for automatic
-    // differentiation of the loss function. While it works it has it's caveats.
-    // To work fast enough it requires memoization and reference semantics.
-    // Memoization is mostly opaque to the user and is only per eval basis.
-    // As for reference semantics, we cannot copy every node,
-    // because we need a way to reuse computation.
-    // But we can't really use shared_ptr because of the overhead. That means
-    // that we have to ensure all parts of a loss expression are not destroyed
-    // before use. When lvalue references are used to construct a node it will
-    // store just a reference, it only perform a copy of the rvalue reference arguments.
-    // This means that we need some storage for the whole computation tree
-    // that keeps the values after function returns and never moves them to
-    // a different memory location. This means that we cannot use local
-    // variables and just return by value - because there may be dangling references left.
-    // We also cannot create a struct with this tree on demand because one cannot
-    // use `auto` as a struct members. This is a big issue, and the only way
-    // to solve it as of now is to use static thread_local variables and rely on the
-    // following assumptions:
-    // 1. the expression node must not change for the duration of the program
-    //    within a single instance of a function. This is usually not a problem
-    //    because almost all information is carried by the type. There is an
-    //    exception though, we have ConstantRef and Constant nodes that
-    //    do not encode the constants in the type, so it's possible
-    //    that these nodes are different on the first call to the function
-    //    then later. We MUST ensure that one function is only ever used
-    //    for one specific expression.
-    // 2. thread_local variables are not expensive. Usually after creation
-    //    it only requires a single unsynchronized boolean check and that's
-    //    how most compilers implement it.
-    //
-    // So the general way to do things right now is to use static thread_local
-    // variables for all named autograd nodes. Results being nodes should be
-    // returned by reference, so that there's no need to copy the returned objects.
-    // Parameters being nodes should be taken by lvalue reference if they are
-    // used more than once (to enable reference semantics to reuse computation),
-    // but they can be rvalues and forward on first use if there's only one use
-    // of the node in the scope.
-    // We must keep in mind that the node tree created by such a function
-    // is never going to change as thread_local variables are initialized
-    // on first call. This means that one cannot use one function as a factory
-    // for different autograd expression trees.
-
-    template <typename ShallowT, typename TeacherT, typename ResultT, typename LambdaT>
-    static auto& cross_entropy_(
-        ShallowT& q_,
-        TeacherT& p_,
-        ResultT& t_,
-        LambdaT& lambda_
-    )
+    static double calculate_t(int game_result)
     {
-        using namespace Learner::Autograd::UnivariateStatic;
+        // Use 1 as the correction term if the expected win rate is 1,
+        // 0 if you lose, and 0.5 if you draw.
+        // game_result = 1,0,-1 so add 1 and divide by 2.
+        const double t = double(game_result + 1) * 0.5;
 
-        constexpr double epsilon = 1e-12;
-
-        static thread_local auto teacher_entropy_ = -(p_ * log(p_ + epsilon) + (1.0 - p_) * log(1.0 - p_ + epsilon));
-        static thread_local auto outcome_entropy_ = -(t_ * log(t_ + epsilon) + (1.0 - t_) * log(1.0 - t_ + epsilon));
-        static thread_local auto teacher_loss_ = -(p_ * log(q_) + (1.0 - p_) * log(1.0 - q_));
-        static thread_local auto outcome_loss_ = -(t_ * log(q_) + (1.0 - t_) * log(1.0 - q_));
-        static thread_local auto result_ = lambda_ * teacher_loss_ + (1.0 - lambda_) * outcome_loss_;
-        static thread_local auto entropy_ = lambda_ * teacher_entropy_ + (1.0 - lambda_) * outcome_entropy_;
-        static thread_local auto cross_entropy_ = result_ - entropy_;
-
-        return cross_entropy_;
+        return t;
     }
 
-    template <typename ValueT>
-    static auto& scale_score_(ValueT&& v_)
+    static double calc_grad(Value shallow, Value teacher_signal, int result)
     {
-        using namespace Learner::Autograd::UnivariateStatic;
+        // elmo (WCSC27) method
+        // Correct with the actual game wins and losses.
+        const double q = winning_percentage(shallow);
+        const double p = calculate_p(teacher_signal);
+        const double t = calculate_t(result);
+        const double lambda = calculate_lambda(teacher_signal);
 
-        // Normalize to [0.0, 1.0].
-        static thread_local auto normalized_ =
-            (std::forward<ValueT>(v_) - ConstantRef<double>(src_score_min_value))
-            / (ConstantRef<double>(src_score_max_value) - ConstantRef<double>(src_score_min_value));
-
-        // Scale to [dest_score_min_value, dest_score_max_value].
-        static thread_local auto scaled_ =
-            normalized_
-            * (ConstantRef<double>(dest_score_max_value) - ConstantRef<double>(dest_score_min_value))
-            + ConstantRef<double>(dest_score_min_value);
-
-        return scaled_;
+        return lambda * (q - p) + (1.0 - lambda) * (q - t);
     }
 
-    static Value scale_score(Value v)
-    {
-        // Normalize to [0.0, 1.0].
-        auto normalized =
-            ((double)v - src_score_min_value)
-            / (src_score_max_value - src_score_min_value);
-
-        // Scale to [dest_score_min_value, dest_score_max_value].
-        auto scaled =
-            normalized
-            * (dest_score_max_value - dest_score_min_value)
-            + dest_score_min_value;
-
-        return Value(scaled);
-    }
-
-    template <typename ValueT>
-    static auto& expected_perf_(ValueT&& v_)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto perf_ = sigmoid(std::forward<ValueT>(v_) * ConstantRef<double>(winning_probability_coefficient));
-
-        return perf_;
-    }
-
-    template <typename ValueT, typename PlyT, typename T = typename ValueT::ValueType>
-    static auto& expected_perf_use_wdl_(
-        ValueT& v_,
-        PlyT&& ply_
-    )
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        // Coefficients of a 3rd order polynomial fit based on fishtest data
-        // for two parameters needed to transform eval to the argument of a
-        // logistic function.
-        static constexpr T as[] = { -8.24404295, 64.23892342, -95.73056462, 153.86478679 };
-        static constexpr T bs[] = { -3.37154371, 28.44489198, -56.67657741,  72.05858751 };
-
-        // The model captures only up to 240 plies, so limit input (and rescale)
-        static thread_local auto m_ = std::forward<PlyT>(ply_) / 64.0;
-
-        static thread_local auto a_ = (((as[0] * m_ + as[1]) * m_ + as[2]) * m_) + as[3];
-        static thread_local auto b_ = (((bs[0] * m_ + bs[1]) * m_ + bs[2]) * m_) + bs[3];
-
-        // Return win rate in per mille
-        static thread_local auto sv_ = (v_ - a_) / b_;
-        static thread_local auto svn_ = (-v_ - a_) / b_;
-
-        static thread_local auto win_pct_ = sigmoid(sv_);
-        static thread_local auto loss_pct_ = sigmoid(svn_);
-
-        static thread_local auto draw_pct_ = 1.0 - win_pct_ - loss_pct_;
-
-        static thread_local auto perf_ = win_pct_ + draw_pct_ * 0.5;
-
-        return perf_;
-    }
-
-    static double expected_perf_use_wdl(
-        Value v,
-        int ply
-    )
-    {
-        // Coefficients of a 3rd order polynomial fit based on fishtest data
-        // for two parameters needed to transform eval to the argument of a
-        // logistic function.
-        static constexpr double as[] = { -8.24404295, 64.23892342, -95.73056462, 153.86478679 };
-        static constexpr double bs[] = { -3.37154371, 28.44489198, -56.67657741,  72.05858751 };
-
-        // The model captures only up to 240 plies, so limit input (and rescale)
-        auto m = ply / 64.0;
-
-        auto a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
-        auto b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
-
-        // Return win rate in per mille
-        auto sv = ((double)v - a) / b;
-        auto svn = ((double)-v - a) / b;
-
-        auto win_pct = Math::sigmoid(sv);
-        auto loss_pct = Math::sigmoid(svn);
-
-        auto draw_pct = 1.0 - win_pct - loss_pct;
-
-        auto perf = win_pct + draw_pct * 0.5;
-
-        return perf;
-    }
-
-    [[maybe_unused]] static ValueWithGrad<double> get_loss_noob(
-        Value shallow, Value teacher_signal, int result, int /* ply */)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto q_ = VariableParameter<double, 0>{};
-        static thread_local auto p_ = ConstantParameter<double, 1>{};
-        static thread_local auto loss_ = pow(q_ - p_, 2.0) * (1.0 / (2400.0 * 2.0 * 600.0));
-
-        auto args = std::tuple(
-            (double)shallow,
-            (double)teacher_signal,
-            (double)result,
-            calculate_lambda(teacher_signal)
-        );
-
-        return loss_.eval(args);
-    }
-
-    static auto& get_loss_cross_entropy_()
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto& q_ = expected_perf_(VariableParameter<double, 0>{});
-        static thread_local auto& p_ = expected_perf_(scale_score_(ConstantParameter<double, 1>{}));
-        static thread_local auto t_ = (ConstantParameter<double, 2>{} + 1.0) * 0.5;
-        static thread_local auto lambda_ = ConstantParameter<double, 3>{};
-        static thread_local auto& loss_ = cross_entropy_(q_, p_, t_, lambda_);
-
-        return loss_;
-    }
-
-    static auto get_loss_cross_entropy_args(
-        Value shallow, Value teacher_signal, int result)
-    {
-        return std::tuple(
-            (double)shallow,
-            (double)teacher_signal,
-            (double)result,
-            calculate_lambda(teacher_signal)
-        );
-    }
-
-    static ValueWithGrad<double> get_loss_cross_entropy(
-        Value shallow, Value teacher_signal, int result, int /* ply */)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto& loss_ = get_loss_cross_entropy_();
-
-        auto args = get_loss_cross_entropy_args(shallow, teacher_signal, result);
-
-        return loss_.eval(args);
-    }
-
-    static ValueWithGrad<double> get_loss_cross_entropy_no_grad(
-        Value shallow, Value teacher_signal, int result, int /* ply */)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto& loss_ = get_loss_cross_entropy_();
-
-        auto args = get_loss_cross_entropy_args(shallow, teacher_signal, result);
-
-        return { loss_.value(args), 0.0 };
-    }
-
-    static auto& get_loss_cross_entropy_use_wdl_()
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto ply_ = ConstantParameter<double, 4>{};
-        static thread_local auto shallow_ = VariableParameter<double, 0>{};
-        static thread_local auto& q_ = expected_perf_use_wdl_(shallow_, ply_);
-        // We could do just this but MSVC crashes with an internal compiler error :(
-        // static thread_local auto& scaled_teacher_ = scale_score_(ConstantParameter<double, 1>{});
-        // static thread_local auto& p_ = expected_perf_use_wdl_(scaled_teacher_, ply_);
-        static thread_local auto p_ = ConstantParameter<double, 1>{};
-        static thread_local auto t_ = (ConstantParameter<double, 2>{} + 1.0) * 0.5;
-        static thread_local auto lambda_ = ConstantParameter<double, 3>{};
-        static thread_local auto& loss_ = cross_entropy_(q_, p_, t_, lambda_);
-
-        return loss_;
-    }
-
-    static auto get_loss_cross_entropy_use_wdl_args(
-        Value shallow, Value teacher_signal, int result, int ply)
-    {
-        return std::tuple(
-            (double)shallow,
-            // This is required because otherwise MSVC crashes :(
-            expected_perf_use_wdl(scale_score(teacher_signal), ply),
-            (double)result,
-            calculate_lambda(teacher_signal),
-            (double)std::min(240, ply)
-        );
-    }
-
-    static ValueWithGrad<double> get_loss_cross_entropy_use_wdl(
-        Value shallow, Value teacher_signal, int result, int ply)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto& loss_ = get_loss_cross_entropy_use_wdl_();
-
-        auto args = get_loss_cross_entropy_use_wdl_args(shallow, teacher_signal, result, ply);
-
-        return loss_.eval(args);
-    }
-
-    static ValueWithGrad<double> get_loss_cross_entropy_use_wdl_no_grad(
-        Value shallow, Value teacher_signal, int result, int ply)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        static thread_local auto& loss_ = get_loss_cross_entropy_use_wdl_();
-
-        auto args = get_loss_cross_entropy_use_wdl_args(shallow, teacher_signal, result, ply);
-
-        return { loss_.value(args), 0.0 };
-    }
-
-    static auto get_loss(Value shallow, Value teacher_signal, int result, int ply)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        if (use_wdl)
-        {
-            return get_loss_cross_entropy_use_wdl(shallow, teacher_signal, result, ply);
-        }
-        else
-        {
-            return get_loss_cross_entropy(shallow, teacher_signal, result, ply);
-        }
-    }
-
-    static auto get_loss_no_grad(Value shallow, Value teacher_signal, int result, int ply)
-    {
-        using namespace Learner::Autograd::UnivariateStatic;
-
-        if (use_wdl)
-        {
-            return get_loss_cross_entropy_use_wdl_no_grad(shallow, teacher_signal, result, ply);
-        }
-        else
-        {
-            return get_loss_cross_entropy_no_grad(shallow, teacher_signal, result, ply);
-        }
-    }
-
-    [[maybe_unused]] static auto get_loss(
+    // Calculate cross entropy during learning
+    // The individual cross entropy of the win/loss term and win
+    // rate term of the elmo expression is returned
+    // to the arguments cross_entropy_eval and cross_entropy_win.
+    static Loss calc_cross_entropy(
         Value teacher_signal,
         Value shallow,
         const PackedSfenValue& psv)
     {
-        return get_loss(shallow, teacher_signal, psv.game_result, psv.gamePly);
-    }
+        // Teacher winning probability.
+        const double q = winning_percentage(shallow);
+        const double p = calculate_p(teacher_signal);
+        const double t = calculate_t(psv.game_result);
+        const double lambda = calculate_lambda(teacher_signal);
 
-    static auto get_loss_no_grad(
-        Value teacher_signal,
-        Value shallow,
-        const PackedSfenValue& psv)
-    {
-        return get_loss_no_grad(shallow, teacher_signal, psv.game_result, psv.gamePly);
+        constexpr double epsilon = 0.000001;
+
+        const double m = (1.0 - lambda) * t + lambda * p;
+
+        Loss loss{};
+
+        loss.cross_entropy_eval =
+            (-p * std::log(q + epsilon) - (1.0 - p) * std::log(1.0 - q + epsilon));
+        loss.cross_entropy_win =
+            (-t * std::log(q + epsilon) - (1.0 - t) * std::log(1.0 - q + epsilon));
+        loss.entropy_eval =
+            (-p * std::log(p + epsilon) - (1.0 - p) * std::log(1.0 - p + epsilon));
+        loss.entropy_win =
+            (-t * std::log(t + epsilon) - (1.0 - t) * std::log(1.0 - t + epsilon));
+
+        loss.cross_entropy =
+            (-m * std::log(q + epsilon) - (1.0 - m) * std::log(1.0 - q + epsilon));
+        loss.entropy =
+            (-m * std::log(m + epsilon) - (1.0 - m) * std::log(1.0 - m + epsilon));
+
+        loss.count = 1;
+
+        return loss;
     }
 
     // Class to generate sfen with multiple threads
@@ -513,13 +325,8 @@ namespace Learner
 
             bool use_draw_games_in_training = true;
             bool use_draw_games_in_validation = true;
-            bool skip_duplicated_positions_in_training = true;
-
-            bool assume_quiet = false;
-            bool smart_fen_skipping = false;
 
             double learning_rate = 1.0;
-            double max_grad = 1.0;
 
             string validation_set_file_name;
             string seed;
@@ -539,16 +346,6 @@ namespace Learner
 
                 // If reduction_gameply is set to 0, rand(0) will be divided by 0, so correct it to 1.
                 reduction_gameply = max(reduction_gameply, 1);
-
-                if (newbob_decay != 1.0 && !Options["SkipLoadingEval"]) {
-                    // Save the current net to [EvalSaveDir]\original.
-                    Eval::NNUE::save_eval("original");
-
-                    // Set the folder above to best_nn_directory so that the trainer can
-                    // resotre the network parameters from the original net file.
-                    best_nn_directory =
-                        Path::combine(Options["EvalSaveDir"], "original");
-                }
             }
         };
 
@@ -597,7 +394,7 @@ namespace Learner
             Thread& th,
             std::atomic<uint64_t>& counter,
             const PSVector& psv,
-            Loss& test_loss_sum,
+            AtomicLoss& test_loss_sum,
             atomic<double>& sum_norm,
             atomic<int>& move_accord_count
         );
@@ -632,7 +429,7 @@ namespace Learner
         int dir_number;
 
         // For calculation of learning data loss
-        Loss learn_loss_sum;
+        AtomicLoss learn_loss_sum;
     };
 
     void LearnerThink::set_learning_search_limits()
@@ -666,11 +463,13 @@ namespace Learner
 
         set_learning_search_limits();
 
-        Eval::NNUE::verify_any_net_loaded();
+        Eval::NNUE::verify();
 
         const PSVector sfen_for_mse =
             params.validation_set_file_name.empty()
-            ? sr.read_for_mse(sfen_for_mse_size)
+            ? sr.read_for_mse(sfen_for_mse_size,
+                params.eval_limit,
+                params.use_draw_games_in_validation)
             : sr.read_validation_set(
                 params.validation_set_file_name,
                 params.eval_limit,
@@ -732,7 +531,7 @@ namespace Learner
         const auto thread_id = th.thread_idx();
         auto& pos = th.rootPos;
 
-        std::vector<StateInfo, AlignedAllocator<StateInfo>> state(MAX_PLY);
+        Loss local_loss_sum{};
 
         while(!stop_flag)
         {
@@ -771,52 +570,27 @@ namespace Learner
                 goto RETRY_READ;
             }
 
-            const auto rootColor = pos.side_to_move();
-
-            // A function that adds the current `pos` and `ps`
-            // to the training set.
-            auto pos_add_grad = [&]() {
-
-                // Evaluation value of deep search
-                const Value shallow_value = Eval::evaluate(pos);
-
-                Eval::NNUE::add_example(pos, rootColor, shallow_value, ps, 1.0);
-            };
-
-            if (!pos.pseudo_legal((Move)ps.move) || !pos.legal((Move)ps.move))
+            if (pos.checkers())
             {
                 goto RETRY_READ;
             }
 
-            // We don't need to qsearch when doing smart skipping
-            if (!params.assume_quiet && !params.smart_fen_skipping)
-            {
-                int ply = 0;
-                pos.do_move((Move)ps.move, state[ply++]);
+            // Evaluation value of deep search
+            const auto deep_value = (Value)ps.score;
 
-                // Evaluation value of shallow search (qsearch)
-                const auto [_, pv] = Search::qsearch(pos);
+            const Value shallow_value = Eval::evaluate_raw(pos);
 
-                for (auto m : pv)
-                {
-                    pos.do_move(m, state[ply++]);
-                }
-            }
+            const auto loss = calc_cross_entropy(
+                deep_value,
+                shallow_value,
+                ps);
 
-            if (params.smart_fen_skipping
-                && (pos.capture_or_promotion((Move)ps.move)
-                    || pos.checkers()))
-            {
-                goto RETRY_READ;
-            }
+            local_loss_sum += loss;
 
-            // We want to position being trained on not to be terminal
-            if (MoveList<LEGAL>(pos).size() == 0)
-                goto RETRY_READ;
-
-            // Since we have reached the end phase of PV, add the slope here.
-            pos_add_grad();
+            Eval::NNUE::add_example(pos, shallow_value, ps, 1.0);
         }
+
+        learn_loss_sum += local_loss_sum;
     }
 
     void LearnerThink::update_weights(const PSVector& psv, uint64_t epoch)
@@ -825,8 +599,7 @@ namespace Learner
         // should be no real issues happening since
         // the read/write phases are isolated.
         atomic_thread_fence(memory_order_seq_cst);
-        learn_loss_sum += Eval::NNUE::update_parameters(
-            Threads, epoch, params.verbose, params.learning_rate, params.max_grad, get_loss);
+        Eval::NNUE::update_parameters(Threads, epoch, params.verbose, params.learning_rate, calc_grad);
         atomic_thread_fence(memory_order_seq_cst);
 
         if (++save_count * params.mini_batch_size >= params.eval_save_interval)
@@ -869,7 +642,7 @@ namespace Learner
         out << "  - learning rate = " << params.learning_rate << endl;
 
         // For calculation of verification data loss
-        Loss test_loss_sum{};
+        AtomicLoss test_loss_sum{};
 
         // norm for learning
         atomic<double> sum_norm{0.0};
@@ -883,7 +656,7 @@ namespace Learner
             auto& pos = th.rootPos;
             StateInfo si;
             pos.set(StartFEN, false, &si, &th);
-            out << "  - startpos eval = " << Eval::evaluate(pos) << endl;
+            out << "  - startpos eval = " << Eval::evaluate_raw(pos) << endl;
         });
         mainThread->wait_for_worker_finished();
 
@@ -901,24 +674,26 @@ namespace Learner
         });
         Threads.wait_for_workers_finished();
 
-        latest_loss_sum += test_loss_sum.value();
+        latest_loss_sum += test_loss_sum.cross_entropy - test_loss_sum.entropy;
         latest_loss_count += psv.size();
 
-        if (psv.size() && test_loss_sum.count() > 0)
+        if (psv.size() && test_loss_sum.count > 0.0)
         {
-            test_loss_sum.print_only_loss("val", out);
+            test_loss_sum.print("test", out);
 
-            if (learn_loss_sum.count() > 0)
+            if (learn_loss_sum.count > 0.0)
             {
-                learn_loss_sum.print_with_grad("train", out);
+                learn_loss_sum.print("learn", out);
             }
 
             out << "  - norm = " << sum_norm << endl;
             out << "  - move accuracy = " << (move_accord_count * 100.0 / psv.size()) << "%" << endl;
+            out << "  - loss (current) = " << (test_loss_sum.cross_entropy - test_loss_sum.entropy) / psv.size() << endl;
+            out << "  - loss (average) = " << latest_loss_sum / latest_loss_count << endl;
         }
         else
         {
-            out << "ERROR: psv.size() = " << psv.size() << " ,  done = " << test_loss_sum.count() << endl;
+            out << "ERROR: psv.size() = " << psv.size() << " ,  done = " << test_loss_sum.count << endl;
         }
 
         learn_loss_sum.reset();
@@ -928,7 +703,7 @@ namespace Learner
         Thread& th,
         std::atomic<uint64_t>& counter,
         const PSVector& psv,
-        Loss& test_loss_sum,
+        AtomicLoss& test_loss_sum,
         atomic<double>& sum_norm,
         atomic<int>& move_accord_count
     )
@@ -958,7 +733,7 @@ namespace Learner
             // Evaluation value of deep search
             const auto deep_value = (Value)ps.score;
 
-            const auto loss = get_loss_no_grad(
+            const auto loss = calc_cross_entropy(
                 deep_value,
                 shallow_value,
                 ps);
@@ -993,8 +768,8 @@ namespace Learner
 
         const Value shallow_value =
             (rootColor == pos.side_to_move())
-            ? Eval::evaluate(pos)
-            : -Eval::evaluate(pos);
+            ? Eval::evaluate_raw(pos)
+            : -Eval::evaluate_raw(pos);
 
         for (auto it = pv.rbegin(); it != pv.rend(); ++it)
             pos.undo_move(*it);
@@ -1160,7 +935,6 @@ namespace Learner
 
             // learning rate
             else if (option == "lr") is >> params.learning_rate;
-            else if (option == "max_grad") is >> params.max_grad;
 
             // Accept also the old option name.
             else if (option == "use_draw_in_training"
@@ -1172,17 +946,8 @@ namespace Learner
                   || option == "use_draw_games_in_validation")
                 is >> params.use_draw_games_in_validation;
 
-            // Accept also the old option name.
-            else if (option == "use_hash_in_training"
-                  || option == "skip_duplicated_positions_in_training")
-                is >> params.skip_duplicated_positions_in_training;
-
             else if (option == "winning_probability_coefficient")
                 is >> winning_probability_coefficient;
-
-            // Using WDL with win rate model instead of sigmoid
-            else if (option == "use_wdl") is >> use_wdl;
-
 
             // LAMBDA
             else if (option == "lambda") is >> elmo_lambda_low;
@@ -1216,19 +981,16 @@ namespace Learner
             else if (option == "seed") is >> params.seed;
             else if (option == "set_recommended_uci_options")
             {
-                UCI::setoption("Use NNUE", "pure");
+                UCI::setoption("Use NNUE", "true");
                 UCI::setoption("MultiPV", "1");
                 UCI::setoption("Contempt", "0");
                 UCI::setoption("Skill Level", "20");
                 UCI::setoption("UCI_Chess960", "false");
                 UCI::setoption("UCI_AnalyseMode", "false");
                 UCI::setoption("UCI_LimitStrength", "false");
-                UCI::setoption("PruneAtShallowDepth", "false");
                 UCI::setoption("EnableTranspositionTable", "false");
             }
             else if (option == "verbose") params.verbose = true;
-            else if (option == "assume_quiet") params.assume_quiet = true;
-            else if (option == "smart_fen_skipping") params.smart_fen_skipping = true;
             else
             {
                 out << "INFO: Unknown option: " << option << ". Ignoring.\n";
@@ -1275,13 +1037,10 @@ namespace Learner
         out << "  - nn_options               : " << nn_options << endl;
 
         out << "  - learning rate            : " << params.learning_rate << endl;
-        out << "  - max_grad                 : " << params.max_grad << endl;
         out << "  - use draws in training    : " << params.use_draw_games_in_training << endl;
         out << "  - use draws in validation  : " << params.use_draw_games_in_validation << endl;
-        out << "  - skip repeated positions  : " << params.skip_duplicated_positions_in_training << endl;
 
         out << "  - winning prob coeff       : " << winning_probability_coefficient << endl;
-        out << "  - use_wdl                  : " << use_wdl << endl;
 
         out << "  - src_score_min_value      : " << src_score_min_value << endl;
         out << "  - src_score_max_value      : " << src_score_max_value << endl;

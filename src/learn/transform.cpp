@@ -131,7 +131,7 @@ namespace Learner
             auto& ps = v.value();
 
             pos.set_from_packed_sfen(ps.sfen, &si, th);
-            auto static_eval = Eval::evaluate(pos);
+            auto static_eval = Eval::evaluate_raw(pos);
             auto deep_eval = ps.score;
             ps.score = nudge(params, static_eval, deep_eval);
 

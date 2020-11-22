@@ -84,6 +84,7 @@ namespace Eval::NNUE {
         if (Options["SkipLoadingEval"]) {
             out << "INFO (initialize_training): Performing random net initialization.\n";
             trainer->initialize(rng);
+            eval_file_loaded = "None";
         }
     }
 
@@ -132,18 +133,11 @@ namespace Eval::NNUE {
     // Add 1 sample of learning data
     void add_example(
         Position& pos,
-        Color rootColor,
         Value discrete_nn_eval,
         const Learner::PackedSfenValue& psv,
         double weight) {
 
         Example example;
-        if (rootColor == pos.side_to_move()) {
-            example.sign = 1;
-        } else {
-            example.sign = -1;
-        }
-
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;
@@ -190,16 +184,13 @@ namespace Eval::NNUE {
     }
 
     // update the evaluation function parameters
-    Learner::Loss update_parameters(
+    void update_parameters(
         ThreadPool& thread_pool,
         uint64_t epoch,
         bool verbose,
         double learning_rate,
-        double max_grad,
-        Learner::CalcLossFunc calc_loss)
+        Learner::CalcGradFunc calc_grad)
     {
-        using namespace Learner::Autograd::UnivariateStatic;
-
         assert(batch_size > 0);
 
         learning_rate /= batch_size;
@@ -212,12 +203,9 @@ namespace Eval::NNUE {
 
         bool collect_stats = verbose;
 
-        Learner::Loss loss_sum{};
-
         std::vector<double> abs_eval_diff_sum_local(thread_pool.size(), 0.0);
         std::vector<double> abs_discrete_eval_sum_local(thread_pool.size(), 0.0);
         std::vector<double> gradient_norm_local(thread_pool.size(), 0.0);
-        std::vector<Learner::Loss> loss_sum_local(thread_pool.size());
 
         auto prev_batch_begin = examples.end();
         while ((long)(prev_batch_begin - examples.begin()) >= (long)batch_size) {
@@ -237,14 +225,12 @@ namespace Eval::NNUE {
                     for (std::size_t b = offset; b < offset + count; ++b) {
                         const auto& e = *(batch_begin + b);
                         const auto shallow = static_cast<Value>(round<std::int32_t>(
-                            e.sign * network_output[b] * kPonanzaConstant));
-                        const auto discrete = e.sign * e.discrete_nn_eval;
+                            network_output[b] * kPonanzaConstant));
+                        const auto discrete = e.discrete_nn_eval;
                         const auto& psv = e.psv;
-                        auto loss = calc_loss(shallow, (Value)psv.score, psv.game_result, psv.gamePly);
-                        loss.grad = std::clamp(
-                            loss.grad * e.sign * kPonanzaConstant * e.weight, -max_grad, max_grad);
-                        gradients[b] = static_cast<LearnFloatType>(loss.grad);
-                        loss_sum_local[thread_id] += loss;
+                        const double gradient = calc_grad(shallow, (Value)psv.score, psv.game_result);
+                        gradients[b] = static_cast<LearnFloatType>(gradient * e.weight);
+
 
                         // The discrete eval will only be valid before first backpropagation,
                         // that is only for the first batch.
@@ -253,7 +239,7 @@ namespace Eval::NNUE {
                         {
                             abs_eval_diff_sum_local[thread_id] += std::abs(discrete - shallow);
                             abs_discrete_eval_sum_local[thread_id] += std::abs(discrete);
-                            gradient_norm_local[thread_id] += std::abs(loss.grad);
+                            gradient_norm_local[thread_id] += std::abs(gradient);
                         }
                     }
 
@@ -301,13 +287,6 @@ namespace Eval::NNUE {
         }
 
         send_messages({{"quantize_parameters"}});
-
-        for(auto& loss : loss_sum_local)
-        {
-            loss_sum += loss;
-        }
-
-        return loss_sum;
     }
 
     // Check if there are any problems with learning

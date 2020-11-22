@@ -54,19 +54,6 @@ namespace Learner
             // Upper limit of evaluation value of generated situation
             int eval_limit = 3000;
 
-            // minimum ply with random move
-            // maximum ply with random move
-            // Number of random moves in one station
-            int random_move_minply = 1;
-            int random_move_maxply = 24;
-            int random_move_count = 5;
-
-            // Move kings with a probability of 1/N when randomly moving like Apery software.
-            // When you move the king again, there is a 1/N chance that it will randomly moved
-            // once in the opponent's turn.
-            // Apery has N=2. Specifying 0 here disables this function.
-            int random_move_like_apery = 0;
-
             // For when using multi pv instead of random move.
             // random_multi_pv is the number of candidates for MultiPV.
             // When adopting the move of the candidate move, the difference
@@ -92,10 +79,6 @@ namespace Learner
             std::string seed;
 
             bool write_out_draw_game_in_training_data_generation = true;
-            bool detect_draw_by_consecutive_low_score = true;
-            bool detect_draw_by_insufficient_mating_material = true;
-
-            bool ensure_quiet = false;
 
             uint64_t num_threads;
 
@@ -104,7 +87,10 @@ namespace Learner
             void enforce_constraints()
             {
                 search_depth_max = std::max(search_depth_min, search_depth_max);
-                random_multi_pv_depth = std::max(search_depth_min, random_multi_pv_depth);
+                if (random_multi_pv_depth <= 0)
+                {
+                    random_multi_pv_depth = search_depth_min;
+                }
 
                 // Limit the maximum to a one-stop score. (Otherwise you might not end the loop)
                 eval_limit = std::min(eval_limit, (int)mate_in(2));
@@ -114,11 +100,6 @@ namespace Learner
                 num_threads = Options["Threads"];
             }
         };
-
-        // Hash to limit the export of identical sfens
-        static constexpr uint64_t GENSFEN_HASH_SIZE = 64 * 1024 * 1024;
-        // It must be 2**N because it will be used as the mask to calculate hash_index.
-        static_assert((GENSFEN_HASH_SIZE& (GENSFEN_HASH_SIZE - 1)) == 0);
 
         static constexpr uint64_t REPORT_DOT_EVERY = 5000;
         static constexpr uint64_t REPORT_STATS_EVERY = 200000;
@@ -131,7 +112,6 @@ namespace Learner
             prng(prm.seed),
             sfen_writer(prm.output_file_name, prm.num_threads, prm.save_every, prm.sfen_format)
         {
-            hash.resize(GENSFEN_HASH_SIZE);
 
             if (!prm.book.empty())
             {
@@ -161,8 +141,6 @@ namespace Learner
 
         SynchronizedRegionLogger::Region out;
 
-        vector<Key> hash; // 64MB*sizeof(HASH_KEY) = 512MB
-
         std::unique_ptr<OpeningBook> opening_book;
 
         static void set_gensfen_search_limits();
@@ -172,19 +150,13 @@ namespace Learner
             std::atomic<uint64_t>& counter,
             uint64_t limit);
 
-        bool was_seen_before(const Position& pos);
-
         optional<int8_t> get_current_game_result(
             Position& pos,
             const vector<int>& move_hist_scores) const;
 
-        vector<uint8_t> generate_random_move_flags();
-
         optional<Move> choose_random_move(
             Position& pos,
-            std::vector<uint8_t>& random_move_flag,
-            int ply,
-            int& random_move_c);
+            int ply);
 
         bool commit_psv(
             Thread& th,
@@ -273,20 +245,9 @@ namespace Learner
                 pos.set(StartFEN, false, &si, &th);
             }
 
-            int resign_counter = 0;
-            bool should_resign = prng.rand(10) > 1;
             // Vector for holding the sfens in the current simulated game.
             PSVector packed_sfens;
             packed_sfens.reserve(params.write_maxply + MAX_PLY);
-
-            // Precomputed flags. Used internally by choose_random_move.
-            vector<uint8_t> random_move_flag = generate_random_move_flags();
-
-            // A counter that keeps track of the number of random moves
-            // When random_move_minply == -1, random moves are
-            // performed continuously, so use it at this time.
-            // Used internally by choose_random_move.
-            int actual_random_move_count = 0;
 
             // Save history of move scores for adjudication
             vector<int> move_hist_scores;
@@ -316,15 +277,8 @@ namespace Learner
                 // Also because of this we don't have to check for TB/MATE scores
                 if (abs(search_value) >= params.eval_limit)
                 {
-                    resign_counter++;
-                    if ((should_resign && resign_counter >= 4) || abs(search_value) >= VALUE_KNOWN_WIN) {
-                        flush_psv((search_value >= params.eval_limit) ? 1 : -1);
-                        break;
-                    }
-                }
-                else
-                {
-                    resign_counter = 0;
+                    flush_psv((search_value >= params.eval_limit) ? 1 : -1);
+                    break;
                 }
 
                 // In case there is no PV and the game was not ended here
@@ -347,84 +301,52 @@ namespace Learner
 
                     auto& psv = packed_sfens.back();
 
-                    if (params.ensure_quiet)
+                    // Here we only write the position data.
+                    // Result is added after the whole game is done.
+                    pos.sfen_pack(psv.sfen);
+
+                    if (pos.checkers())
                     {
-                        auto [qsearch_value, qsearch_pv] = Search::qsearch(pos);
-                        if (qsearch_pv.empty())
-                        {
-                            // Here we only write the position data.
-                            // Result is added after the whole game is done.
-                            pos.sfen_pack(psv.sfen);
-
-                            // Already a quiet position
-                            psv.score = search_value;
-                            psv.move = search_pv[0];
-                            psv.gamePly = ply;
-                        }
-                        else
-                        {
-                            // Navigate to a quiet
-                            int old_ply = ply;
-                            for (auto m : qsearch_pv)
-                            {
-                                pos.do_move(m, states[ply++]);
-                            }
-
-                            if (was_seen_before(pos))
-                            {
-                                // Just skip the move.
-                                packed_sfens.pop_back();
-                            }
-                            else
-                            {
-                                // Reevaluate
-                                auto [quiet_search_value, quiet_search_pv] = Search::search(pos, depth, 1, params.nodes);
-                                if (quiet_search_pv.empty())
-                                {
-                                    // Just skip the move.
-                                    packed_sfens.pop_back();
-                                }
-                                else
-                                {
-                                    // Here we only write the position data.
-                                    // Result is added after the whole game is done.
-                                    pos.sfen_pack(psv.sfen);
-
-                                    psv.score = quiet_search_value;
-                                    psv.move = quiet_search_pv[0];
-                                    psv.gamePly = ply;
-                                }
-                            }
-
-                            // Get back to the game
-                            for (auto it = qsearch_pv.rbegin(); it != qsearch_pv.rend(); ++it)
-                            {
-                                pos.undo_move(*it);
-                            }
-                            ply = old_ply;
-                        }
+                        psv.score = search_value;
                     }
                     else
                     {
-                        if (was_seen_before(pos))
-                        {
-                            packed_sfens.pop_back();
-                        }
-                        else
-                        {
-                            // Here we only write the position data.
-                            // Result is added after the whole game is done.
-                            pos.sfen_pack(psv.sfen);
+                        psv.score = Eval::evaluate_raw(pos);
+                    }
 
-                            psv.score = search_value;
-                            psv.move = search_pv[0];
-                            psv.gamePly = ply;
+                    const auto rootColor = pos.side_to_move();
+                    int old_ply = ply;
+                    bool should_update = true;
+                    for (auto m : search_pv)
+                    {
+                        if (pos.capture_or_promotion(m))
+                        {
+                            should_update = false;
+                        }
+                        pos.do_move(m, states[ply++]);
+                        if (pos.checkers())
+                        {
+                            should_update = false;
+                        }
+                        if (should_update)
+                        {
+                            psv.score = (rootColor == pos.side_to_move()) ? Eval::evaluate_raw(pos) : -Eval::evaluate_raw(pos);
                         }
                     }
+
+                    // Get back to the game
+                    for (auto it = search_pv.rbegin(); it != search_pv.rend(); ++it)
+                    {
+                        pos.undo_move(*it);
+                    }
+
+                    ply = old_ply;
+                    psv.move = search_pv[0];
+                    psv.gamePly = ply;
                 }
 
                 // Update the next move according to best search result or random move.
-                auto random_move = choose_random_move(pos, random_move_flag, ply, actual_random_move_count);
+                auto random_move = choose_random_move(pos, ply);
                 const Move next_move = random_move.has_value() ? *random_move : search_pv[0];
 
                 // We don't have the whole game yet, but it ended,
@@ -438,27 +360,6 @@ namespace Learner
                 // Do move.
                 pos.do_move(next_move, states[ply]);
             }
-        }
-    }
-
-    bool Gensfen::was_seen_before(const Position& pos)
-    {
-        // Look into the position hashtable to see if the same
-        // position was seen before.
-        // This is a good heuristic to exlude already seen
-        // positions without many false positives.
-        auto key = pos.key();
-        auto hash_index = (size_t)(key & (GENSFEN_HASH_SIZE - 1));
-        auto old_key = hash[hash_index];
-        if (key == old_key)
-        {
-            return true;
-        }
-        else
-        {
-            // Replace with the current key.
-            hash[hash_index] = key;
-            return false;
         }
     }
 
@@ -488,6 +389,19 @@ namespace Learner
             return 0;
         }
 
+        if (pos.this_thread()->rootInTB)
+        {
+            Tablebases::ProbeState probe_state;
+            Tablebases::WDLScore wdl = Tablebases::probe_wdl(pos, &probe_state);
+            if (wdl == Tablebases::WDLScore::WDLWin) {
+                return 1;
+            } else if (wdl == Tablebases::WDLScore::WDLLoss) {
+                return -1;
+            } else {
+                return 0;
+            }
+        }
+
         if(pos.this_thread()->rootMoves.empty())
         {
             // If there is no legal move
@@ -497,81 +411,74 @@ namespace Learner
         }
 
         // Adjudicate game to a draw if the last 4 scores of each engine is 0.
-        if (params.detect_draw_by_consecutive_low_score)
+        if (ply >= adj_draw_ply)
         {
-            if (ply >= adj_draw_ply)
+            int num_cons_plies_within_draw_score = 0;
+            bool is_adj_draw = false;
+
+            for (auto it = move_hist_scores.rbegin();
+                it != move_hist_scores.rend(); ++it)
             {
-                int num_cons_plies_within_draw_score = 0;
-                bool is_adj_draw = false;
-
-                for (auto it = move_hist_scores.rbegin();
-                    it != move_hist_scores.rend(); ++it)
+                if (abs(*it) <= adj_draw_score)
                 {
-                    if (abs(*it) <= adj_draw_score)
-                    {
-                        num_cons_plies_within_draw_score++;
-                    }
-                    else
-                    {
-                        // Draw scores must happen on consecutive plies
-                        break;
-                    }
-
-                    if (num_cons_plies_within_draw_score >= adj_draw_cnt)
-                    {
-                        is_adj_draw = true;
-                        break;
-                    }
+                    num_cons_plies_within_draw_score++;
+                }
+                else
+                {
+                    // Draw scores must happen on consecutive plies
+                    break;
                 }
 
-                if (is_adj_draw)
+                if (num_cons_plies_within_draw_score >= adj_draw_cnt)
+                {
+                    is_adj_draw = true;
+                    break;
+                }
+            }
+
+            if (is_adj_draw)
+            {
+                return 0;
+            }
+        }
+
+        if (pos.count<ALL_PIECES>() <= 4)
+        {
+            int num_pieces = pos.count<ALL_PIECES>();
+
+            // (1) KvK
+            if (num_pieces == 2)
+            {
+                return 0;
+            }
+
+            // (2) KvK + 1 minor piece
+            if (num_pieces == 3)
+            {
+                int minor_pc = pos.count<BISHOP>(WHITE) + pos.count<KNIGHT>(WHITE) +
+                    pos.count<BISHOP>(BLACK) + pos.count<KNIGHT>(BLACK);
+                if (minor_pc == 1)
                 {
                     return 0;
                 }
             }
-        }
 
-        // Draw by insufficient mating material
-        if (params.detect_draw_by_insufficient_mating_material)
-        {
-            if (pos.count<ALL_PIECES>() <= 4)
+            // (3) KBvKB, bishops of the same color
+            else if (num_pieces == 4)
             {
-                int num_pieces = pos.count<ALL_PIECES>();
-
-                // (1) KvK
-                if (num_pieces == 2)
+                if (pos.count<BISHOP>(WHITE) == 1 && pos.count<BISHOP>(BLACK) == 1)
                 {
-                    return 0;
-                }
-
-                // (2) KvK + 1 minor piece
-                if (num_pieces == 3)
-                {
-                    int minor_pc = pos.count<BISHOP>(WHITE) + pos.count<KNIGHT>(WHITE) +
-                        pos.count<BISHOP>(BLACK) + pos.count<KNIGHT>(BLACK);
-                    if (minor_pc == 1)
+                    // Color of bishops is black.
+                    if ((pos.pieces(WHITE, BISHOP) & DarkSquares)
+                        && (pos.pieces(BLACK, BISHOP) & DarkSquares))
                     {
                         return 0;
                     }
-                }
-
-                // (3) KBvKB, bishops of the same color
-                else if (num_pieces == 4)
-                {
-                    if (pos.count<BISHOP>(WHITE) == 1 && pos.count<BISHOP>(BLACK) == 1)
+                    // Color of bishops is white.
+                    if ((pos.pieces(WHITE, BISHOP) & ~DarkSquares)
+                        && (pos.pieces(BLACK, BISHOP) & ~DarkSquares))
                     {
-                        // Color of bishops is black.
-                        if ((pos.pieces(WHITE, BISHOP) & DarkSquares)
-                            && (pos.pieces(BLACK, BISHOP) & DarkSquares))
-                        {
-                            return 0;
-                        }
-                        // Color of bishops is white.
-                        if ((pos.pieces(WHITE, BISHOP) & ~DarkSquares)
-                            && (pos.pieces(BLACK, BISHOP) & ~DarkSquares))
-                        {
-                            return 0;
-                        }
+                        return 0;
                     }
                 }
             }
@@ -580,132 +487,32 @@ namespace Learner
         return nullopt;
     }
 
-    vector<uint8_t> Gensfen::generate_random_move_flags()
+    optional<Move> Gensfen::choose_random_move(Position& pos, int ply)
     {
-        vector<uint8_t> random_move_flag;
-
-        // Depending on random move selection parameters setup
-        // the array of flags that indicates whether a random move
-        // be taken at a given ply.
-
-        // Make an array like a[0] = 0 ,a[1] = 1, ...
-        // Fisher-Yates shuffle and take out the first N items.
-        // Actually, I only want N pieces, so I only need
-        // to shuffle the first N pieces with Fisher-Yates.
-
-        vector<int> a;
-        a.reserve((size_t)params.random_move_maxply);
-
-        // random_move_minply ,random_move_maxply is specified by 1 origin,
-        // Note that we are handling 0 origin here.
-        for (int i = std::max(params.random_move_minply - 1, 0); i < params.random_move_maxply; ++i)
+        if (params.random_multi_pv == 0 || prng.rand(10) > 1)
         {
-            a.push_back(i);
+            return nullopt;
         }
 
-        // In case of Apery random move, insert() may be called random_move_count times.
-        // Reserve only the size considering it.
-        random_move_flag.resize((size_t)params.random_move_maxply + params.random_move_count);
+        Search::search(pos, params.random_multi_pv_depth, params.random_multi_pv);
 
-        // A random move that exceeds the size() of a[] cannot be applied, so limit it.
-        for (int i = 0; i < std::min(params.random_move_count, (int)a.size()); ++i)
+        // Select one from the top N hands of root Moves
+        auto& rm = pos.this_thread()->rootMoves;
+
+        uint64_t s = min((uint64_t)rm.size(), (uint64_t)params.random_multi_pv);
+        for (uint64_t i = 1; i < s; ++i)
         {
-            swap(a[i], a[prng.rand((uint64_t)a.size() - i) + i]);
-            random_move_flag[a[i]] = true;
-        }
-
-        return random_move_flag;
-    }
-
-    optional<Move> Gensfen::choose_random_move(
-        Position& pos,
-        std::vector<uint8_t>& random_move_flag,
-        int ply,
-        int& random_move_c)
-    {
-        optional<Move> random_move;
-
-        // Randomly choose one from legal move
-        if (
-            // 1. Random move of random_move_count times from random_move_minply to random_move_maxply
-            (params.random_move_minply != -1 && ply < (int)random_move_flag.size() && random_move_flag[ply]) ||
-            // 2. A mode to perform random move of random_move_count times after leaving the startpos
-            (params.random_move_minply == -1 && random_move_c < params.random_move_count))
-        {
-            ++random_move_c;
-
-            // It's not a mate, so there should be one legal move...
-            if (params.random_multi_pv == 0)
+            // The difference from the evaluation value of rm[0] must
+            // be within the range of random_multi_pv_diff.
+            // It can be assumed that rm[x].score is arranged in descending order.
+            if (rm[0].score > rm[i].score + params.random_multi_pv_diff / (ply / 8 + 1))
             {
-                // Normal random move
-                MoveList<LEGAL> list(pos);
-
-                // I don't really know the goodness and badness of making this the Apery method.
-                if (params.random_move_like_apery == 0
-                    || prng.rand(params.random_move_like_apery) != 0)
-                {
-                    // Normally one move from legal move
-                    random_move = list.at((size_t)prng.rand((uint64_t)list.size()));
-                }
-                else
-                {
-                    // if you can move the king, move the king
-                    Move moves[8]; // Near 8
-                    Move* p = &moves[0];
-                    for (auto& m : list)
-                    {
-                        if (type_of(pos.moved_piece(m)) == KING)
-                        {
-                            *(p++) = m;
-                        }
-                    }
-
-                    size_t n = p - &moves[0];
-                    if (n != 0)
-                    {
-                        // move to move the king
-                        random_move = moves[prng.rand(n)];
-
-                        // In Apery method, at this time there is a 1/2 chance
-                        // that the opponent will also move randomly
-                        if (prng.rand(2) == 0)
-                        {
-                            // Is it a simple hack to add a "1" next to random_move_flag[ply]?
-                            random_move_flag.insert(random_move_flag.begin() + ply + 1, 1, true);
-                        }
-                    }
-                    else
-                    {
-                        // Normally one move from legal move
-                        random_move = list.at((size_t)prng.rand((uint64_t)list.size()));
-                    }
-                }
-            }
-            else
-            {
-                Search::search(pos, params.random_multi_pv_depth, params.random_multi_pv);
-
-                // Select one from the top N hands of root Moves
-                auto& rm = pos.this_thread()->rootMoves;
-
-                uint64_t s = min((uint64_t)rm.size(), (uint64_t)params.random_multi_pv);
-                for (uint64_t i = 1; i < s; ++i)
-                {
-                    // The difference from the evaluation value of rm[0] must
-                    // be within the range of random_multi_pv_diff.
-                    // It can be assumed that rm[x].score is arranged in descending order.
-                    if (rm[0].score > rm[i].score + params.random_multi_pv_diff)
-                    {
-                        s = i;
-                        break;
-                    }
-                }
-
-                random_move = rm[prng.rand(s)].pv[0];
+                s = i;
+                break;
             }
         }
 
-        return random_move;
+        return rm[prng.rand(s)].pv[0];
     }
 
     // Write out the phases loaded in sfens to a file.
@@ -830,14 +637,6 @@ namespace Learner
                 is >> params.output_file_name;
             else if (token == "eval_limit")
                 is >> params.eval_limit;
-            else if (token == "random_move_minply")
-                is >> params.random_move_minply;
-            else if (token == "random_move_maxply")
-                is >> params.random_move_maxply;
-            else if (token == "random_move_count")
-                is >> params.random_move_count;
-            else if (token == "random_move_like_apery")
-                is >> params.random_move_like_apery;
             else if (token == "random_multi_pv")
                 is >> params.random_multi_pv;
             else if (token == "random_multi_pv_diff")
@@ -857,11 +656,6 @@ namespace Learner
             // Accept also the old option name.
             else if (token == "use_draw_in_training_data_generation" || token == "write_out_draw_game_in_training_data_generation")
                 is >> params.write_out_draw_game_in_training_data_generation;
-            // Accept also the old option name.
-            else if (token == "use_game_draw_adjudication" || token == "detect_draw_by_consecutive_low_score")
-                is >> params.detect_draw_by_consecutive_low_score;
-            else if (token == "detect_draw_by_insufficient_mating_material")
-                is >> params.detect_draw_by_insufficient_mating_material;
             else if (token == "sfen_format")
                 is >> sfen_format;
             else if (token == "seed")
@@ -873,12 +667,6 @@ namespace Learner
                 UCI::setoption("UCI_Chess960", "false");
                 UCI::setoption("UCI_AnalyseMode", "false");
                 UCI::setoption("UCI_LimitStrength", "false");
-                UCI::setoption("PruneAtShallowDepth", "false");
-                UCI::setoption("EnableTranspositionTable", "true");
-            }
-            else if (token == "ensure_quiet")
-            {
-                params.ensure_quiet = true;
             }
             else
                 cout << "ERROR: Ignoring unknown option " << token << endl;
@@ -892,12 +680,6 @@ namespace Learner
                 params.sfen_format = SfenOutputType::Binpack;
             else
                 cout << "WARNING: Unknown sfen format `" << sfen_format << "`. Using bin\n";
-        }
-
-        if (params.ensure_quiet)
-        {
-            // Otherwise we can't ensure quiet positions...
-            UCI::setoption("EnableTranspositionTable", "false");
         }
 
         if (random_file_name)
@@ -932,10 +714,6 @@ namespace Learner
             << "  - num sfens to generate  = " << loop_max << endl
             << "  - eval_limit             = " << params.eval_limit << endl
             << "  - num threads (UCI)      = " << params.num_threads << endl
-            << "  - random_move_minply     = " << params.random_move_minply << endl
-            << "  - random_move_maxply     = " << params.random_move_maxply << endl
-            << "  - random_move_count      = " << params.random_move_count << endl
-            << "  - random_move_like_apery = " << params.random_move_like_apery << endl
             << "  - random_multi_pv        = " << params.random_multi_pv << endl
             << "  - random_multi_pv_diff   = " << params.random_multi_pv_diff << endl
             << "  - random_multi_pv_depth  = " << params.random_multi_pv_depth << endl
@@ -945,12 +723,10 @@ namespace Learner
             << "  - output_file_name       = " << params.output_file_name << endl
             << "  - save_every             = " << params.save_every << endl
             << "  - random_file_name       = " << random_file_name << endl
-            << "  - write_drawn_games      = " << params.write_out_draw_game_in_training_data_generation << endl
-            << "  - draw by low score      = " << params.detect_draw_by_consecutive_low_score << endl
-            << "  - draw by insuff. mat.   = " << params.detect_draw_by_insufficient_mating_material << endl;
+            << "  - write_drawn_games      = " << params.write_out_draw_game_in_training_data_generation << endl;
 
         // Show if the training data generator uses NNUE.
-        Eval::NNUE::verify_eval_file_loaded();
+        Eval::NNUE::verify();
 
         Threads.main()->ponder = false;
 

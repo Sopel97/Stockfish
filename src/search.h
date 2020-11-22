@@ -24,7 +24,6 @@
 #include "misc.h"
 #include "movepick.h"
 #include "types.h"
-#include "uci.h"
 
 class Position;
 
@@ -32,8 +31,6 @@ namespace Search {
 
 /// Threshold used for countermoves based pruning
 constexpr int CounterMovePruneThreshold = 0;
-
-extern bool prune_at_shallow_depth;
 
 /// Stack struct keeps track of the information we need to remember from nodes
 /// shallower and deeper in the tree during the search. Each search thread has
@@ -116,6 +113,6 @@ using ValueAndPV = std::pair<Value, std::vector<Move>>;
 ValueAndPV qsearch(Position& pos);
 ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1, uint64_t nodesLimit = 0);
 
-}
+} // namespace Search
 
 #endif // #ifndef SEARCH_H_INCLUDED

@@ -27,8 +27,6 @@
 #include <streambuf>
 #include <vector>
 
-#include "nnue/evaluate_nnue.h"
-
 #include "bitboard.h"
 #include "evaluate.h"
 #include "material.h"
@@ -39,6 +37,77 @@
 #include "incbin/incbin.h"
 
 using namespace std;
+using namespace Eval::NNUE;
+
+namespace Eval {
+
+  bool useNNUE;
+  string eval_file_loaded = "None";
+
+  /// NNUE::init() tries to load a nnue network at startup time, or when the engine
+  /// receives a UCI command "setoption name EvalFile value nn-[a-z0-9]{12}.nnue"
+  /// The name of the nnue network is always retrieved from the EvalFile option.
+  /// We search the given network in three locations: internally (the default
+  /// network may be embedded in the binary), in the active working directory and
+  /// in the engine directory. Distro packagers may define the DEFAULT_NNUE_DIRECTORY
+  /// variable to have the engine search in a special directory in their distro.
+
+  void NNUE::init() {
+
+    useNNUE = Options["Use NNUE"];
+    if (Options["SkipLoadingEval"] || !useNNUE)
+        return;
+
+    string eval_file = string(Options["EvalFile"]);
+
+    #if defined(DEFAULT_NNUE_DIRECTORY)
+    #define stringify2(x) #x
+    #define stringify(x) stringify2(x)
+    vector<string> dirs = { "" , CommandLine::binaryDirectory , stringify(DEFAULT_NNUE_DIRECTORY) };
+    #else
+    vector<string> dirs = { "" , CommandLine::binaryDirectory };
+    #endif
+
+    for (string directory : dirs)
+        if (eval_file_loaded != eval_file)
+        {
+            ifstream stream(directory + eval_file, ios::binary);
+            if (load_eval(eval_file, stream))
+                eval_file_loaded = eval_file;
+        }
+  }
+
+  /// NNUE::verify() verifies that the last net used was loaded successfully
+  void NNUE::verify() {
+
+    string eval_file = string(Options["EvalFile"]);
+
+    if (!Options["SkipLoadingEval"] && useNNUE && eval_file_loaded != eval_file)
+    {
+        UCI::OptionsMap defaults;
+        UCI::init(defaults);
+
+        string msg1 = "If the UCI option \"Use NNUE\" is set to true, network evaluation parameters compatible with the engine must be available.";
+        string msg2 = "The option is set to true, but the network file " + eval_file + " was not loaded successfully.";
+        string msg3 = "The UCI option EvalFile might need to specify the full path, including the directory name, to the network file.";
+        string msg4 = "The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/" + string(defaults["EvalFile"]);
+        string msg5 = "The engine will be terminated now.";
+
+        sync_cout << "info string ERROR: " << msg1 << sync_endl;
+        sync_cout << "info string ERROR: " << msg2 << sync_endl;
+        sync_cout << "info string ERROR: " << msg3 << sync_endl;
+        sync_cout << "info string ERROR: " << msg4 << sync_endl;
+        sync_cout << "info string ERROR: " << msg5 << sync_endl;
+
+        exit(EXIT_FAILURE);
+    }
+
+    if (useNNUE)
+        sync_cout << "info string NNUE evaluation using " << eval_file_loaded << " enabled" << sync_endl;
+    else
+        sync_cout << "info string classical evaluation enabled" << sync_endl;
+  }
+}
 
 namespace Trace {
 
@@ -916,15 +985,7 @@ Value Eval::evaluate(const Position& pos) {
 
   Value v;
 
-  if (NNUE::useNNUE == NNUE::UseNNUEMode::Pure) {
-      v = NNUE::evaluate(pos);
-
-      // Guarantee evaluation does not hit the tablebase range
-      v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-
-      return v;
-  }
-  else if (NNUE::useNNUE == NNUE::UseNNUEMode::False)
+  if (!Eval::useNNUE)
       v = Evaluation<NO_TRACE>(pos).value();
   else
   {
@@ -957,6 +1018,21 @@ Value Eval::evaluate(const Position& pos) {
 
   // Damp down the evaluation linearly when shuffling
   v = v * (100 - pos.rule50_count()) / 100;
+
+  // Guarantee evaluation does not hit the tablebase range
+  v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
+
+  return v;
+}
+
+Value Eval::evaluate_raw(const Position& pos) {
+
+  Value v;
+
+  if (!Eval::useNNUE)
+    v = Evaluation<NO_TRACE>(pos).value();
+  else
+    v = NNUE::evaluate(pos);
 
   // Guarantee evaluation does not hit the tablebase range
   v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
@@ -1009,7 +1085,7 @@ std::string Eval::trace(const Position& pos) {
 
   ss << "\nClassical evaluation: " << to_cp(v) << " (white side)\n";
 
-  if (NNUE::useNNUE != NNUE::UseNNUEMode::False)
+  if (Eval::useNNUE)
   {
       v = NNUE::evaluate(pos);
       v = pos.side_to_move() == WHITE ? v : -v;

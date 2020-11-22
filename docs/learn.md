@@ -8,9 +8,7 @@ As all commands in stockfish `learn` can be invoked either from command line (as
 
 It is recommended to set the `EnableTranspositionTable` UCI option to `false` to reduce the interference between qsearches which are used to provide shallow evaluation. Using TT may cause the shallow evaluation to diverge from the real evaluation of the net, hiding imperfections.
 
-It is recommended to set the `PruneAtShallowDepth` UCI option to `false` as it will provide more accurate shallow evaluation.
-
-It is **required** to set the `Use NNUE` UCI option to `pure` as otherwise the function being optimized will not always match the function being probed, in which case not much can be learned.
+It is **required** to set the `Use NNUE` UCI option to `true` as otherwise the function being optimized will not always match the function being probed, in which case not much can be learned.
 
 Currently the following options are available:
 
@@ -36,21 +34,13 @@ Currently the following options are available:
 
 `use_draw_in_validation` - deprecated, alias for `use_draw_games_in_validation`
 
-`skip_duplicated_positions_in_training` - either 0 or 1. If 1 then a small hashtable will be used to try to eliminate duplicated position from training. Default: 0.
-
-`use_hash_in_training` - deprecated, alias for `skip_duplicated_positions_in_training`
-
 `winning_probability_coefficient` - some magic value for winning probability. If you need to read this then don't touch it. Default: 1.0 / PawnValueEg / 4.0 * std::log(10.0)
-
-`use_wdl` - either 0 or 1. If 1 then the evaluations will be converted to win/draw/loss percentages prior to learning on them. (Slightly changes the gradient because eval has a different derivative than wdl). Default: 0.
 
 `lambda` - value in range [0..1]. 1 means that only evaluation is used for learning, 0 means that only game result is used. Values inbetween result in interpolation between the two contributions. See `lambda_limit` for when this is applied. Default: 1.0.
 
 `lambda2` - value in range [0..1]. 1 means that only evaluation is used for learning, 0 means that only game result is used. Values inbetween result in interpolation between the two contributions. See `lambda_limit` for when this is applied. Default: 1.0.
 
 `lambda_limit` - the maximum absolute score value for which `lambda` is used as opposed to `lambda2`. For positions with absolute evaluation higher than `lambda_limit` `lambda2` will be used. Default: 32000 (so always `lambda`).
-
-`max_grad` - the maximum allowed loss gradient for backpropagation. Effectively a form of gradient clipping. Useful for the first iterations with a randomly generated net as with higher lr backpropagation often overshoots and kills the net. The default value is fairly conservative, values as low as 0.25 could be used with lr of 1.0 without problems. Default: 1.0.
 
 `reduction_gameply` - the minimum ply after which positions won't be skipped. Positions at plies below this value are skipped with a probability that lessens linearly with the ply (reaching 0 at `reduction_gameply`). Default: 1.
 
@@ -63,10 +53,6 @@ Currently the following options are available:
 `nn_batch_size` - minibatch size used for learning. Should be smaller than batch size. Default: 1000.
 
 `newbob_decay` - learning rate will be multiplied by this factor every time a net is rejected (so in other words it controls LR drops). Default: 0.5 (no LR drops)
-
-`assume_quiet` - this is a flag option. When specified learn will not perform qsearch to reach a quiet position.
-
-`smart_fen_skipping` - this is a flag option. When specified some position that are not good candidates for teaching are skipped. This includes positions where the best move is a capture or promotion, and position where a king is in check.
 
 `newbob_num_trials` - determines after how many subsequent rejected nets the training process will be terminated. Default: 4.
 

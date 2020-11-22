@@ -23,8 +23,6 @@
 #include <iostream>
 #include <sstream>
 
-#include "nnue/evaluate_nnue.h"
-
 #include "evaluate.h"
 #include "misc.h"
 #include "movegen.h"
@@ -45,8 +43,6 @@ namespace Search {
 using std::string;
 using Eval::evaluate;
 using namespace Search;
-
-bool Search::prune_at_shallow_depth = true;
 
 namespace {
 
@@ -188,7 +184,7 @@ namespace {
 void Search::init() {
 
   for (int i = 1; i < MAX_MOVES; ++i)
-      Reductions[i] = int((21.3 + 2 * std::log(Threads.size())) * std::log(i + 0.25 * std::log(i)));
+      Reductions[i] = int((21.3 + 2 * std::log(1)) * std::log(i + 0.25 * std::log(i)));
 }
 
 
@@ -221,7 +217,7 @@ void MainThread::search() {
   Time.init(Limits, us, rootPos.game_ply());
   TT.new_search();
 
-  Eval::NNUE::verify_eval_file_loaded();
+  Eval::NNUE::verify();
 
   if (rootMoves.empty())
   {
@@ -945,6 +941,7 @@ namespace {
 
     // Step 11. If the position is not in TT, decrease depth by 2
     if (   PvNode
+        && TranspositionTable::enable_transposition_table
         && depth >= 6
         && !ttMove)
         depth -= 2;
@@ -1014,7 +1011,6 @@ moves_loop: // When in check, search starts from here
 
       // Step 13. Pruning at shallow depth (~200 Elo)
       if (  !rootNode
-          && (PvNode ? prune_at_shallow_depth : true)
           && pos.non_pawn_material(us)
           && bestValue > VALUE_TB_LOSS_IN_MAX_PLY)
       {
@@ -2077,7 +2073,7 @@ namespace Search
   ValueAndPV qsearch(Position& pos)
   {
     Stack stack[MAX_PLY+10], *ss = stack+7;
-    Move  pv[MAX_PLY+1];
+    Move pv[MAX_PLY+1];
 
     if (!init_for_search(pos, ss))
       return {};
@@ -2139,7 +2135,7 @@ namespace Search
     if (!init_for_search(pos, ss))
       return {};
 
-	ss->pv = pv; // For the time being, it must be a dummy and somewhere with a buffer.
+    ss->pv = pv; // For the time being, it must be a dummy and somewhere with a buffer.
 
     // Initialize the variables related to this_thread
     auto th = pos.this_thread();

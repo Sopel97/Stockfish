@@ -27,19 +27,17 @@ namespace Eval::NNUE {
     // Add 1 sample of learning data
     void add_example(
         Position& pos,
-        Color rootColor,
         Value discrete_nn_eval,
     	const Learner::PackedSfenValue& psv,
         double weight);
 
     // update the evaluation function parameters
-    Learner::Loss update_parameters(
+    void update_parameters(
         ThreadPool& thread_pool,
         uint64_t epoch,
         bool verbose,
         double learning_rate,
-        double max_grad,
-        Learner::CalcLossFunc calc_loss);
+        Learner::CalcGradFunc calc_grad);
 
     // Check if there are any problems with learning
     void check_health();

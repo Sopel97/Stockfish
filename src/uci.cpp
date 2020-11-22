@@ -23,7 +23,6 @@
 #include <string>
 
 #include "extra/stockfish_blas.h"
-#include "nnue/evaluate_nnue.h"
 #include "evaluate.h"
 #include "movegen.h"
 #include "nnue/nnue_test_command.h"
@@ -103,7 +102,7 @@ namespace {
     Position p;
     p.set(pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
 
-    Eval::NNUE::verify_eval_file_loaded();
+    Eval::NNUE::verify();
 
     sync_cout << "\n" << Eval::trace(p) << sync_endl;
   }
@@ -210,6 +209,28 @@ namespace {
          << "\nNodes/second    : " << 1000 * nodes / elapsed << endl;
   }
 
+  // The win rate model returns the probability (per mille) of winning given an eval
+  // and a game-ply. The model fits rather accurately the LTC fishtest statistics.
+  int win_rate_model(Value v, int ply) {
+
+     // The model captures only up to 240 plies, so limit input (and rescale)
+     double m = std::min(240, ply) / 64.0;
+
+     // Coefficients of a 3rd order polynomial fit based on fishtest data
+     // for two parameters needed to transform eval to the argument of a
+     // logistic function.
+     double as[] = {-8.24404295, 64.23892342, -95.73056462, 153.86478679};
+     double bs[] = {-3.37154371, 28.44489198, -56.67657741,  72.05858751};
+     double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
+     double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
+
+     // Transform eval to centipawns with limited range
+     double x = std::clamp(double(100 * v) / PawnValueEg, -1000.0, 1000.0);
+
+     // Return win rate in per mille (rounded to nearest)
+     return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
+  }
+
 } // namespace
 
 void UCI::setoption(const std::string& name, const std::string& value)
@@ -218,35 +239,6 @@ void UCI::setoption(const std::string& name, const std::string& value)
         Options[name] = value;
     else
         sync_cout << "No such option: " << name << sync_endl;
-}
-
-// The win rate model returns the probability (per mille) of winning given an eval
-// and a game-ply. The model fits rather accurately the LTC fishtest statistics.
-int UCI::win_rate_model(Value v, int ply) {
-   // Return win rate in per mille (rounded to nearest)
-   return int(0.5 + win_rate_model_double(v, ply));
-}
-
-// The win rate model returns the probability (per mille) of winning given an eval
-// and a game-ply. The model fits rather accurately the LTC fishtest statistics.
-double UCI::win_rate_model_double(double v, int ply) {
-
-   // The model captures only up to 240 plies, so limit input (and rescale)
-   double m = std::min(240, ply) / 64.0;
-
-   // Coefficients of a 3rd order polynomial fit based on fishtest data
-   // for two parameters needed to transform eval to the argument of a
-   // logistic function.
-   double as[] = {-8.24404295, 64.23892342, -95.73056462, 153.86478679};
-   double bs[] = {-3.37154371, 28.44489198, -56.67657741,  72.05858751};
-   double a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
-   double b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
-
-   // Transform eval to centipawns with limited range
-     double x = std::clamp(double(100 * v) / PawnValueEg, -1000.0, 1000.0);
-
-   // Return win rate in per mille
-   return 1000.0 / (1 + std::exp((a - x) / b));
 }
 
 // --------------------

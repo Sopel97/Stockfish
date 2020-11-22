@@ -292,7 +292,7 @@ namespace Eval::NNUE {
             target_layer_(target_layer),
             biases_(),
             weights_(),
-            momentum_(0.2),
+            momentum_(0.0),
             learning_rate_scale_(1.0) {
 
             dequantize_parameters();

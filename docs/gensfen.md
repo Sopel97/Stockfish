@@ -4,8 +4,6 @@
 
 As all commands in stockfish `gensfen` can be invoked either from command line (as `stockfish.exe gensfen ...`, but this is not recommended because it's not possible to specify UCI options before `gensfen` executes) or in the interactive prompt.
 
-It is recommended to set the `PruneAtShallowDepth` UCI option to `false` as it will increase the quality of fixed depth searches.
-
 It is recommended to keep the `EnableTranspositionTable` UCI option at the default `true` value as it will make the generation process faster without noticably harming the uniformity of the data.
 
 `gensfen` takes named parameters in the form of `gensfen param_1_name param_1_value param_2_name param_2_value ...`.
@@ -25,14 +23,6 @@ Currently the following options are available:
 `output_file_name` - the name of the file to output to. If the extension is not present or doesn't match the selected training data format the right extension will be appened. Default: generated_kifu
 
 `eval_limit` - evaluations with higher absolute value than this will not be written and will terminate a self-play game. Should not exceed 10000 which is VALUE_KNOWN_WIN, but is only hardcapped at mate in 2 (\~30000). Default: 3000
-
-`random_move_minply` - the minimal ply at which a random move may be executed instead of a move chosen by search. Default: 1.
-
-`random_move_maxply` - the maximal ply at which a random move may be executed instead of a move chosen by search. Default: 24.
-
-`random_move_count` - maximum number of random moves in a single self-play game. Default: 5.
-
-`random_move_like_apery` - either 0 or 1. If 1 then random king moves will be followed by a random king move from the opponent whenever possible with 50% probability. Default: 0.
 
 `random_multi_pv` - the number of PVs used for determining the random move. If not specified then a truly random move will be chosen. If specified then a multiPV search will be performed the random move will be one of the moves chosen by the search.
 
@@ -54,14 +44,6 @@ Currently the following options are available:
 
 `use_draw_in_training_data_generation` - deprecated, alias for `write_out_draw_game_in_training_data_generation`
 
-`detect_draw_by_consecutive_low_score` - either 0 or 1. If 1 then drawn games will be adjudicated when the score remains 0 for at least 8 plies after ply 80. Default: 1.
-
-`use_game_draw_adjudication` - deprecated, alias for `detect_draw_by_consecutive_low_score`
-
-`detect_draw_by_insufficient_mating_material` - either 0 or 1. If 1 then position with insufficient material will be adjudicated as draws. Default: 1.
-
 `sfen_format` - format of the training data to use. Either `bin` or `binpack`. Default: `binpack`.
-
-`ensure_quiet` - this is a flag option. When specified the positions will be from the qsearch leaf.
 
 `seed` - seed for the PRNG. Can be either a number or a string. If it's a string then its hash will be used. If not specified then the current time will be used.

@@ -318,7 +318,7 @@ endif
 
 ### 3.1 Selecting compiler (default = gcc)
 CXXFLAGS += -g -Wall -Wcast-qual -fno-exceptions -std=c++17 -fopenmp -I. $(EXTRACXXFLAGS)
-LDFLAGS += -fopenmp $(EXTRALDFLAGS)
+LDFLAGS += -fopenmp $(EXTRALDFLAGS) -lstdc++fs
 DEPENDFLAGS += -std=c++17 -I.
 
 ifeq ($(COMP),)

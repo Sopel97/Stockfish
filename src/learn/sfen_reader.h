@@ -73,12 +73,12 @@ namespace Learner{
         }
 
         // Load the phase for calculation such as mse.
-        PSVector read_for_mse(uint64_t count)
+        PSVector read_for_mse(uint64_t count, int eval_limit, bool use_draw_games)
         {
             PSVector sfen_for_mse;
             sfen_for_mse.reserve(count);
 
-            for (uint64_t i = 0; i < count; ++i)
+            while (sfen_for_mse.size() < count)
             {
                 PackedSfenValue ps;
                 if (!read_to_thread_buffer(0, ps))
@@ -86,6 +86,12 @@ namespace Learner{
                     std::cout << "ERROR (sfen_reader): Reading failed." << std::endl;
                     return sfen_for_mse;
                 }
+
+                if (eval_limit < abs(ps.score))
+                    continue;
+
+                if (!use_draw_games && ps.game_result == 0)
+                    continue;
 
                 sfen_for_mse.push_back(ps);
             }
