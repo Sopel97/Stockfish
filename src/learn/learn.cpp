@@ -294,8 +294,11 @@ namespace Learner
 
     static double calc_grad(Value shallow, Value teacher_signal, int result, int ply)
     {
-        return (double)(std::clamp(shallow, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN)
-            - std::clamp(teacher_signal, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN)) / 2400.0;
+        shallow = std::clamp(shallow, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN);
+        teacher_signal = std::clamp(teacher_signal, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN);
+        double diff = shallow - teacher_signal;
+        diff *= Math::sigmoid((abs(diff)-30.0)*0.25);
+        return diff / 2400.0;
     }
 
     // Calculate cross entropy during learning
