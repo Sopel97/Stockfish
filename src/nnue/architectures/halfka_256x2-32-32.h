@@ -23,6 +23,7 @@
 
 #include "nnue/features/feature_set.h"
 #include "nnue/features/half_ka.h"
+#include "nnue/features/imbalance.h"
 
 #include "nnue/layers/input_slice.h"
 #include "nnue/layers/affine_transform.h"
@@ -32,7 +33,8 @@ namespace Eval::NNUE {
 
     // Input features used in evaluation function
     using RawFeatures = Features::FeatureSet<
-        Features::HalfKA<Features::Side::kFriend>>;
+        Features::HalfKA<Features::Side::kFriend>,
+        Features::Imbalance>;
 
     // Number of input feature dimensions after conversion
     constexpr IndexType kTransformedFeatureDimensions = 256;

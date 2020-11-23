@@ -57,6 +57,7 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	nnue/features/k.cpp \
 	nnue/features/p.cpp \
 	nnue/features/a.cpp \
+	nnue/features/imbalance.cpp \
 	nnue/features/castling_right.cpp \
 	nnue/features/enpassant.cpp \
 	nnue/nnue_test_command.cpp \
