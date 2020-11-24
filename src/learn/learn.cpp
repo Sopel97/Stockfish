@@ -295,14 +295,14 @@ namespace Learner
     static double calc_grad(Value shallow, Value teacher_signal, int result, int ply)
     {
         // https://www.wolframalpha.com/input/?i=sigmoid%28x%2F361%29+for+x+in+-1000+to+1000
-        // https://www.wolframalpha.com/input/?i=sigmoid%28%28abs%28x*2500%29-30%29%2F4%29+for+x+in+-0.030+to+0.030
+        // https://www.wolframalpha.com/input/?i=sigmoid%28%28abs%28x*400%29-9%29%29+for+x+in+-0.030+to+0.030
         shallow = std::clamp(shallow, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN);
         teacher_signal = std::clamp(teacher_signal, -VALUE_KNOWN_WIN, VALUE_KNOWN_WIN);
         double perf_shallow = Math::sigmoid((double)shallow * winning_probability_coefficient);
         double perf_teacher = Math::sigmoid((double)teacher_signal * winning_probability_coefficient);
         double perf_diff = perf_shallow - perf_teacher;
         double diff = (double)shallow - (double)teacher_signal;
-        double scale = Math::sigmoid((abs(perf_diff*2500.0)-30.0)/4.0);
+        double scale = Math::sigmoid((abs(perf_diff*400.0)-9.0));
         return diff * scale / 2400.0;
     }
 
