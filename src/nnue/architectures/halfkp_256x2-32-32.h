@@ -25,6 +25,7 @@
 #include "nnue/features/half_kp.h"
 
 #include "nnue/layers/input_slice.h"
+#include "nnue/layers/double_input_slice.h"
 #include "nnue/layers/affine_transform.h"
 #include "nnue/layers/clipped_relu.h"
 
@@ -35,12 +36,12 @@ namespace Eval::NNUE {
         Features::HalfKP<Features::Side::kFriend>>;
 
     // Number of input feature dimensions after conversion
-    constexpr IndexType kTransformedFeatureDimensions = 256;
+    constexpr IndexType kTransformedFeatureDimensions = 256+64;
 
     namespace Layers {
 
         // Define network structure
-        using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
+        using InputLayer = DoubleInputSlice<256, kTransformedFeatureDimensions>;
         using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 32>>;
         using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
         using OutputLayer = AffineTransform<HiddenLayer2, 1>;

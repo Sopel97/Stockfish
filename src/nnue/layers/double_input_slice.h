@@ -50,13 +50,13 @@ namespace Eval::NNUE::Layers {
         static constexpr int kLayerIndex = 1;
 
         // Hash value embedded in the evaluation file
-        static constexpr std::uint32_t get_hash_value() {
+        static constexpr std::uint32_t GetHashValue() {
             std::uint32_t hash_value = 0xDF31E90Du;
             hash_value ^= kOutputDimensions ^ (Offset << 10) ^ (Stride << 4);
             return hash_value;
         }
 
-        static std::string get_name() {
+        static std::string GetName() {
             return "DoubleInputSlice[" + std::to_string(kOutputDimensions) + "((" +
                 std::to_string(Offset) + ":" +
                 std::to_string(Offset + kHalfOutputDimensions) + ")+(" +
@@ -66,29 +66,29 @@ namespace Eval::NNUE::Layers {
 
         // A string that represents the structure from the input layer to this layer
         static std::string get_structure_string() {
-            return get_name();
+            return GetName();
         }
 
         static std::string get_layers_info() {
             std::string info = "  - ";
             info += std::to_string(kLayerIndex);
             info += " - ";
-            info += get_name();
+            info += GetName();
             return info;
         }
 
         // Read network parameters
-        bool read_parameters(std::istream& /*stream*/) {
+        bool ReadParameters(std::istream& /*stream*/) {
             return true;
         }
 
         // write parameters
-        bool write_parameters(std::ostream& /*stream*/) const {
+        bool WriteParameters(std::ostream& /*stream*/) const {
             return true;
         }
 
         // Forward propagation
-        const OutputType* propagate(
+        const OutputType* Propagate(
             const TransformedFeatureType* transformed_features,
             char* buffer) const {
 

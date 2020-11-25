@@ -43,7 +43,7 @@ namespace Eval::NNUE {
 #define vec_add_16(a,b) _mm512_add_epi16(a,b)
 #define vec_sub_16(a,b) _mm512_sub_epi16(a,b)
 #define vec_zero _mm512_setzero_si512()
-    static constexpr IndexType kNumRegs = 8; // only 8 are needed
+    static constexpr IndexType kNumRegs = 5; // only 8 are needed
 
 #elif USE_AVX2
     typedef __m256i vec_t;
@@ -52,7 +52,7 @@ namespace Eval::NNUE {
 #define vec_add_16(a,b) _mm256_add_epi16(a,b)
 #define vec_sub_16(a,b) _mm256_sub_epi16(a,b)
 #define vec_zero _mm256_setzero_si256()
-    static constexpr IndexType kNumRegs = 16;
+    static constexpr IndexType kNumRegs = 10;
 
 #elif USE_SSE2
     typedef __m128i vec_t;
@@ -61,7 +61,7 @@ namespace Eval::NNUE {
 #define vec_add_16(a,b) _mm_add_epi16(a,b)
 #define vec_sub_16(a,b) _mm_sub_epi16(a,b)
 #define vec_zero _mm_setzero_si128()
-    static constexpr IndexType kNumRegs = Is64Bit ? 16 : 8;
+    static constexpr IndexType kNumRegs = Is64Bit ? 10 : 5;
 
 #elif USE_MMX
     typedef __m64 vec_t;
@@ -70,7 +70,7 @@ namespace Eval::NNUE {
 #define vec_add_16(a,b) _mm_add_pi16(a,b)
 #define vec_sub_16(a,b) _mm_sub_pi16(a,b)
 #define vec_zero _mm_setzero_si64()
-    static constexpr IndexType kNumRegs = 8;
+    static constexpr IndexType kNumRegs = 5;
 
 #elif USE_NEON
     typedef int16x8_t vec_t;
@@ -79,7 +79,7 @@ namespace Eval::NNUE {
 #define vec_add_16(a,b) vaddq_s16(a,b)
 #define vec_sub_16(a,b) vsubq_s16(a,b)
 #define vec_zero {0}
-  static constexpr IndexType kNumRegs = 16;
+  static constexpr IndexType kNumRegs = 10;
 
 #else
 #undef TILING
