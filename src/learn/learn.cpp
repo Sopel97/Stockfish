@@ -154,7 +154,7 @@ namespace Learner
 
     private:
         ValueWithGrad<double> m_loss{ 0.0, 0.0 };
-        uint64_t m_count{0};
+        uint64_t m_count{ 0 };
         std::mutex m_mutex;
 
     };
@@ -197,7 +197,7 @@ namespace Learner
         return lambda;
     }
 
-    template <typename ShallowT, typename TeacherT, typename ResultT, typename LambdaT>
+    template <typename ShallowT, typename TeacherT, typename ResultT, typename LambdaT, typename T = typename ShallowT::ValueType>
     static auto& cross_entropy_(
         ShallowT& q_,
         TeacherT& p_,
@@ -207,7 +207,7 @@ namespace Learner
     {
         using namespace Learner::Autograd::UnivariateStatic;
 
-        constexpr double epsilon = 1e-12;
+        constexpr T epsilon = 1e-12;
 
         static thread_local auto teacher_entropy_ = -(p_ * log(p_ + epsilon) + (1.0 - p_) * log(1.0 - p_ + epsilon));
         static thread_local auto outcome_entropy_ = -(t_ * log(t_ + epsilon) + (1.0 - t_) * log(1.0 - t_ + epsilon));
@@ -218,6 +218,114 @@ namespace Learner
         static thread_local auto loss_ = result_ - entropy_;
 
         return loss_;
+    }
+
+    static auto win_pct_use_wdl(
+        Value v,
+        int ply
+    )
+    {
+        // Coefficients of a 3rd order polynomial fit based on fishtest data
+        // for two parameters needed to transform eval to the argument of a
+        // logistic function.
+        static constexpr double as[] = { -8.24404295, 64.23892342, -95.73056462, 153.86478679 };
+        static constexpr double bs[] = { -3.37154371, 28.44489198, -56.67657741,  72.05858751 };
+
+        // The model captures only up to 240 plies, so limit input (and rescale)
+        auto m = ply / 64.0;
+
+        auto a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
+        auto b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
+
+        // Return win rate in per mille
+        auto win_pct_ = Math::sigmoid(((double)v - a) / b);
+
+        return win_pct_;
+    }
+
+    template <typename ValueT, typename PlyT, typename T = typename ValueT::ValueType>
+    static auto& expected_perf_use_wdl_(
+        ValueT& v_,
+        PlyT& ply_
+    )
+    {
+        using namespace Learner::Autograd::UnivariateStatic;
+
+        // Coefficients of a 3rd order polynomial fit based on fishtest data
+        // for two parameters needed to transform eval to the argument of a
+        // logistic function.
+        static constexpr T as[] = { -8.24404295, 64.23892342, -95.73056462, 153.86478679 };
+        static constexpr T bs[] = { -3.37154371, 28.44489198, -56.67657741,  72.05858751 };
+
+        // The model captures only up to 240 plies, so limit input (and rescale)
+        static thread_local auto m_ = ply_ / 64.0;
+
+        static thread_local auto a_ = (((as[0] * m_ + as[1]) * m_ + as[2]) * m_) + as[3];
+        static thread_local auto b_ = (((bs[0] * m_ + bs[1]) * m_ + bs[2]) * m_) + bs[3];
+
+        // Return win rate in per mille
+        static thread_local auto sv_ = (v_ - a_) / b_;
+        static thread_local auto svn_ = (-v_ - a_) / b_;
+
+        static thread_local auto win_pct_ = sigmoid(sv_);
+        static thread_local auto loss_pct_ = sigmoid(svn_);
+
+        static thread_local auto draw_pct_ = 1.0 - win_pct_ - loss_pct_;
+
+        static thread_local auto perf_ = win_pct_ + draw_pct_ * 0.5;
+
+        return perf_;
+    }
+
+    static auto expected_perf_use_wdl(
+        Value v,
+        int ply
+    )
+    {
+        // Coefficients of a 3rd order polynomial fit based on fishtest data
+        // for two parameters needed to transform eval to the argument of a
+        // logistic function.
+        static constexpr double as[] = { -8.24404295, 64.23892342, -95.73056462, 153.86478679 };
+        static constexpr double bs[] = { -3.37154371, 28.44489198, -56.67657741,  72.05858751 };
+
+        // The model captures only up to 240 plies, so limit input (and rescale)
+        auto m = ply / 64.0;
+
+        auto a = (((as[0] * m + as[1]) * m + as[2]) * m) + as[3];
+        auto b = (((bs[0] * m + bs[1]) * m + bs[2]) * m) + bs[3];
+
+        // Return win rate in per mille
+        auto win_pct = Math::sigmoid(((double)v - a) / b);
+        auto loss_pct = Math::sigmoid(((double)-v - a) / b);
+
+        auto draw_pct = 1.0 - win_pct - loss_pct;
+
+        return win_pct + draw_pct * 0.5;
+    }
+
+    static ValueWithGrad<double> get_loss_use_wdl(Value shallow, Value teacher_signal, int result, int ply)
+    {
+        using namespace Learner::Autograd::UnivariateStatic;
+
+        ply = std::min(240, ply);
+
+        static thread_local auto shallow_ = VariableParameter<double, 0>{};
+        static thread_local auto ply_ = ConstantParameter<double, 4>{};
+        static thread_local auto q_ = expected_perf_use_wdl_(shallow_, ply_);
+        static thread_local auto p_ = ConstantParameter<double, 1>{};
+        static thread_local auto t_ = (ConstantParameter<double, 2>{} + 1.0) * 0.5;
+        static thread_local auto lambda_ = ConstantParameter<double, 3>{};
+        static thread_local auto loss_ = cross_entropy_(q_, p_, t_, lambda_);
+
+        auto args = std::tuple(
+            (double)shallow,
+            (double)expected_perf_use_wdl(teacher_signal, ply),
+            (double)result,
+            calculate_lambda(teacher_signal),
+            (double)ply
+        );
+
+        return loss_.eval(args).clamp_grad(max_grad);
     }
 
     static ValueWithGrad<double> get_loss(Value shallow, Value teacher_signal, int result, int ply)
@@ -237,6 +345,8 @@ namespace Learner
         auto p_ = ConstantParameter<double, 1>{};
         auto loss_ = pow(q_ - p_, 2.0) * (1.0 / (2400.0 * 2.0 * 600.0));
         */
+
+        return get_loss_use_wdl(shallow, teacher_signal, result, ply);
 
         static thread_local auto q_ = sigmoid(VariableParameter<double, 0>{} * ConstantParameter<double, 4>{});
         static thread_local auto p_ = sigmoid(ConstantParameter<double, 1>{} * ConstantParameter<double, 4>{});
