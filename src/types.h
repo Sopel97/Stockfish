@@ -263,6 +263,10 @@ enum Rank : int {
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_NB
 };
 
+constexpr PieceType type_of(Piece pc) {
+  return PieceType(pc & 7);
+}
+
 // Keep track of what a move changes on the board (used by NNUE)
 struct DirtyPiece {
 
@@ -277,6 +281,24 @@ struct DirtyPiece {
   // From and to squares, which may be SQ_NONE
   Square from[3];
   Square to[3];
+
+  bool any_piece_equal(Piece pc) const
+  {
+    for (int i = 0; i < dirty_num; ++i)
+      if (piece[i] == pc)
+        return true;
+
+    return false;
+  }
+
+  bool any_piece_type_equal(PieceType pt) const
+  {
+    for (int i = 0; i < dirty_num; ++i)
+      if (type_of(piece[i]) == pt)
+        return true;
+
+    return false;
+  }
 };
 
 /// Score enum stores a middlegame and an endgame value in a single integer (enum).
@@ -403,10 +425,6 @@ constexpr Square make_square(File f, Rank r) {
 
 constexpr Piece make_piece(Color c, PieceType pt) {
   return Piece((c << 3) + pt);
-}
-
-constexpr PieceType type_of(Piece pc) {
-  return PieceType(pc & 7);
 }
 
 inline Color color_of(Piece pc) {

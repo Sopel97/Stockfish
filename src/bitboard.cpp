@@ -29,6 +29,7 @@ Bitboard SquareBB[SQUARE_NB];
 Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard PseudoAttacks[PIECE_TYPE_NB][SQUARE_NB];
 Bitboard PawnAttacks[COLOR_NB][SQUARE_NB];
+Bitboard PawnInfluence[COLOR_NB][SQUARE_NB];
 
 Magic RookMagics[SQUARE_NB];
 Magic BishopMagics[SQUARE_NB];
@@ -92,6 +93,7 @@ void Bitboards::init() {
 
   for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
   {
+      PawnInfluence[WHITE][s1] = 0;
       PawnAttacks[WHITE][s1] = pawn_attacks_bb<WHITE>(square_bb(s1));
       PawnAttacks[BLACK][s1] = pawn_attacks_bb<BLACK>(square_bb(s1));
 
@@ -100,6 +102,12 @@ void Bitboards::init() {
 
       for (int step : {-17, -15, -10, -6, 6, 10, 15, 17} )
          PseudoAttacks[KNIGHT][s1] |= safe_destination(s1, step);
+
+      for (int step : {-1, 7, 8, 9, 15, 16, 17} )
+        PawnInfluence[WHITE][s1] |= safe_destination(s1, step);
+
+      for (int step : {1, -7, -8, -9, -15, -16, -17} )
+        PawnInfluence[BLACK][s1] |= safe_destination(s1, step);
 
       PseudoAttacks[QUEEN][s1]  = PseudoAttacks[BISHOP][s1] = attacks_bb<BISHOP>(s1, 0);
       PseudoAttacks[QUEEN][s1] |= PseudoAttacks[  ROOK][s1] = attacks_bb<  ROOK>(s1, 0);

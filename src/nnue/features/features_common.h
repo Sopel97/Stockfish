@@ -36,6 +36,7 @@ namespace Eval::NNUE::Features {
     kNone, // Calculate the difference whenever possible
     kFriendKingMoved, // calculate full evaluation when own king moves
     kEnemyKingMoved, // calculate full evaluation when opponent king moves
+    kAnyPawnMoved,
     kAnyKingMoved, // calculate full evaluation when any king moves
     kAnyPieceMoved, // always calculate full evaluation
   };
