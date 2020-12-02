@@ -277,6 +277,15 @@ struct DirtyPiece {
   // From and to squares, which may be SQ_NONE
   Square from[3];
   Square to[3];
+
+  bool any_piece_equal(Piece pc) const
+  {
+    for (int i = 0; i < dirty_num; ++i)
+      if (piece[i] == pc)
+        return true;
+
+    return false;
+  }
 };
 
 /// Score enum stores a middlegame and an endgame value in a single integer (enum).

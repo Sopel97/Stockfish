@@ -126,6 +126,20 @@ namespace Eval::NNUE::Features {
                         if (dp.dirty_num == 0) continue;
                         reset[perspective] = dp.piece[0] == make_piece(~perspective, KING);
                         break;
+                    case TriggerEvent::kFriendQueenMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(perspective, QUEEN);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
+                    case TriggerEvent::kEnemyQueenMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(~perspective, QUEEN);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
                     case TriggerEvent::kAnyKingMoved:
                         if (dp.dirty_num == 0) continue;
                         reset[perspective] = type_of(dp.piece[0]) == KING;
