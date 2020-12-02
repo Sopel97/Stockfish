@@ -206,12 +206,16 @@ namespace Eval::NNUE {
         double abs_eval_diff_sum = 0.0;
         double abs_discrete_eval_sum = 0.0;
         double gradient_norm = 0.0;
+        uint64_t num_features_white = 0;
+        uint64_t num_features_black = 0;
 
         bool collect_stats = verbose;
 
         std::vector<double> abs_eval_diff_sum_local(thread_pool.size(), 0.0);
         std::vector<double> abs_discrete_eval_sum_local(thread_pool.size(), 0.0);
         std::vector<double> gradient_norm_local(thread_pool.size(), 0.0);
+        std::vector<uint64_t> num_features_white_local(thread_pool.size(), 0);
+        std::vector<uint64_t> num_features_black_local(thread_pool.size(), 0);
 
         auto prev_batch_begin = examples.end();
         while ((long)(prev_batch_begin - examples.begin()) >= (long)batch_size) {
@@ -247,6 +251,8 @@ namespace Eval::NNUE {
                             abs_eval_diff_sum_local[thread_id] += std::abs(discrete - shallow);
                             abs_discrete_eval_sum_local[thread_id] += std::abs(discrete);
                             gradient_norm_local[thread_id] += std::abs(gradient);
+                            num_features_white_local[thread_id] += e.training_features[WHITE].size();
+                            num_features_black_local[thread_id] += e.training_features[BLACK].size();
                         }
                     }
 
@@ -273,6 +279,8 @@ namespace Eval::NNUE {
             abs_eval_diff_sum = std::accumulate(abs_eval_diff_sum_local.begin(), abs_eval_diff_sum_local.end(), 0.0);
             abs_discrete_eval_sum = std::accumulate(abs_discrete_eval_sum_local.begin(), abs_discrete_eval_sum_local.end(), 0.0);
             gradient_norm = std::accumulate(gradient_norm_local.begin(), gradient_norm_local.end(), 0.0);
+            num_features_white = std::accumulate(num_features_white_local.begin(), num_features_white_local.end(), 0ull);
+            num_features_black = std::accumulate(num_features_black_local.begin(), num_features_black_local.end(), 0ull);
         }
 
         if (verbose) {
@@ -288,6 +296,8 @@ namespace Eval::NNUE {
                 << " , avg_relative_error = " << avg_abs_eval_diff / avg_abs_discrete_eval
                 << " , batch_size = " << batch_size
                 << " , grad_norm = " << gradient_norm
+                << " , avg_features_white = " << ((double)num_features_white / batch_size)
+                << " , avg_features_black = " << ((double)num_features_black / batch_size)
                 << std::endl;
         } else {
             // Display some progress but don't synchronize as
