@@ -74,7 +74,7 @@ namespace Eval::NNUE {
         void initialize(RNG& rng) {
             std::fill(std::begin(weights_), std::end(weights_), +kZero);
 
-            const double kSigma = 0.1 / std::sqrt(RawFeatures::kMaxActiveDimensions);
+            const double kSigma = 0.1 / std::sqrt(32);
             auto distribution = std::normal_distribution<double>(0.0, kSigma);
 
             for (IndexType i = 0; i < kHalfDimensions * RawFeatures::kDimensions; ++i) {
