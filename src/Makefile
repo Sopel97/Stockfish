@@ -53,6 +53,7 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	nnue/features/half_kp.cpp \
 	nnue/features/half_ka.cpp \
 	nnue/features/half_qa.cpp \
+	nnue/features/constrained_half_qa.cpp \
 	nnue/features/half_relative_kp.cpp \
 	nnue/features/half_relative_ka.cpp \
 	nnue/features/k.cpp \
