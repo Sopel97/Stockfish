@@ -218,10 +218,129 @@ namespace Learner
         do_nudged_static(params);
     }
 
+    struct RescoreQsearchParams
+    {
+        std::string input_filename = "in.binpack";
+        std::string output_filename = "out.binpack";
+
+        void enforce_constraints()
+        {
+        }
+    };
+
+    void do_rescore_qsearch(const RescoreQsearchParams& params)
+    {
+        Thread* th = Threads.main();
+        Position& pos = th->rootPos;
+        StateInfo si;
+
+        auto in = Learner::open_sfen_input_file(params.input_filename);
+        auto out = Learner::create_new_sfen_output(params.output_filename);
+
+        if (in == nullptr)
+        {
+            std::cerr << "Invalid input file type.\n";
+            return;
+        }
+
+        if (out == nullptr)
+        {
+            std::cerr << "Invalid output file type.\n";
+            return;
+        }
+
+        PSVector buffer;
+        uint64_t batch_size = 1'000'000;
+
+        buffer.reserve(batch_size);
+
+        uint64_t num_processed = 0;
+
+        std::vector<StateInfo, AlignedAllocator<StateInfo>> states(MAX_PLY);
+
+        for (;;)
+        {
+            auto v = in->next();
+            if (!v.has_value())
+                break;
+
+            auto& ps = v.value();
+
+            int ply = 0;
+
+            pos.set_from_packed_sfen(ps.sfen, &states[ply++], th);
+            const Color root_color = pos.side_to_move();
+
+            pos.do_move((Move)ps.move, states[ply++]);
+
+            auto [value, pv] = Search::qsearch(pos);
+
+            // We could just take -value but stockfish search code is magic and
+            // we're not sure if it'll match what we want.
+            for (auto move : pv)
+            {
+                pos.do_move(move, states[ply++]);
+            }
+
+            const auto leaf_value = Eval::evaluate(pos);
+            ps.score = pos.side_to_move() == root_color ? leaf_value : -leaf_value;
+
+            buffer.emplace_back(ps);
+            if (buffer.size() >= batch_size)
+            {
+                num_processed += buffer.size();
+
+                out->write(buffer);
+                buffer.clear();
+
+                std::cout << "Processed " << num_processed << " positions.\n";
+            }
+        }
+
+        if (!buffer.empty())
+        {
+            num_processed += buffer.size();
+
+            out->write(buffer);
+            buffer.clear();
+
+            std::cout << "Processed " << num_processed << " positions.\n";
+        }
+
+        std::cout << "Finished.\n";
+    }
+
+    void rescore_qsearch(std::istringstream& is)
+    {
+        RescoreQsearchParams params{};
+
+        while(true)
+        {
+            std::string token;
+            is >> token;
+
+            if (token == "")
+                break;
+            else if (token == "input_file")
+                is >> params.input_filename;
+            else if (token == "output_file")
+                is >> params.output_filename;
+        }
+
+        std::cout << "Performing transform rescore_qsearch with parameters:\n";
+        std::cout << "input_file          : " << params.input_filename << '\n';
+        std::cout << "output_file         : " << params.output_filename << '\n';
+        std::cout << "\n";
+
+        params.enforce_constraints();
+        do_rescore_qsearch(params);
+    }
+
     void transform(std::istringstream& is)
     {
         const std::map<std::string, CommandFunc> subcommands = {
-            { "nudged_static", &nudged_static }
+            { "nudged_static", &nudged_static },
+            { "rescore_qsearch", &rescore_qsearch }
         };
 
         Eval::NNUE::init();
