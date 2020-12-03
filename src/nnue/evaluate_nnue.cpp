@@ -197,7 +197,12 @@ namespace Eval::NNUE {
         return false;
 
     return !stream.fail();
-}
+  }
+  
+  void prefetch_feature_weights(IndexType feature)
+  {
+    feature_transformer->prefetch_feature_weights(feature);
+  }
 
   // Evaluation function. Perform differential calculation.
   Value evaluate(const Position& pos) {
