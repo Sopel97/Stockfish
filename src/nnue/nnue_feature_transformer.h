@@ -109,6 +109,12 @@ namespace Eval::NNUE {
       return RawFeatures::kHashValue ^ kOutputDimensions;
     }
 
+    void prefetch_feature_weights(IndexType feature)
+    {
+      for (IndexType offset = 0; offset < kHalfDimensions; offset += 64)
+        _mm_prefetch(&weights_[kHalfDimensions * feature + offset], _MM_HINT_T0);
+    }
+
     // Read network parameters
     bool ReadParameters(std::istream& stream) {
 
