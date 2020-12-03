@@ -748,7 +748,7 @@ namespace Eval::NNUE::Layers {
 
       for (IndexType i = 0; i < kCopyOutputDimensions; ++i)
       {
-        output[i + kAffineOutputDimensions] = input[i];
+        output[i + kAffineOutputDimensions] = static_cast<OutputType>(input[i]) << kWeightScaleBits;
       }
 
       return output;
