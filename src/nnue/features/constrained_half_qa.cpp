@@ -65,7 +65,7 @@ namespace Eval::NNUE::Features {
             Bitboard influence = PseudoAttacks[QUEEN][ksq];
 
             // We exclude our king as this feature should be covered by halfka
-            Bitboard bb = pos.pieces() & ~pos.pieces(c, KING) & influence;
+            Bitboard bb = pos.pieces() & ~pos.pieces(KING) & influence;
             Square oriented_ksq = orient(
                 perspective,
                 ksq);
@@ -102,7 +102,7 @@ namespace Eval::NNUE::Features {
             for (int i = 0; i < dp.dirty_num; ++i) {
                 Piece pc = dp.piece[i];
 
-                if (pc == make_piece(c, KING))
+                if (type_of(pc) == KING)
                     continue;
 
                 if (dp.from[i] != SQ_NONE && (influence & dp.from[i]))
