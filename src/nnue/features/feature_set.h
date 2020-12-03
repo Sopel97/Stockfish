@@ -140,6 +140,20 @@ namespace Eval::NNUE::Features {
                         reset[perspective] = dp.any_piece_equal(q);
                         break;
                     }
+                    case TriggerEvent::kFriendRookMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(perspective, ROOK);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
+                    case TriggerEvent::kEnemyRookMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(~perspective, ROOK);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
                     case TriggerEvent::kAnyPawnMoved:
                     {
                         if (dp.dirty_num == 0) continue;
