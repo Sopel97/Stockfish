@@ -38,7 +38,9 @@ namespace Eval::NNUE::Layers {
     // Number of input/output dimensions
     static constexpr IndexType kInputDimensions =
         PreviousLayer::kOutputDimensions;
-    static constexpr IndexType kOutputDimensions = OutputDimensions;
+    static constexpr IndexType kAffineOutputDimensions = OutputDimensions;
+    static constexpr IndexType kCopyOutputDimensions = OutputDimensions == 1 || kInputDimensions > 128 ? 0 : kInputDimensions;
+    static constexpr IndexType kOutputDimensions = kAffineOutputDimensions + kCopyOutputDimensions;
     static constexpr IndexType kPaddedInputDimensions =
         CeilToMultiple<IndexType>(kInputDimensions, kMaxSimdWidth);
 
@@ -62,9 +64,9 @@ namespace Eval::NNUE::Layers {
    // Read network parameters
     bool ReadParameters(std::istream& stream) {
       if (!previous_layer_.ReadParameters(stream)) return false;
-      for (std::size_t i = 0; i < kOutputDimensions; ++i)
+      for (std::size_t i = 0; i < kAffineOutputDimensions; ++i)
         biases_[i] = read_little_endian<BiasType>(stream);
-      for (std::size_t i = 0; i < kOutputDimensions * kPaddedInputDimensions; ++i)
+      for (std::size_t i = 0; i < kAffineOutputDimensions * kPaddedInputDimensions; ++i)
         weights_[i] = read_little_endian<WeightType>(stream);
       return !stream.fail();
     }
@@ -275,9 +277,9 @@ namespace Eval::NNUE::Layers {
 
       // kOutputDimensions is either 1 or a multiple of kSimdWidth
       // because then it is also an input dimension.
-      if constexpr (kOutputDimensions % 16 == 0 && kNumChunks256 == 1)
+      if constexpr (kAffineOutputDimensions % 16 == 0 && kNumChunks256 == 1)
       {
-        for (IndexType i = 0; i < kOutputDimensions; i += 16)
+        for (IndexType i = 0; i < kAffineOutputDimensions; i += 16)
         {
           const IndexType offset01a = (i + 0) * kPaddedInputDimensions;
           const IndexType offset23a = (i + 2) * kPaddedInputDimensions;
@@ -337,9 +339,9 @@ namespace Eval::NNUE::Layers {
             sum01b, sum23b, sum45b, sum67b, bias);
         }
       }
-      else if constexpr (kOutputDimensions % 4 == 0)
+      else if constexpr (kAffineOutputDimensions % 4 == 0)
       {
-        for (IndexType i = 0; i < kOutputDimensions; i += 4)
+        for (IndexType i = 0; i < kAffineOutputDimensions; i += 4)
         {
           const IndexType offset0 = (i + 0) * kPaddedInputDimensions;
           const IndexType offset1 = (i + 1) * kPaddedInputDimensions;
@@ -431,7 +433,7 @@ namespace Eval::NNUE::Layers {
           }
         }
       }
-      else if constexpr (kOutputDimensions == 1)
+      else if constexpr (kAffineOutputDimensions == 1)
       {
         if constexpr (kPaddedInputDimensions % (kSimdWidth * 2) == 0)
         {
@@ -500,9 +502,9 @@ namespace Eval::NNUE::Layers {
 
       // kOutputDimensions is either 1 or a multiple of kSimdWidth
       // because then it is also an input dimension.
-      if constexpr (kOutputDimensions % 4 == 0)
+      if constexpr (kAffineOutputDimensions % 4 == 0)
       {
-        for (IndexType i = 0; i < kOutputDimensions; i += 4)
+        for (IndexType i = 0; i < kAffineOutputDimensions; i += 4)
         {
           const IndexType offset0 = (i + 0) * kPaddedInputDimensions;
           const IndexType offset1 = (i + 1) * kPaddedInputDimensions;
@@ -551,7 +553,7 @@ namespace Eval::NNUE::Layers {
           *outptr = m256_haddx4(sum0, sum1, sum2, sum3, bias);
         }
       }
-      else if constexpr (kOutputDimensions == 1)
+      else if constexpr (kAffineOutputDimensions == 1)
       {
         const auto row0 = reinterpret_cast<const __m256i*>(&weights_[0]);
 
@@ -592,9 +594,9 @@ namespace Eval::NNUE::Layers {
 
       // kOutputDimensions is either 1 or a multiple of kSimdWidth
       // because then it is also an input dimension.
-      if constexpr (kOutputDimensions % 4 == 0)
+      if constexpr (kAffineOutputDimensions % 4 == 0)
       {
-        for (IndexType i = 0; i < kOutputDimensions; i += 4)
+        for (IndexType i = 0; i < kAffineOutputDimensions; i += 4)
         {
           const IndexType offset0 = (i + 0) * kPaddedInputDimensions;
           const IndexType offset1 = (i + 1) * kPaddedInputDimensions;
@@ -627,7 +629,7 @@ namespace Eval::NNUE::Layers {
           *outptr = m128_haddx4(sum0, sum1, sum2, sum3, bias);
         }
       }
-      else if constexpr (kOutputDimensions == 1)
+      else if constexpr (kAffineOutputDimensions == 1)
       {
         const auto row0 = reinterpret_cast<const __m128i*>(&weights_[0]);
 
@@ -670,7 +672,7 @@ namespace Eval::NNUE::Layers {
       const auto input_vector = reinterpret_cast<const int8x8_t*>(input);
 #endif
 
-      for (IndexType i = 0; i < kOutputDimensions; ++i) {
+      for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
         const IndexType offset = i * kPaddedInputDimensions;
 
 #if defined(USE_SSE2)
@@ -737,6 +739,12 @@ namespace Eval::NNUE::Layers {
 #endif
 
       }
+
+      for (IndexType i = 0; i < kCopyOutputDimensions; ++i)
+      {
+        output[i + kAffineOutputDimensions] = input[i];
+      }
+
 #if defined(USE_MMX)
       _mm_empty();
 #endif
@@ -752,9 +760,9 @@ namespace Eval::NNUE::Layers {
 
     PreviousLayer previous_layer_;
 
-    alignas(kCacheLineSize) BiasType biases_[kOutputDimensions];
+    alignas(kCacheLineSize) BiasType biases_[kAffineOutputDimensions];
     alignas(kCacheLineSize)
-        WeightType weights_[kOutputDimensions * kPaddedInputDimensions];
+        WeightType weights_[kAffineOutputDimensions * kPaddedInputDimensions];
   };
 
 }  // namespace Eval::NNUE::Layers
