@@ -9,6 +9,7 @@
 #include "factorizer_half_qa.h"
 #include "factorizer_constrained_half_qa.h"
 #include "factorizer_constrained_half_ra.h"
+#include "factorizer_constrained_half_ba.h"
 #include "factorizer_pawn_structure.h"
 
 #endif

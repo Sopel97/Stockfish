@@ -1,9 +1,9 @@
-﻿#ifndef _NNUE_TRAINER_FEATURES_FACTORIZER_PAWN_STRUCTURE_H_
-#define _NNUE_TRAINER_FEATURES_FACTORIZER_PAWN_STRUCTURE_H_
+﻿#ifndef _NNUE_TRAINER_FEATURES_FACTORIZER_CONSTRAINED_HALF_RA_H_
+#define _NNUE_TRAINER_FEATURES_FACTORIZER_CONSTRAINED_HALF_RA_H_
 
 #include "factorizer.h"
 
-#include "nnue/features/pawn_structure.h"
+#include "nnue/features/constrained_half_ra.h"
 #include "nnue/features/a.h"
 
 // Specialization of NNUE evaluation function feature conversion class template for HalfKA
@@ -12,9 +12,9 @@ namespace Eval::NNUE::Features {
     // Class template that converts input features into learning features
     // Specialization for HalfKA
     template <Side AssociatedKing>
-    class Factorizer<PawnStructure<AssociatedKing>> {
+    class Factorizer<ConstrainedHalfRA<AssociatedKing>> {
     private:
-        using FeatureType = PawnStructure<AssociatedKing>;
+        using FeatureType = ConstrainedHalfRA<AssociatedKing>;
 
         // The maximum value of the number of indexes whose value is 1 at the same time among the feature values
         static constexpr IndexType kMaxActiveDimensions =
@@ -22,14 +22,14 @@ namespace Eval::NNUE::Features {
 
         // Type of learning feature
         enum TrainingFeatureType {
-            kFeaturesPawnStructure,
+            kFeaturesConstrainedHalfRA,
             kFeaturesA,
             kNumTrainingFeatureTypes,
         };
 
         // Learning feature information
         static constexpr FeatureProperties kProperties[] = {
-            // kFeaturesPawnStructure
+            // kFeaturesConstrainedHalfRA
             {true, FeatureType::kDimensions},
             // kFeaturesA
             {true, Factorizer<A>::get_dimensions()},
@@ -57,7 +57,7 @@ namespace Eval::NNUE::Features {
 
             // kFeaturesHalfA
             IndexType index_offset = append_base_feature<FeatureType>(
-                kProperties[kFeaturesPawnStructure], base_index, training_features);
+                kProperties[kFeaturesConstrainedHalfRA], base_index, training_features);
 
             const auto sq_k = static_cast<Square>(base_index / PS_END2);
             const auto a = static_cast<IndexType>(base_index % PS_END2);
@@ -71,7 +71,7 @@ namespace Eval::NNUE::Features {
     };
 
     template <Side AssociatedKing>
-    constexpr FeatureProperties Factorizer<PawnStructure<AssociatedKing>>::kProperties[];
+    constexpr FeatureProperties Factorizer<ConstrainedHalfRA<AssociatedKing>>::kProperties[];
 
 }  // namespace Eval::NNUE::Features
 

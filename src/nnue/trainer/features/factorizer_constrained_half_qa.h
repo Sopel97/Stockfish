@@ -14,7 +14,7 @@ namespace Eval::NNUE::Features {
     template <Side AssociatedKing>
     class Factorizer<ConstrainedHalfQA<AssociatedKing>> {
     private:
-        using FeatureType = HalfQA<AssociatedKing>;
+        using FeatureType = ConstrainedHalfQA<AssociatedKing>;
 
         // The maximum value of the number of indexes whose value is 1 at the same time among the feature values
         static constexpr IndexType kMaxActiveDimensions =
@@ -71,7 +71,7 @@ namespace Eval::NNUE::Features {
     };
 
     template <Side AssociatedKing>
-    constexpr FeatureProperties Factorizer<HalfQA<AssociatedKing>>::kProperties[];
+    constexpr FeatureProperties Factorizer<ConstrainedHalfQA<AssociatedKing>>::kProperties[];
 
 }  // namespace Eval::NNUE::Features
 
