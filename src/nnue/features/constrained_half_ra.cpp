@@ -58,7 +58,7 @@ namespace Eval::NNUE::Features {
             return;
         }
 
-        for (int j = 0; j < 2; ++j)
+        for (int j = 0; j < 2 && queens; ++j)
         {
             Square ksq = pop_lsb(&queens);
 
@@ -95,7 +95,7 @@ namespace Eval::NNUE::Features {
         if (popcount(queens) == 0)
             return;
 
-        for (int j = 0; j < 2; ++j)
+        for (int j = 0; j < 2 && queens; ++j)
         {
             Square ksq = pop_lsb(&queens);
 
