@@ -65,7 +65,10 @@ namespace Eval::NNUE::Features {
             Bitboard influence = PseudoAttacks[KNIGHT][ksq];
 
             // We exclude our king as this feature should be covered by halfka
-            Bitboard bb = pos.pieces() & ~pos.pieces(KING) & influence;
+            Bitboard bb =
+                (pos.pieces() & ~pos.pieces(KING) & influence)
+                | (pos.pieces(WHITE, PAWN) & PiecePawnInfluence[WHITE][ksq])
+                | (pos.pieces(BLACK, PAWN) & PiecePawnInfluence[BLACK][ksq]);
             Square oriented_ksq = orient(
                 perspective,
                 ksq);
@@ -97,6 +100,8 @@ namespace Eval::NNUE::Features {
             Square ksq = pop_lsb(&queens);
 
             Bitboard influence = PseudoAttacks[KNIGHT][ksq];
+            Bitboard white_pawn_influence = PiecePawnInfluence[WHITE][ksq];
+            Bitboard black_pawn_influence = PiecePawnInfluence[BLACK][ksq];
 
             const auto& dp = pos.state()->dirtyPiece;
             for (int i = 0; i < dp.dirty_num; ++i) {
@@ -105,10 +110,16 @@ namespace Eval::NNUE::Features {
                 if (type_of(pc) == KING)
                     continue;
 
-                if (dp.from[i] != SQ_NONE && (influence & dp.from[i]))
+                Bitboard bb = influence;
+                if (pc == make_piece(WHITE, PAWN))
+                    bb = white_pawn_influence;
+                else if (pc == make_piece(BLACK, PAWN))
+                    bb = black_pawn_influence;
+
+                if (dp.from[i] != SQ_NONE && (bb & dp.from[i]))
                     removed->push_back(make_index(perspective, dp.from[i], pc, ksq));
 
-                if (dp.to[i] != SQ_NONE && (influence & dp.to[i]))
+                if (dp.to[i] != SQ_NONE && (bb & dp.to[i]))
                     added->push_back(make_index(perspective, dp.to[i], pc, ksq));
             }
         }

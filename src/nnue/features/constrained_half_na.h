@@ -43,7 +43,7 @@ namespace Eval::NNUE::Features {
             static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
 
         // Maximum number of simultaneously active features
-        static constexpr IndexType kMaxActiveDimensions = 8*2;
+        static constexpr IndexType kMaxActiveDimensions = (8+4)*2;
 
         // Trigger for full calculation instead of difference calculation
         static constexpr TriggerEvent kRefreshTrigger =
