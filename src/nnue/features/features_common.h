@@ -42,6 +42,8 @@ namespace Eval::NNUE::Features {
     kEnemyRookMoved,
     kFriendBishopMoved,
     kEnemyBishopMoved,
+    kFriendKnightMoved,
+    kEnemyKnightMoved,
     kAnyPawnMoved,
     kAnyKingMoved, // calculate full evaluation when any king moves
     kAnyPieceMoved, // always calculate full evaluation

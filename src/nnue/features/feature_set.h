@@ -168,6 +168,20 @@ namespace Eval::NNUE::Features {
                         reset[perspective] = dp.any_piece_equal(q);
                         break;
                     }
+                    case TriggerEvent::kFriendKnightMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(perspective, KNIGHT);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
+                    case TriggerEvent::kEnemyKnightMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(~perspective, KNIGHT);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
                     case TriggerEvent::kAnyPawnMoved:
                     {
                         if (dp.dirty_num == 0) continue;
