@@ -105,6 +105,11 @@ namespace Eval::NNUE {
     static constexpr IndexType kInputDimensions = RawFeatures::kDimensions;
     static constexpr IndexType kOutputDimensions = kHalfDimensions * 2;
 
+    // In theory this can cause overflows in the accumulator
+    // but since the average weights in the trainer are in the order
+    // of 0.01 we don't really have to fear about it.
+    static constexpr IndexType kWeightScaleBits = 3;
+
     // Size of forward propagation buffer
     static constexpr std::size_t kBufferSize =
         kOutputDimensions * sizeof(OutputType);
@@ -246,6 +251,9 @@ namespace Eval::NNUE {
                   accumulation[perspectives[p]][i])[j * 2 + 1]);
           }
 
+          sum0 = _mm256_srai_epi16(sum0, kWeightScaleBits);
+          sum1 = _mm256_srai_epi16(sum1, kWeightScaleBits);
+
           _mm256_store_si256(&out[j], _mm256_permute4x64_epi64(_mm256_max_epi8(
               _mm256_packs_epi16(sum0, sum1), kZero), kControl));
         }
@@ -263,6 +271,9 @@ namespace Eval::NNUE {
             sum1 = _mm_add_epi16(sum1, reinterpret_cast<const __m128i*>(
                 accumulation[perspectives[p]][i])[j * 2 + 1]);
           }
+
+          sum0 = _mm_srai_epi16(sum0, kWeightScaleBits);
+          sum1 = _mm_srai_epi16(sum1, kWeightScaleBits);
 
       const __m128i packedbytes = _mm_packs_epi16(sum0, sum1);
 

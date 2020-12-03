@@ -662,11 +662,13 @@ namespace Eval::NNUE {
         static constexpr IndexType kOutputDimensions = LayerType::kOutputDimensions;
         static constexpr IndexType kHalfDimensions = LayerType::kHalfDimensions;
 
+        static constexpr IndexType kWeightScaleBits = LayerType::kWeightScaleBits;
+
         // Coefficient used for parameterization
         static constexpr LearnFloatType kActivationScale =
             std::numeric_limits<std::int8_t>::max();
-        static constexpr LearnFloatType kBiasScale = kActivationScale;
-        static constexpr LearnFloatType kWeightScale = kActivationScale;
+        static constexpr LearnFloatType kBiasScale = (1 << kWeightScaleBits) * kActivationScale;
+        static constexpr LearnFloatType kWeightScale = (1 << kWeightScaleBits) * kActivationScale;
 
         // LearnFloatType constant
         static constexpr LearnFloatType kZero = static_cast<LearnFloatType>(0.0);
