@@ -740,16 +740,16 @@ namespace Eval::NNUE::Layers {
 
       }
 
-      for (IndexType i = 0; i < kCopyOutputDimensions; ++i)
-      {
-        output[i + kAffineOutputDimensions] = input[i];
-      }
-
 #if defined(USE_MMX)
       _mm_empty();
 #endif
 
 #endif
+
+      for (IndexType i = 0; i < kCopyOutputDimensions; ++i)
+      {
+        output[i + kAffineOutputDimensions] = input[i];
+      }
 
       return output;
     }
