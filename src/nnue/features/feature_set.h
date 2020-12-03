@@ -154,6 +154,20 @@ namespace Eval::NNUE::Features {
                         reset[perspective] = dp.any_piece_equal(q);
                         break;
                     }
+                    case TriggerEvent::kFriendBishopMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(perspective, BISHOP);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
+                    case TriggerEvent::kEnemyBishopMoved:
+                    {
+                        if (dp.dirty_num == 0) continue;
+                        auto q = make_piece(~perspective, BISHOP);
+                        reset[perspective] = dp.any_piece_equal(q);
+                        break;
+                    }
                     case TriggerEvent::kAnyPawnMoved:
                     {
                         if (dp.dirty_num == 0) continue;
