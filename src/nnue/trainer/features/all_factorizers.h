@@ -5,6 +5,7 @@
 #include "factorizer_feature_set.h"
 
 #include "factorizer_half_kp.h"
+#include "factorizer_half_kpe4.h"
 #include "factorizer_half_ka.h"
 
 #endif
