@@ -337,6 +337,49 @@ void Position::set_check_info(StateInfo* si) const {
 /// The function is only used when a new position is set up, and to verify
 /// the correctness of the StateInfo data when running in debug mode.
 
+template<PieceType Pt, Color Us>
+void add_piece_mobility(const Position& pos, Bitboard& mobility, Bitboard& mobility2) {
+  Bitboard mob = mobility;
+  Bitboard mob2 = mobility2;
+  if constexpr (Pt == PAWN) {
+    const Bitboard attacks = pawn_attacks_bb<Us>(pos.pieces(Us, PAWN));
+    mob2 |= mob & attacks;
+    mob |= attacks;
+  } else {
+    const Square* pl = pos.squares<Pt>(Us);
+    const Bitboard pieces = pos.pieces();
+    for (Square s = *pl; s != SQ_NONE; s = *++pl) {
+      const Bitboard attacks = attacks_bb<Pt>(s, pieces);
+      mob2 |= mob & attacks;
+      mob |= attacks;
+    }
+  }
+  mobility = mob;
+  mobility2 = mob2;
+}
+
+static inline void set_mobility(const Position& pos)
+{
+  auto si = pos.state();
+
+  si->mobility[WHITE] = si->mobility[BLACK] = 0;
+  si->mobility2[WHITE] = si->mobility2[BLACK] = 0;
+
+  add_piece_mobility<PAWN, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+  add_piece_mobility<KNIGHT, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+  add_piece_mobility<BISHOP, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+  add_piece_mobility<ROOK, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+  add_piece_mobility<QUEEN, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+  add_piece_mobility<KING, WHITE>(pos, si->mobility[WHITE], si->mobility2[WHITE]);
+
+  add_piece_mobility<PAWN, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+  add_piece_mobility<KNIGHT, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+  add_piece_mobility<BISHOP, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+  add_piece_mobility<ROOK, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+  add_piece_mobility<QUEEN, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+  add_piece_mobility<KING, BLACK>(pos, si->mobility[BLACK], si->mobility2[BLACK]);
+}
+
 void Position::set_state(StateInfo* si) const {
 
   si->key = si->materialKey = 0;
@@ -370,6 +413,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  set_mobility(*this);
 }
 
 
@@ -895,6 +940,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           }
       }
   }
+
+  set_mobility(*this);
 
   assert(pos_is_ok());
 }
