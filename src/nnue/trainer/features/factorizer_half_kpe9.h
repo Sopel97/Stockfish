@@ -63,6 +63,54 @@ namespace Eval::NNUE::Features {
                 kProperties[kFeaturesHalfKPE9], base_index, training_features);
 
             IndexType index_HalfKP = base_index % (static_cast<IndexType>(PS_END) * static_cast<IndexType>(SQUARE_NB));
+            IndexType mobility_index = base_index / (static_cast<IndexType>(PS_END) * static_cast<IndexType>(SQUARE_NB));
+
+            IndexType our_mobility_index = mobility_index / 3;
+            IndexType their_mobility_index = mobility_index % 3;
+
+            // If something is attacked twice also add a feature
+            // for when it's attacked once.
+            if (our_mobility_index == 2)
+            {
+                const IndexType new_mobility_index =
+                    (our_mobility_index - 1) * 3
+                    + their_mobility_index;
+
+                const IndexType index =
+                    index_HalfKP
+                    + (static_cast<IndexType>(PS_END) * static_cast<IndexType>(SQUARE_NB)) * new_mobility_index;
+
+                append_base_feature<FeatureType>(
+                    kProperties[kFeaturesHalfKPE9], index, training_features);
+            }
+
+            if (their_mobility_index == 2)
+            {
+                const IndexType new_mobility_index =
+                    our_mobility_index * 3
+                    + (their_mobility_index - 1);
+
+                const IndexType index =
+                    index_HalfKP
+                    + (static_cast<IndexType>(PS_END) * static_cast<IndexType>(SQUARE_NB)) * new_mobility_index;
+
+                append_base_feature<FeatureType>(
+                    kProperties[kFeaturesHalfKPE9], index, training_features);
+            }
+
+            if (their_mobility_index == 2 && our_mobility_index == 2)
+            {
+                const IndexType new_mobility_index =
+                    (our_mobility_index - 1) * 3
+                    + (their_mobility_index - 1);
+
+                const IndexType index =
+                    index_HalfKP
+                    + (static_cast<IndexType>(PS_END) * static_cast<IndexType>(SQUARE_NB)) * new_mobility_index;
+
+                append_base_feature<FeatureType>(
+                    kProperties[kFeaturesHalfKPE9], index, training_features);
+            }
 
             index_offset +=
                 inherit_features_if_required<HalfKP<AssociatedKing>>(
