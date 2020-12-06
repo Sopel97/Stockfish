@@ -60,10 +60,15 @@ namespace Eval::NNUE::Features {
             pos.square<KING>(
                 AssociatedKing == Side::kFriend ? perspective : ~perspective));
 
-        Bitboard bb = AllSquares;
+        Bitboard* mobility = pos.state()->mobility;
+        Bitboard* mobility2 = pos.state()->mobility2;
+        Bitboard bb =
+            (mobility[WHITE] | mobility[BLACK])
+            | pos.pieces();
         while (bb) {
             Square s = pop_lsb(&bb);
-            active->push_back(make_index(perspective, s, pos.piece_on(s), ksq, pos.state()->mobility, pos.state()->mobility2));
+            Piece pc = pos.piece_on(s);
+            active->push_back(make_index(perspective, s, pc, ksq, mobility, mobility2));
         }
     }
 
@@ -111,12 +116,18 @@ namespace Eval::NNUE::Features {
             Square s = pop_lsb(&changed_occupancy);
             Piece pc = pos.piece_on(s);
             if (pc == NO_PIECE)
-                added->push_back(make_index(perspective, s, NO_PIECE, ksq, curr_mobility, curr_mobility2));
+            {
+                if ((curr_mobility[WHITE] & s) || (curr_mobility[BLACK] & s))
+                    added->push_back(make_index(perspective, s, NO_PIECE, ksq, curr_mobility, curr_mobility2));
+            }
             else
-                removed->push_back(make_index(perspective, s, NO_PIECE, ksq, prev_mobility, prev_mobility2));
+            {
+                if ((prev_mobility[WHITE] & s) || (prev_mobility[BLACK] & s))
+                    removed->push_back(make_index(perspective, s, NO_PIECE, ksq, prev_mobility, prev_mobility2));
+            }
         }
 
-        const Bitboard ps = AllSquares & ~updated_ps;
+        const Bitboard ps = ~updated_ps;
         const Bitboard mobility_diff =
             (curr_mobility[WHITE] ^ prev_mobility[WHITE])
             | (curr_mobility[BLACK] ^ prev_mobility[BLACK]);
@@ -125,11 +136,22 @@ namespace Eval::NNUE::Features {
             | (curr_mobility2[BLACK] ^ prev_mobility2[BLACK]);
 
         Bitboard affected_pieces = ps & (mobility_diff | mobility2_diff);
-        while (affected_pieces)
+        Bitboard prev_mobility_any = prev_mobility[WHITE] | prev_mobility[BLACK];
+        Bitboard curr_mobility_any = curr_mobility[WHITE] | curr_mobility[BLACK];
+        Bitboard occupied = pos.pieces();
+        Bitboard affected_pieces_removed = affected_pieces & (prev_mobility_any | occupied);
+        Bitboard affected_pieces_added = affected_pieces & (curr_mobility_any | occupied);
+        while (affected_pieces_removed)
         {
-            Square s = pop_lsb(&affected_pieces);
+            Square s = pop_lsb(&affected_pieces_removed);
             Piece pc = pos.piece_on(s);
             removed->push_back(make_index(perspective, s, pc, ksq, prev_mobility, prev_mobility2));
+        }
+
+        while (affected_pieces_added)
+        {
+            Square s = pop_lsb(&affected_pieces_added);
+            Piece pc = pos.piece_on(s);
             added->push_back(make_index(perspective, s, pc, ksq, curr_mobility, curr_mobility2));
         }
     }
