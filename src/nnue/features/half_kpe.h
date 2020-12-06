@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef NNUE_FEATURES_HALF_KPE9_H_INCLUDED
-#define NNUE_FEATURES_HALF_KPE9_H_INCLUDED
+#ifndef NNUE_FEATURES_HALF_KPE_H_INCLUDED
+#define NNUE_FEATURES_HALF_KPE_H_INCLUDED
 
 #include "features_common.h"
 
@@ -26,26 +26,26 @@
 //Definition of input features HalfKP of NNUE evaluation function
 namespace Eval::NNUE::Features {
 
-    // Feature HalfKPE9: Combination of the position of own king
+    // Feature HalfKP: Combination of the position of own king
     // and the position of pieces other than kings
     template <Side AssociatedKing>
-    class HalfKPE9 {
+    class HalfKPE {
 
     public:
         // Feature name
         static constexpr const char* kName = (AssociatedKing == Side::kFriend) ?
-            "HalfKPE9(Friend)" : "HalfKPE9(Enemy)";
+            "HalfKPE(Friend)" : "HalfKPE(Enemy)";
 
         // Hash value embedded in the evaluation file
         static constexpr std::uint32_t kHashValue =
-            0x5F69D5B9u ^ (AssociatedKing == Side::kFriend);
+            0x5D69D5B9u ^ (AssociatedKing == Side::kFriend);
 
         // Number of feature dimensions
         static constexpr IndexType kDimensions =
-            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 3 * 3;
+            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END3);
 
         // Maximum number of simultaneously active features
-        static constexpr IndexType kMaxActiveDimensions = 30; // Kings don't count
+        static constexpr IndexType kMaxActiveDimensions = 64; // Kings don't count
 
         // Trigger for full calculation instead of difference calculation
         static constexpr TriggerEvent kRefreshTrigger =
@@ -67,9 +67,9 @@ namespace Eval::NNUE::Features {
 
     private:
         // Index of a feature for a given king position and another piece on some square
-        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k, Bitboard* mobility, Bitboard* mobility2);
+        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k);
     };
 
 }  // namespace Eval::NNUE::Features
 
-#endif // #ifndef NNUE_FEATURES_HALF_KPE9_H_INCLUDED
+#endif // #ifndef NNUE_FEATURES_HALF_KPE_H_INCLUDED

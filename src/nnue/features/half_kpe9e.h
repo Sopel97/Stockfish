@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef NNUE_FEATURES_HALF_KPE9_H_INCLUDED
-#define NNUE_FEATURES_HALF_KPE9_H_INCLUDED
+#ifndef NNUE_FEATURES_HALF_KPE9E_H_INCLUDED
+#define NNUE_FEATURES_HALF_KPE9E_H_INCLUDED
 
 #include "features_common.h"
 
@@ -29,12 +29,12 @@ namespace Eval::NNUE::Features {
     // Feature HalfKPE9: Combination of the position of own king
     // and the position of pieces other than kings
     template <Side AssociatedKing>
-    class HalfKPE9 {
+    class HalfKPE9E {
 
     public:
         // Feature name
         static constexpr const char* kName = (AssociatedKing == Side::kFriend) ?
-            "HalfKPE9(Friend)" : "HalfKPE9(Enemy)";
+            "HalfKPE9E(Friend)" : "HalfKPE9E(Enemy)";
 
         // Hash value embedded in the evaluation file
         static constexpr std::uint32_t kHashValue =
@@ -42,10 +42,10 @@ namespace Eval::NNUE::Features {
 
         // Number of feature dimensions
         static constexpr IndexType kDimensions =
-            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 3 * 3;
+            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END3) * 3 * 3;
 
         // Maximum number of simultaneously active features
-        static constexpr IndexType kMaxActiveDimensions = 30; // Kings don't count
+        static constexpr IndexType kMaxActiveDimensions = 64;
 
         // Trigger for full calculation instead of difference calculation
         static constexpr TriggerEvent kRefreshTrigger =
@@ -72,4 +72,4 @@ namespace Eval::NNUE::Features {
 
 }  // namespace Eval::NNUE::Features
 
-#endif // #ifndef NNUE_FEATURES_HALF_KPE9_H_INCLUDED
+#endif // #ifndef NNUE_FEATURES_HALF_KPE9E_H_INCLUDED

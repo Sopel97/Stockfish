@@ -89,7 +89,9 @@ namespace Eval::NNUE {
     PS_W_KING   = 10 * SQUARE_NB + 1,
     PS_END      = PS_W_KING, // pieces without kings (pawns included)
     PS_B_KING   = 11 * SQUARE_NB + 1,
-    PS_END2     = 12 * SQUARE_NB + 1
+    PS_PC_NONE = 12 * SQUARE_NB + 1,
+    PS_END2     = PS_PC_NONE,
+    PS_END3     = 13 * SQUARE_NB + 1
   };
 
   extern const uint32_t kpp_board_index[PIECE_NB][COLOR_NB];
