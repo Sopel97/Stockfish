@@ -9,6 +9,7 @@
 #include "factorizer_half_kpe4.h"
 #include "factorizer_half_kpe9.h"
 #include "factorizer_half_kpe9e.h"
+#include "factorizer_half_kpe9e_kingring.h"
 #include "factorizer_half_ka.h"
 
 #endif
