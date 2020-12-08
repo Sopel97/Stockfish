@@ -231,8 +231,8 @@ namespace Eval::NNUE::Features {
 
         for (Square sq : conv_squares)
         {
-            // Don't include convolution over empty squares
-            if (all_pawns & conv_masks[sq])
+            // Only include convolutions when there's at least 2 pawns
+            if (more_than_one(all_pawns & conv_masks[sq]))
             {
                 active->push_back(make_index(perspective, our_pawns, their_pawns, sq));
             }
