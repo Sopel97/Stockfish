@@ -44,14 +44,264 @@ namespace Eval::NNUE::Features {
 
         static const std::vector<Factors> factors_lookup;
 
-        static constexpr uint64_t conv_magics[COLOR_NB][SQUARE_NB] = {
-          {},
-          {}
+        static constexpr uint64_t conv_magics[SQUARE_NB] = {
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0x4020100800c40401ULL,
+
+  0x402200200480050ULL,
+
+  0x1008010200100020ULL,
+
+  0x804008048004808ULL,
+
+  0x204004028020000ULL,
+
+  0x3040220000202120ULL,
+
+  0x1021000118a001ULL,
+
+  0x502004000011000ULL,
+
+  0x40a01000082000ULL,
+
+  0x20100210100000ULL,
+
+  0x8010080100001084ULL,
+
+  0x20c1008800040078ULL,
+
+  0x804400209200ULL,
+
+  0x2010022001080ULL,
+
+  0x1021005880a4ULL,
+
+  0xc408500000442ULL,
+
+  0x2008081040045000ULL,
+
+  0x800040220010000ULL,
+
+  0x8402020110000000ULL,
+
+  0x42000810800006eULL,
+
+  0x8100840200401280ULL,
+
+  0xa000010200224001ULL,
+
+  0x4c0410080101410ULL,
+
+  0xc201120100400200ULL,
+
+  0x8000108810400028ULL,
+
+  0x828020402200000ULL,
+
+  0x11008010001ULL,
+
+  0xa80880408008083ULL,
+
+  0x4201840040840008ULL,
+
+  0x8081101201002020ULL,
+
+  0x1d0000100801084ULL,
+
+  0x2088188506004000ULL,
+
+  0x4000004588402002ULL,
+
+  0x2c02a802042000ULL,
+
+  0x100500d040810800ULL,
+
+  0x1400000804008cULL,
+
+  0x808884f002040040ULL,
+
+  0xc052010020ULL,
+
+  0x4222400081008010ULL,
+
+  0x8085060040ULL,
+
+  0x8000400148402010ULL,
+
+  0x8040218020420ULL,
+
+  0x3009002010210ULL,
+
+  0x861000a0008108ULL,
+
+  0x4001008900004084ULL,
+
+  0x2020801201104022ULL,
+
+  0x1108010000002011ULL,
+
+  0x84085ULL,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
         };
 
-        static constexpr uint64_t conv_masks[COLOR_NB][SQUARE_NB] = {
-          {},
-          {}
+        static constexpr uint64_t conv_masks[SQUARE_NB] = {
+   0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0x30202ULL,
+
+  0x70505ULL,
+
+  0xe0a0aULL,
+
+  0x1c1414ULL,
+
+  0x382828ULL,
+
+  0x705050ULL,
+
+  0xe0a0a0ULL,
+
+  0xc04040ULL,
+
+  0x3020200ULL,
+
+  0x7050500ULL,
+
+  0xe0a0a00ULL,
+
+  0x1c141400ULL,
+
+  0x38282800ULL,
+
+  0x70505000ULL,
+
+  0xe0a0a000ULL,
+
+  0xc0404000ULL,
+
+  0x302020000ULL,
+
+  0x705050000ULL,
+
+  0xe0a0a0000ULL,
+
+  0x1c14140000ULL,
+
+  0x3828280000ULL,
+
+  0x7050500000ULL,
+
+  0xe0a0a00000ULL,
+
+  0xc040400000ULL,
+
+  0x30202000000ULL,
+
+  0x70505000000ULL,
+
+  0xe0a0a000000ULL,
+
+  0x1c1414000000ULL,
+
+  0x382828000000ULL,
+
+  0x705050000000ULL,
+
+  0xe0a0a0000000ULL,
+
+  0xc04040000000ULL,
+
+  0x3020200000000ULL,
+
+  0x7050500000000ULL,
+
+  0xe0a0a00000000ULL,
+
+  0x1c141400000000ULL,
+
+  0x38282800000000ULL,
+
+  0x70505000000000ULL,
+
+  0xe0a0a000000000ULL,
+
+  0xc0404000000000ULL,
+
+  0x302020000000000ULL,
+
+  0x705050000000000ULL,
+
+  0xe0a0a0000000000ULL,
+
+  0x1c14140000000000ULL,
+
+  0x3828280000000000ULL,
+
+  0x7050500000000000ULL,
+
+  0xe0a0a00000000000ULL,
+
+  0xc040400000000000ULL,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
+
+  0,
         };
 
         static constexpr uint16_t conv_square_idx[SQUARE_NB] = {
@@ -110,7 +360,6 @@ namespace Eval::NNUE::Features {
     private:
         // Index of a feature for a given king position and another piece on some square
         static IndexType make_index(
-            Color perspective,
             Bitboard our_pawns,
             Bitboard their_pawns,
             Square s);
