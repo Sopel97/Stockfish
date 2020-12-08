@@ -24,6 +24,7 @@
 #include "evaluate.h"
 
 #include <cstdint>
+#include <vector>
 
 //Definition of input features HalfKPK of NNUE evaluation function
 namespace Eval::NNUE::Features {
@@ -32,6 +33,16 @@ namespace Eval::NNUE::Features {
     class PawnConv9 {
 
     public:
+
+        struct Factors
+        {
+            IndexType conv_id = 0;
+            IndexType num_piece_ids = 0;
+            IndexType piece_ids[9]{};
+        };
+
+        static const std::vector<Factors> factors_lookup;
+
         static constexpr uint64_t conv_magics[SQUARE_NB] = {
   0,
 
