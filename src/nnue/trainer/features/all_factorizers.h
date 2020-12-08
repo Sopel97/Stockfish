@@ -8,5 +8,6 @@
 #include "factorizer_half_kpe4.h"
 #include "factorizer_half_ka.h"
 #include "factorizer_pawn_structure.h"
+#include "factorizer_pawn_conv_9.h"
 
 #endif

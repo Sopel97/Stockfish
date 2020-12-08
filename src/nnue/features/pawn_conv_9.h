@@ -36,7 +36,7 @@ namespace Eval::NNUE::Features {
 
         struct Factors
         {
-            IndexType conv_id = 0;
+            IndexType conv_id = IndexType(-1);
             IndexType num_piece_ids = 0;
             IndexType piece_ids[9]{};
         };
