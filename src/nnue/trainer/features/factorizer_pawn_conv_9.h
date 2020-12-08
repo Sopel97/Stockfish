@@ -24,6 +24,7 @@ namespace Eval::NNUE::Features {
             kFeaturesPawnConv9,
             kFeaturesConv9,
             kFeaturesPawn,
+            kFeaturesP,
             kNumTrainingFeatureTypes,
         };
 
@@ -35,6 +36,8 @@ namespace Eval::NNUE::Features {
             {true, FeatureType::kConvStates},
             // kFeaturesPawn
             {true, SQUARE_NB * 2 * 24},
+            // kFeaturesP
+            {true, SQUARE_NB * 2},
         };
 
         static_assert(get_array_length(kProperties) == kNumTrainingFeatureTypes, "");
@@ -76,6 +79,16 @@ namespace Eval::NNUE::Features {
                 if (properties.active) {
                     for (IndexType i = 0; i < factors.num_piece_ids; ++i)
                         training_features->emplace_back(index_offset + factors.piece_ids[i]);
+
+                    index_offset += properties.dimensions;
+                }
+            }
+
+            {
+                const auto& properties = kProperties[kFeaturesP];
+                if (properties.active) {
+                    for (IndexType i = 0; i < factors.num_piece_ids; ++i)
+                        training_features->emplace_back(index_offset + factors.piece_ids[i] % (SQUARE_NB * 2));
 
                     index_offset += properties.dimensions;
                 }
