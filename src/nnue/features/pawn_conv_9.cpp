@@ -26,6 +26,21 @@
 #include "pawn_conv_9.h"
 #include "index_list.h"
 
+static inline Bitboard rotate180 (Bitboard x) {
+   const Bitboard h1 = Bitboard (0x5555555555555555);
+   const Bitboard h2 = Bitboard (0x3333333333333333);
+   const Bitboard h4 = Bitboard (0x0F0F0F0F0F0F0F0F);
+   const Bitboard v1 = Bitboard (0x00FF00FF00FF00FF);
+   const Bitboard v2 = Bitboard (0x0000FFFF0000FFFF);
+   x = ((x >>  1) & h1) | ((x & h1) <<  1);
+   x = ((x >>  2) & h2) | ((x & h2) <<  2);
+   x = ((x >>  4) & h4) | ((x & h4) <<  4);
+   x = ((x >>  8) & v1) | ((x & v1) <<  8);
+   x = ((x >> 16) & v2) | ((x & v2) << 16);
+   x = ( x >> 32)       | ( x       << 32);
+   return x;
+}
+
 static uint64_t calc_as_ternary(uint64_t i, int num_bits)
 {
     uint64_t tern = 0;
@@ -66,15 +81,14 @@ namespace Eval::NNUE::Features {
     // Find the index of the feature quantity from the king position and PieceSquare
     template <Side AssociatedKing>
     inline IndexType PawnConv9<AssociatedKing>::make_index(
-        Color perspective,
-        Bitboard our_pawns,
-        Bitboard their_pawns,
-        Square s) {
+        Bitboard our_pawns_or,
+        Bitboard their_pawns_or,
+        Square s_or) {
 
         return
-            as_ternary[pext_conv<AssociatedKing>(our_pawns, s)]
-            + 2 * as_ternary[pext_conv<AssociatedKing>(their_pawns, s)]
-            + (kConvStates * conv_square_idx[orient(perspective, s)]);
+            as_ternary[pext_conv<AssociatedKing>(our_pawns_or, s_or)]
+            + 2 * as_ternary[pext_conv<AssociatedKing>(their_pawns_or, s_or)]
+            + (kConvStates * conv_square_idx[s_or]);
     }
 
     template <Side AssociatedKing>
@@ -86,7 +100,7 @@ namespace Eval::NNUE::Features {
 
         for (Square sq : conv_squares)
         {
-            const auto square_index = conv_square_idx[orient(perspective, sq)];
+            const auto square_index = conv_square_idx[sq];
             std::cout << "Computing conv factors lookup for square " << (int)sq << " with index " << square_index << '\n';
             const Bitboard mask = conv_masks[sq];
 
@@ -228,13 +242,20 @@ namespace Eval::NNUE::Features {
         auto our_pawns = pos.pieces(c, PAWN);
         auto their_pawns = pos.pieces(~c, PAWN);
         auto all_pawns = our_pawns | their_pawns;
+        if (perspective == BLACK)
+        {
+            our_pawns = rotate180(our_pawns);
+            their_pawns = rotate180(their_pawns);
+        }
 
         for (Square sq : conv_squares)
         {
             // Only include convolutions when there's at least 2 pawns
+            // all_pawns is deliberately from before orienting the bitboards
             if (more_than_one(all_pawns & conv_masks[sq]))
             {
-                active->push_back(make_index(perspective, our_pawns, their_pawns, sq));
+                Square sq_or = orient(perspective, sq);
+                active->push_back(make_index(our_pawns, their_pawns, sq_or));
             }
         }
     }

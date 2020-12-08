@@ -413,7 +413,6 @@ namespace Eval::NNUE::Features {
     private:
         // Index of a feature for a given king position and another piece on some square
         static IndexType make_index(
-            Color perspective,
             Bitboard our_pawns,
             Bitboard their_pawns,
             Square s);
