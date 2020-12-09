@@ -22,7 +22,7 @@
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
 // Defines the network structure
-#include "architectures/halfkpe9_256x2-32-32.h"
+#include "architectures/halfkpe5_256x2-32-32.h"
 
 namespace Eval::NNUE {
 
