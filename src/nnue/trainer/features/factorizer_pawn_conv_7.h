@@ -33,7 +33,9 @@ namespace Eval::NNUE::Features {
             // kFeaturesPawnConv7
             {true, FeatureType::kDimensions},
             // kFeaturesConv7
-            {true, FeatureType::kConvStates},
+            // disable for now as it won't work with
+            // different mask sizes
+            {false, FeatureType::kConvStates},
             // kFeaturesPawn
             {true, SQUARE_NB * 2 * 48},
             // kFeaturesP
