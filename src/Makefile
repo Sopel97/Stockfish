@@ -52,6 +52,7 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	nnue/evaluate_nnue_learner.cpp \
 	nnue/features/half_kp.cpp \
 	nnue/features/half_ka.cpp \
+	nnue/features/half_kae5.cpp \
 	nnue/features/half_relative_kp.cpp \
 	nnue/features/half_relative_ka.cpp \
 	nnue/features/k.cpp \
@@ -925,7 +926,7 @@ learn: config-sanity
 	EXTRACXXFLAGS=' -DEVAL_LEARN -DEVAL_NNUE -DENABLE_TEST_CMD -DUSE_BLAS -I/usr/local/opt/openblas/include' \
 	EXTRALDFLAGS=' -L/usr/local/opt/openblas/lib -Wl,-s -lcblas' \
 	all
-	
+
 profile-learn: config-sanity objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
@@ -934,7 +935,7 @@ profile-learn: config-sanity objclean profileclean
 	LEARNLDFLAGS=' -L/usr/local/opt/openblas/lib -Wl,-s  -lcblas'
 	@echo ""
 	@echo "Step 2/4. Running benchmark for pgo-build ..."
-	$(PGOGENSFEN) 
+	$(PGOGENSFEN)
 	@echo ""
 	@echo "Step 3/4. Building optimized executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
