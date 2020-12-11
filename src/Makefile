@@ -52,6 +52,7 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	nnue/evaluate_nnue_learner.cpp \
 	nnue/features/half_kp.cpp \
 	nnue/features/half_ka.cpp \
+	nnue/features/half_kae5.cpp \
 	nnue/features/half_relative_kp.cpp \
 	nnue/features/half_relative_ka.cpp \
 	nnue/features/k.cpp \
@@ -922,6 +923,32 @@ icc-profile-use:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-prof_use -prof_dir ./profdir' \
 	all
+
+learn: config-sanity
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
+	EXTRACXXFLAGS=' -DEVAL_LEARN -DEVAL_NNUE -DENABLE_TEST_CMD -DUSE_BLAS -I/usr/local/opt/openblas/include' \
+	EXTRALDFLAGS=' -L/usr/local/opt/openblas/lib -Wl,-s -lcblas' \
+	all
+
+profile-learn: config-sanity objclean profileclean
+	@echo ""
+	@echo "Step 1/4. Building instrumented executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make) \
+	LEARNCXXFLAGS=' -DEVAL_LEARN -DEVAL_NNUE -DENABLE_TEST_CMD -DUSE_BLAS -I/usr/local/opt/openblas/include' \
+	LEARNLDFLAGS=' -L/usr/local/opt/openblas/lib -Wl,-s  -lcblas'
+	@echo ""
+	@echo "Step 2/4. Running benchmark for pgo-build ..."
+	$(PGOGENSFEN)
+	@echo ""
+	@echo "Step 3/4. Building optimized executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_use) \
+	LEARNCXXFLAGS=' -DEVAL_LEARN -DEVAL_NNUE -DENABLE_TEST_CMD -DUSE_BLAS -I/usr/local/opt/openblas/include' \
+	LEARNLDFLAGS=' -L/usr/local/opt/openblas/lib -Wl,-s  -lcblas'
+	@echo ""
+	@echo "Step 4/4. Deleting profile data ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
+	rm generated_kifu.bin
 
 .depend:
 	-@$(CXX) $(DEPENDFLAGS) -MM $(SRCS) > $@

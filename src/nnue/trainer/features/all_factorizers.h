@@ -6,5 +6,6 @@
 
 #include "factorizer_half_kp.h"
 #include "factorizer_half_ka.h"
+#include "factorizer_half_kae5.h"
 
 #endif
