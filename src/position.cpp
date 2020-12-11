@@ -335,6 +335,99 @@ void Position::set_check_info(StateInfo* si) const {
 /// The function is only used when a new position is set up, and to verify
 /// the correctness of the StateInfo data when running in debug mode.
 
+template<PieceType Pt, Color Us>
+void add_piece_mobility(const Position& pos, Bitboard mobility[3], Bitboard their_lesser_mobility) {
+  if constexpr (Pt == PAWN) {
+    const Bitboard pawns = pos.pieces(Us, PAWN);
+    const Bitboard attacks0 = pawn_attacks_bb_a<Us>(pawns);
+    mobility[2] |= mobility[1] & attacks0;
+    mobility[1] |= mobility[0] & attacks0;
+    mobility[0] |= attacks0;
+    const Bitboard attacks1 = pawn_attacks_bb_b<Us>(pawns);
+    mobility[2] |= mobility[1] & attacks1;
+    mobility[1] |= mobility[0] & attacks1;
+    mobility[0] |= attacks1;
+  } else {
+    const Square* pl = pos.squares<Pt>(Us);
+    const Bitboard pieces = pos.pieces();
+    for (Square s = *pl; s != SQ_NONE; s = *++pl) {
+      const Bitboard attacks = attacks_bb<Pt>(s, pieces) & ~their_lesser_mobility;
+    mobility[2] |= mobility[1] & attacks;
+    mobility[1] |= mobility[0] & attacks;
+    mobility[0] |= attacks;
+    }
+  }
+}
+
+template <Color Us>
+Bitboard calc_their_lesser_mobility(Bitboard mobility[COLOR_NB][3])
+{
+  Bitboard bb = 0;
+  for (int i = 0; i < 3; ++i)
+    bb |= mobility[~Us][i] & ~mobility[Us][i];
+  return bb;
+}
+
+template<PieceType Pt>
+void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
+  Bitboard their_lesser_mobility[COLOR_NB] = {
+    calc_their_lesser_mobility<WHITE>(mobility),
+    calc_their_lesser_mobility<BLACK>(mobility)
+  };
+  add_piece_mobility<Pt, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
+  add_piece_mobility<Pt, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
+}
+
+template<>
+void add_piece_mobility<KING>(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
+  auto do_white = [&]() {
+    const Bitboard their_lesser_mobility = calc_their_lesser_mobility<WHITE>(mobility);
+    add_piece_mobility<KING, WHITE>(pos, mobility[WHITE], their_lesser_mobility);
+  };
+  auto do_black = [&]() {
+    const Bitboard their_lesser_mobility = calc_their_lesser_mobility<BLACK>(mobility);
+    add_piece_mobility<KING, BLACK>(pos, mobility[BLACK], their_lesser_mobility);
+  };
+
+  if (pos.side_to_move() == WHITE)
+  {
+    do_white();
+    do_black();
+  }
+  else
+  {
+    do_black();
+    do_white();
+  }
+}
+
+template<PieceType Pt1, PieceType Pt2, PieceType Pt3>
+void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
+  Bitboard their_lesser_mobility[COLOR_NB] = {
+    calc_their_lesser_mobility<WHITE>(mobility),
+    calc_their_lesser_mobility<BLACK>(mobility)
+  };
+  add_piece_mobility<Pt1, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
+  add_piece_mobility<Pt1, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
+  add_piece_mobility<Pt2, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
+  add_piece_mobility<Pt2, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
+  add_piece_mobility<Pt3, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
+  add_piece_mobility<Pt3, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
+}
+
+static inline void set_mobility(const Position& pos)
+{
+  auto si = pos.state();
+
+  for (int i = 0; i < 3; ++i)
+    si->mobility[WHITE][i] = si->mobility[BLACK][i] = 0;
+
+  add_piece_mobility<PAWN>(pos, si->mobility);
+  add_piece_mobility<KNIGHT, BISHOP, ROOK>(pos, si->mobility);
+  add_piece_mobility<QUEEN>(pos, si->mobility);
+  add_piece_mobility<KING>(pos, si->mobility);
+}
+
 void Position::set_state(StateInfo* si) const {
 
   si->key = si->materialKey = 0;
@@ -368,6 +461,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  set_mobility(*this);
 }
 
 
@@ -893,6 +988,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           }
       }
   }
+
+  set_mobility(*this);
 
   assert(pos_is_ok());
 }
