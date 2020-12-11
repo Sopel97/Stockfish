@@ -176,6 +176,18 @@ constexpr Bitboard pawn_attacks_bb(Bitboard b) {
                     : shift<SOUTH_WEST>(b) | shift<SOUTH_EAST>(b);
 }
 
+template<Color C>
+constexpr Bitboard pawn_attacks_bb_a(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b)
+                    : shift<SOUTH_WEST>(b);
+}
+
+template<Color C>
+constexpr Bitboard pawn_attacks_bb_b(Bitboard b) {
+  return C == WHITE ? shift<NORTH_EAST>(b)
+                    : shift<SOUTH_EAST>(b);
+}
+
 inline Bitboard pawn_attacks_bb(Color c, Square s) {
 
   assert(is_ok(s));
