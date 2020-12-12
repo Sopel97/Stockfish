@@ -218,10 +218,130 @@ namespace Learner
         do_nudged_static(params);
     }
 
+    struct FlipBlackScoreParams
+    {
+        std::string input_filename = "in.binpack";
+        std::string output_filename = "out.binpack";
+        bool flip_score = false;
+        bool flip_result = false;
+
+        void enforce_constraints()
+        {
+        }
+    };
+
+    void do_flip_black_score(FlipBlackScoreParams& params)
+    {
+        Thread* th = Threads.main();
+        Position& pos = th->rootPos;
+        StateInfo si;
+
+        auto in = Learner::open_sfen_input_file(params.input_filename);
+        auto out = Learner::create_new_sfen_output(params.output_filename);
+
+        if (in == nullptr)
+        {
+            std::cerr << "Invalid input file type.\n";
+            return;
+        }
+
+        if (out == nullptr)
+        {
+            std::cerr << "Invalid output file type.\n";
+            return;
+        }
+
+        PSVector buffer;
+        uint64_t batch_size = 1'000'000;
+
+        buffer.reserve(batch_size);
+
+        auto side_to_move_from_sfen = [](auto& sfen){
+            return (Color)(sfen.sfen.data[0] & 1);
+        };
+
+        uint64_t num_processed = 0;
+        for (;;)
+        {
+            auto v = in->next();
+            if (!v.has_value())
+                break;
+
+            auto& ps = v.value();
+            const Color side_to_move = side_to_move_from_sfen(ps);
+
+            if (side_to_move == BLACK)
+            {
+                if (params.flip_score)
+                    ps.score = -ps.score;
+
+                if (params.flip_result)
+                    ps.game_result = -ps.game_result;
+            }
+
+            buffer.emplace_back(ps);
+            if (buffer.size() >= batch_size)
+            {
+                num_processed += buffer.size();
+
+                out->write(buffer);
+                buffer.clear();
+
+                std::cout << "Processed " << num_processed << " positions.\n";
+            }
+        }
+
+        if (!buffer.empty())
+        {
+            num_processed += buffer.size();
+
+            out->write(buffer);
+            buffer.clear();
+
+            std::cout << "Processed " << num_processed << " positions.\n";
+        }
+
+        std::cout << "Finished.\n";
+    }
+
+    void flip_black_score(std::istringstream& is)
+    {
+        FlipBlackScoreParams params{};
+
+        while(true)
+        {
+            std::string token;
+            is >> token;
+
+            if (token == "")
+                break;
+
+            if (token == "flip_score")
+                params.flip_score = true;
+            else if (token == "flip_result")
+                params.flip_result = true;
+            else if (token == "input_file")
+                is >> params.input_filename;
+            else if (token == "output_file")
+                is >> params.output_filename;
+        }
+
+        std::cout << "Performing transform flip_black_score with parameters:\n";
+        std::cout << "input_file          : " << params.input_filename << '\n';
+        std::cout << "output_file         : " << params.output_filename << '\n';
+        std::cout << "flip_score          : " << params.flip_score << '\n';
+        std::cout << "flip_result         : " << params.flip_result << '\n';
+        std::cout << "\n";
+
+        params.enforce_constraints();
+        do_flip_black_score(params);
+    }
+
     void transform(std::istringstream& is)
     {
         const std::map<std::string, CommandFunc> subcommands = {
-            { "nudged_static", &nudged_static }
+            { "nudged_static", &nudged_static },
+            { "flip_black_score", &flip_black_score }
         };
 
         Eval::NNUE::init();
