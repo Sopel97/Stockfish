@@ -20,6 +20,7 @@
 #include <cassert>
 #include <ostream>
 #include <sstream>
+#include <fstream>
 
 #include "evaluate.h"
 #include "misc.h"
@@ -33,6 +34,8 @@ using std::string;
 
 UCI::OptionsMap Options; // Global object
 
+std::ofstream eval_fen_out;
+
 namespace UCI {
 
 /// 'On change' actions, triggered by an option's value change
@@ -43,6 +46,7 @@ void on_threads(const Option& o) { Threads.set(size_t(o)); }
 void on_tb_path(const Option& o) { Tablebases::init(o); }
 void on_use_NNUE(const Option& ) { Eval::NNUE::init(); }
 void on_eval_file(const Option& ) { Eval::NNUE::init(); }
+void on_eval_fen_file(const Option& o) { eval_fen_out = std::ofstream(std::string(o)); }
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -81,6 +85,7 @@ void init(OptionsMap& o) {
   o["SyzygyProbeLimit"]      << Option(7, 0, 7);
   o["Use NNUE"]              << Option(true, on_use_NNUE);
   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
+  o["EvalFenFile"]           << Option("fen_out.epd", on_eval_fen_file);
 }
 
 

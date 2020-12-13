@@ -1039,8 +1039,17 @@ make_v:
 
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
+#include <fstream>
+#include <cstdlib>
+
+extern std::ofstream eval_fen_out;
 
 Value Eval::evaluate(const Position& pos) {
+
+  if ((double)rand() / RAND_MAX < 0.005)
+  {
+    eval_fen_out << pos.fen() << '\n';
+  }
 
   Value v;
 
