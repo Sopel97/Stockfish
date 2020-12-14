@@ -133,6 +133,9 @@ namespace Eval::NNUE::Features {
                     case TriggerEvent::kAnyPieceMoved:
                         reset[perspective] = true;
                         break;
+                    case TriggerEvent::kMaterialChanged:
+                        // TODO: less reset
+                        reset[perspective] = true;
                     default:
                         assert(false);
                         break;
