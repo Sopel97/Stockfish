@@ -16,13 +16,13 @@ namespace Eval::NNUE::Features {
 
     // Find the index of the feature quantity from the king position and PieceSquare
     static inline IndexType make_index(
-        PieceType pt0, PieceType pt1
+        PieceType pt0, PieceType pt1,
         int diff0, int diff1) {
 
-        const IndexType di0 = diff0 + kMaxPieceCountDiff;
-        const IndexType di1 = diff1 + kMaxPieceCountDiff;
+        const IndexType di0 = diff0 + Imbalance::kMaxPieceCountDiff;
+        const IndexType di1 = diff1 + Imbalance::kMaxPieceCountDiff;
 
-        const IndexType di = (kMaxPieceCountDiff * 2 + 1) * di0 + di1;
+        const IndexType di = (Imbalance::kMaxPieceCountDiff * 2 + 1) * di0 + di1;
         const IndexType pti = PIECE_TYPE_NB * pt0 + pt1;
 
         return (PIECE_TYPE_NB * PIECE_TYPE_NB) * di + pti;
@@ -44,7 +44,7 @@ namespace Eval::NNUE::Features {
 
         for (auto pt0 = PAWN; pt0 <= QUEEN; ++pt0)
         {
-            for (auto pt1 = pt0, pt1 <= QUEEN; ++pt1)
+            for (auto pt1 = pt0; pt1 <= QUEEN; ++pt1)
             {
                 if (diffs[pt0] != 0 && diffs[pt1] != 0)
                 {

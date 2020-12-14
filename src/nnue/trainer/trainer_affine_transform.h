@@ -73,7 +73,7 @@ namespace Eval::NNUE {
             else {
                 // Assuming that the input distribution is unit-mean 0.5, equal variance,
                 // Initialize the output distribution so that each unit has a mean of 0.5 and the same variance as the input
-                const double kSigma = 1.0 / std::sqrt(kInputDimensions);
+                const double kSigma = 1.0 / std::sqrt(32);
                 auto distribution = std::normal_distribution<double>(0.0, kSigma);
 
                 for (IndexType i = 0; i < kOutputDimensions; ++i) {
