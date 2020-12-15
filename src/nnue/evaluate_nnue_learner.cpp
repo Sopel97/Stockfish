@@ -10,6 +10,8 @@
 #include "trainer/trainer_input_slice.h"
 #include "trainer/trainer_affine_transform.h"
 #include "trainer/trainer_clipped_relu.h"
+#include "trainer/trainer_relu.h"
+#include "trainer/trainer_inner_product.h"
 #include "trainer/trainer_sum.h"
 
 #include "position.h"
