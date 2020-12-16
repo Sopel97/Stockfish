@@ -35,7 +35,7 @@ namespace Eval::NNUE::Layers {
    public:
     // Input/output type
     using InputType = typename PreviousLayer::OutputType;
-    using OutputType = std::uint16_t;
+    using OutputType = std::int16_t;
     static_assert(std::is_same<InputType, std::int32_t>::value, "");
 
     // Number of input/output dimensions
@@ -98,8 +98,11 @@ namespace Eval::NNUE::Layers {
       const auto output = reinterpret_cast<OutputType*>(buffer);
 
       for (IndexType i = 0; i < kInputDimensions; ++i) {
-        output[i] = static_cast<OutputType>(
-            std::max(0, std::min((1 << 16) - 1, input[i] >> kWeightScaleBits)));
+        auto in = input[i] >> kWeightScaleBits;
+        if (in < 0)
+          output[i] = in / 16;
+        else
+          output[i] = std::min((1 << 15) - 1, in);
       }
       return output;
     }

@@ -93,10 +93,10 @@ namespace Eval::NNUE {
                         out2 = _mm_max_ps(kZero4, out2);
                         out3 = _mm_max_ps(kZero4, out3);
 
-                        _mm_storeu_ps(&output_[i + 0 + batch_offset], out0);
-                        _mm_storeu_ps(&output_[i + 4 + batch_offset], out1);
-                        _mm_storeu_ps(&output_[i + 8 + batch_offset], out2);
-                        _mm_storeu_ps(&output_[i + 12 + batch_offset], out3);
+                        //_mm_storeu_ps(&output_[i + 0 + batch_offset], out0);
+                        //_mm_storeu_ps(&output_[i + 4 + batch_offset], out1);
+                        //_mm_storeu_ps(&output_[i + 8 + batch_offset], out2);
+                        //_mm_storeu_ps(&output_[i + 12 + batch_offset], out3);
 
                         __m128 minact0 = _mm_loadu_ps(&thread_state.min_activations_[i + 0]);
                         __m128 minact1 = _mm_loadu_ps(&thread_state.min_activations_[i + 4]);
@@ -114,9 +114,24 @@ namespace Eval::NNUE {
                         _mm_storeu_ps(&thread_state.min_activations_[i + 12], minact3);
                     }
                 }
+
+                for (IndexType b = offset; b < offset + count; ++b)
+                {
+                    const IndexType batch_offset = kOutputDimensions * b;
+
+                    for (IndexType i = 0; i < kOutputDimensions; i += 1)
+                    {
+                        auto in = input_[batch_offset + i];
+                        if (in < 0.0f)
+                            output_[batch_offset + i] = in * (1.0f / 16.0f);
+                        else
+                            output_[batch_offset + i] = in;
+                    }
+                }
             }
 
 #else
+            static_assert(false);
 
             for (IndexType b = offset; b < offset + count; ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
@@ -171,10 +186,10 @@ namespace Eval::NNUE {
                         grad2 = _mm_andnot_ps(clipped2, grad2);
                         grad3 = _mm_andnot_ps(clipped3, grad3);
 
-                        _mm_storeu_ps(&gradients_[batch_offset + i + 0], grad0);
-                        _mm_storeu_ps(&gradients_[batch_offset + i + 4], grad1);
-                        _mm_storeu_ps(&gradients_[batch_offset + i + 8], grad2);
-                        _mm_storeu_ps(&gradients_[batch_offset + i + 12], grad3);
+                        //_mm_storeu_ps(&gradients_[batch_offset + i + 0], grad0);
+                        //_mm_storeu_ps(&gradients_[batch_offset + i + 4], grad1);
+                        //_mm_storeu_ps(&gradients_[batch_offset + i + 8], grad2);
+                        //_mm_storeu_ps(&gradients_[batch_offset + i + 12], grad3);
 
                         const int clipped_mask =
                             (_mm_movemask_ps(clipped0) << 0)
@@ -185,10 +200,24 @@ namespace Eval::NNUE {
                         thread_state.num_clipped_ += popcount(clipped_mask);
                     }
                 }
+
+                for (IndexType b = offset; b < offset + count; ++b)
+                {
+                    const IndexType batch_offset = kOutputDimensions * b;
+
+                    for (IndexType i = 0; i < kOutputDimensions; i += 1)
+                    {
+                        auto out = output_[batch_offset + i];
+                        if (out <= 0.0f)
+                            gradients_[batch_offset + i] = gradients[batch_offset + i] * (1.0f / 16.0f);
+                        else
+                            gradients_[batch_offset + i] = gradients[batch_offset + i];
+                    }
+                }
             }
 
 #else
-
+            static_assert(false);
             for (IndexType b = offset; b < offset + count; ++b) {
                 const IndexType batch_offset = kOutputDimensions * b;
                 for (IndexType i = 0; i < kOutputDimensions; ++i) {
