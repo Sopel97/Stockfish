@@ -801,9 +801,14 @@ namespace Learner
                 }
             }
 
-            if (params.smart_fen_skipping
-                && (pos.capture_or_promotion((Move)ps.move)
-                    || pos.checkers()))
+            if (
+                params.smart_fen_skipping
+                && (pos.checkers()
+                    || (pos.capture_or_promotion((Move)ps.move)
+                        && !Search::qsearch(pos).second.empty()
+                        )
+                    )
+                )
             {
                 goto RETRY_READ;
             }
