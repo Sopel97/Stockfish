@@ -12,6 +12,7 @@
 #include "trainer/trainer_clipped_relu.h"
 #include "trainer/trainer_sum.h"
 
+#include "evaluate.h"
 #include "position.h"
 #include "uci.h"
 #include "misc.h"
@@ -146,6 +147,7 @@ namespace Eval::NNUE {
         example.discrete_nn_eval = discrete_nn_eval;
         example.psv = psv;
         example.weight = weight;
+        example.classic_eval = Eval::evaluate_classical(pos);
 
         Features::IndexList active_indices[2];
         for (const auto trigger : kRefreshTriggers) {
@@ -236,7 +238,7 @@ namespace Eval::NNUE {
                     for (std::size_t b = offset; b < offset + count; ++b) {
                         const auto& e = *(batch_begin + b);
                         const auto shallow = static_cast<Value>(round<std::int32_t>(
-                            e.sign * network_output[b] * kPonanzaConstant));
+                            e.sign * (network_output[b] * kPonanzaConstant + e.classic_eval)));
                         const auto discrete = e.sign * e.discrete_nn_eval;
                         const auto& psv = e.psv;
                         auto loss = calc_loss(shallow, (Value)psv.score, psv.game_result, psv.gamePly);
