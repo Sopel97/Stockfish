@@ -912,6 +912,13 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
+Value Eval::evaluate_classical(const Position& pos) {
+  auto s = pos.psq_score();
+  auto v = (mg_value(s) + eg_value(s)) / 2;
+  v = (pos.side_to_move() == WHITE ? v : -v);
+  return v;
+}
+
 Value Eval::evaluate(const Position& pos) {
 
   pos.this_thread()->on_eval();
@@ -919,7 +926,7 @@ Value Eval::evaluate(const Position& pos) {
   Value v;
 
   if (NNUE::useNNUE == NNUE::UseNNUEMode::Pure) {
-      v = NNUE::evaluate(pos);
+      v = NNUE::evaluate(pos) + evaluate_classical(pos);
 
       // Guarantee evaluation does not hit the tablebase range
       v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);

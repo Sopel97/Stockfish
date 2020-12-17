@@ -71,6 +71,7 @@ namespace Eval::NNUE {
         Value discrete_nn_eval;
         int sign;
         double weight;
+        int classic_eval;
     };
 
     // Message used for setting hyperparameters

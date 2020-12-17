@@ -27,6 +27,7 @@ class Position;
 
 namespace Eval {
   std::string trace(const Position& pos);
+  Value evaluate_classical(const Position& pos);
   Value evaluate(const Position& pos);
 
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
