@@ -566,6 +566,21 @@ namespace Math {
         return sigmoid(x) * (1.0 - sigmoid(x));
     }
 
+    inline double invsigmoid(double x)
+    {
+      return -std::log(1.0/x - 1.0);
+    }
+
+    inline double nnueEvalToPerf(Value v)
+    {
+      return std::clamp(((double)v)/20000.0+0.5, 0.0001, 0.9999);
+    }
+
+    inline Value nnueEvalToEval(Value v)
+    {
+      return (Value)std::clamp(invsigmoid(nnueEvalToPerf(v))*361, -10000.0, 10000.0);
+    }
+
 	// Clip v so that it fits between [lo,hi].
 	// * In Stockfish, this function is written in bitboard.h.
 	template<class T> constexpr const T& clamp(const T& v, const T& lo, const T& hi) {

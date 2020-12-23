@@ -189,8 +189,8 @@ namespace Learner
 
         static thread_local auto teacher_entropy_ = -(p_ * log(p_ + epsilon) + (1.0 - p_) * log(1.0 - p_ + epsilon));
         static thread_local auto outcome_entropy_ = -(t_ * log(t_ + epsilon) + (1.0 - t_) * log(1.0 - t_ + epsilon));
-        static thread_local auto teacher_loss_ = -(p_ * log(q_) + (1.0 - p_) * log(1.0 - q_));
-        static thread_local auto outcome_loss_ = -(t_ * log(q_) + (1.0 - t_) * log(1.0 - q_));
+        static thread_local auto teacher_loss_ = -(p_ * log(q_ + epsilon) + (1.0 - p_) * log(1.0 - q_ + epsilon));
+        static thread_local auto outcome_loss_ = -(t_ * log(q_ + epsilon) + (1.0 - t_) * log(1.0 - q_ + epsilon));
         static thread_local auto result_ = lambda_ * teacher_loss_ + (1.0 - lambda_) * outcome_loss_;
         static thread_local auto entropy_ = lambda_ * teacher_entropy_ + (1.0 - lambda_) * outcome_entropy_;
         static thread_local auto cross_entropy_ = result_ - entropy_;
@@ -331,7 +331,7 @@ namespace Learner
     {
         using namespace Learner::Autograd::UnivariateStatic;
 
-        static thread_local auto& q_ = expected_perf_(VariableParameter<double, 0>{});
+        static thread_local auto q_ = VariableParameter<double, 0>{} / 20000.0 + 0.5;
         static thread_local auto& p_ = expected_perf_(scale_score_(ConstantParameter<double, 1>{}));
         static thread_local auto t_ = (ConstantParameter<double, 2>{} + 1.0) * 0.5;
         static thread_local auto lambda_ = ConstantParameter<double, 3>{};
@@ -344,7 +344,7 @@ namespace Learner
         Value shallow, Value teacher_signal, int result)
     {
         return std::tuple(
-            (double)shallow,
+            std::clamp((double)shallow, -10000.0 * 0.9999, 10000.0 * 0.9999),
             (double)teacher_signal,
             (double)result,
             calculate_lambda(teacher_signal)

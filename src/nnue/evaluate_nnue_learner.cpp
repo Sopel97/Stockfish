@@ -250,7 +250,7 @@ namespace Eval::NNUE {
                         // Similarily we want only gradients from one batch.
                         if (collect_stats)
                         {
-                            abs_eval_diff_sum_local[thread_id] += std::abs(discrete - shallow);
+                            abs_eval_diff_sum_local[thread_id] += std::abs(discrete - Math::nnueEvalToEval(shallow));
                             abs_discrete_eval_sum_local[thread_id] += std::abs(discrete);
                             gradient_norm_local[thread_id] += std::abs(loss.grad);
                         }
