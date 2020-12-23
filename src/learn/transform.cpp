@@ -475,11 +475,108 @@ namespace Learner
         do_rescore(params);
     }
 
+    struct EvalStatsParams
+    {
+        std::string input_filename = "in.binpack";
+        std::string output_filename = "out.txt";
+        uint64_t count = 1000000;
+
+        void enforce_constraints()
+        {
+        }
+    };
+
+    void do_eval_stats(EvalStatsParams& params)
+    {
+        Thread* th = Threads.main();
+        Position& pos = th->rootPos;
+        StateInfo si;
+
+        auto in = Learner::open_sfen_input_file(params.input_filename);
+        auto out = std::ofstream(params.output_filename);
+
+        if (in == nullptr)
+        {
+            std::cerr << "Invalid input file type.\n";
+            return;
+        }
+
+        struct Data
+        {
+            uint64_t w = 0;
+            uint64_t d = 0;
+            uint64_t l = 0;
+        };
+        std::map<int, Data> hist;
+
+        for (uint64_t num_processed = 0; num_processed < params.count;)
+        {
+            auto v = in->next();
+            if (!v.has_value())
+                break;
+
+            auto& ps = v.value();
+
+            pos.set_from_packed_sfen(ps.sfen, &si, th);
+            auto eval = ps.score;
+            auto result = ps.game_result;
+            auto& e = hist[eval];
+            if (result == 1) e.w += 1;
+            else if (result == 0) e.d += 1;
+            else e.l += 1;
+
+            num_processed += 1;
+            if (num_processed % 1'000'000 == 0)
+            {
+                std::cout << "Processed " << num_processed << " positions.\n";
+            }
+        }
+
+        for (auto [v, d] : hist)
+        {
+            out << (int)v << ';' << d.w << ';' << d.d << ';' << d.l << '\n';
+        }
+
+        std::cout << "Finished.\n";
+    }
+
+    void eval_stats(std::istringstream& is)
+    {
+        EvalStatsParams params{};
+
+        while(true)
+        {
+            std::string token;
+            is >> token;
+
+            if (token == "")
+                break;
+
+            if (token == "input_file")
+                is >> params.input_filename;
+            else if (token == "output_file")
+                is >> params.output_filename;
+            else if (token == "count")
+                is >> params.count;
+        }
+
+        params.enforce_constraints();
+
+        std::cout << "Performing transform eval_stats with parameters:\n";
+        std::cout << "input_file          : " << params.input_filename << '\n';
+        std::cout << "output_file         : " << params.output_filename << '\n';
+        std::cout << "count               : " << params.count << '\n';
+        std::cout << '\n';
+
+        do_eval_stats(params);
+    }
+
     void transform(std::istringstream& is)
     {
         const std::map<std::string, CommandFunc> subcommands = {
             { "nudged_static", &nudged_static },
-            { "rescore", &rescore }
+            { "rescore", &rescore },
+            { "eval_stats", &eval_stats }
         };
 
         Eval::NNUE::init();
