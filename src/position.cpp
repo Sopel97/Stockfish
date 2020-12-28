@@ -350,13 +350,18 @@ void add_piece_mobility(const Position& pos, Bitboard mobility[3], Bitboard thei
     mobility[1] |= mobility[0] & attacks1;
     mobility[0] |= attacks1;
   } else {
-    const Square* pl = pos.squares<Pt>(Us);
-    const Bitboard pieces = pos.pieces();
-    for (Square s = *pl; s != SQ_NONE; s = *++pl) {
+    Bitboard attackers = pos.pieces(Us, Pt);
+    const Bitboard pieces =
+      Pt == BISHOP ? pos.pieces() ^ pos.pieces(~Us, QUEEN)
+      : Pt == ROOK ? pos.pieces() ^ pos.pieces(Us, ROOK) ^ pos.pieces(~Us, QUEEN)
+      : Pt == QUEEN ? pos.pieces() ^ pos.pieces(Us, ROOK) ^ pos.pieces(Us, QUEEN)
+      : pos.pieces();
+    while (attackers) {
+      Square s = pop_lsb(&attackers);
       const Bitboard attacks = attacks_bb<Pt>(s, pieces) & ~their_lesser_mobility;
-    mobility[2] |= mobility[1] & attacks;
-    mobility[1] |= mobility[0] & attacks;
-    mobility[0] |= attacks;
+      mobility[2] |= mobility[1] & attacks;
+      mobility[1] |= mobility[0] & attacks;
+      mobility[0] |= attacks;
     }
   }
 }
