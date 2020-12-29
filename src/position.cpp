@@ -380,29 +380,6 @@ void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
   add_piece_mobility<Pt, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
 }
 
-template<>
-void add_piece_mobility<KING>(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
-  auto do_white = [&]() {
-    const Bitboard their_lesser_mobility = calc_their_lesser_mobility<WHITE>(mobility);
-    add_piece_mobility<KING, WHITE>(pos, mobility[WHITE], their_lesser_mobility);
-  };
-  auto do_black = [&]() {
-    const Bitboard their_lesser_mobility = calc_their_lesser_mobility<BLACK>(mobility);
-    add_piece_mobility<KING, BLACK>(pos, mobility[BLACK], their_lesser_mobility);
-  };
-
-  if (pos.side_to_move() == WHITE)
-  {
-    do_white();
-    do_black();
-  }
-  else
-  {
-    do_black();
-    do_white();
-  }
-}
-
 template<PieceType Pt1, PieceType Pt2, PieceType Pt3>
 void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
   Bitboard their_lesser_mobility[COLOR_NB] = {
