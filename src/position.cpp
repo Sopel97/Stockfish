@@ -362,29 +362,30 @@ void add_piece_mobility(const Position& pos, Bitboard mobility[3], Bitboard thei
 }
 
 template <Color Us>
-Bitboard calc_their_lesser_mobility(Bitboard mobility[COLOR_NB][3])
+Bitboard calc_their_lesser_mobility(Bitboard mobility[COLOR_NB][3], Bitboard lower_pieces)
 {
   Bitboard bb = 0;
   for (int i = 0; i < 3; ++i)
     bb |= mobility[~Us][i] & ~mobility[Us][i];
+  bb &= lower_pieces;
   return bb;
 }
 
 template<PieceType Pt>
-void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
+void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3], Bitboard lower_pieces) {
   Bitboard their_lesser_mobility[COLOR_NB] = {
-    calc_their_lesser_mobility<WHITE>(mobility),
-    calc_their_lesser_mobility<BLACK>(mobility)
+    calc_their_lesser_mobility<WHITE>(mobility, lower_pieces),
+    calc_their_lesser_mobility<BLACK>(mobility, lower_pieces)
   };
   add_piece_mobility<Pt, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
   add_piece_mobility<Pt, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
 }
 
 template<PieceType Pt1, PieceType Pt2, PieceType Pt3>
-void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3]) {
+void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][3], Bitboard lower_pieces) {
   Bitboard their_lesser_mobility[COLOR_NB] = {
-    calc_their_lesser_mobility<WHITE>(mobility),
-    calc_their_lesser_mobility<BLACK>(mobility)
+    calc_their_lesser_mobility<WHITE>(mobility, lower_pieces),
+    calc_their_lesser_mobility<BLACK>(mobility, lower_pieces)
   };
   add_piece_mobility<Pt1, WHITE>(pos, mobility[WHITE], their_lesser_mobility[WHITE]);
   add_piece_mobility<Pt1, BLACK>(pos, mobility[BLACK], their_lesser_mobility[BLACK]);
@@ -401,10 +402,16 @@ static inline void set_mobility(const Position& pos)
   for (int i = 0; i < 3; ++i)
     si->mobility[WHITE][i] = si->mobility[BLACK][i] = 0;
 
-  add_piece_mobility<PAWN>(pos, si->mobility);
-  add_piece_mobility<KNIGHT, BISHOP, ROOK>(pos, si->mobility);
-  add_piece_mobility<QUEEN>(pos, si->mobility);
-  add_piece_mobility<KING>(pos, si->mobility);
+  Bitboard lower_pieces = 0;
+  add_piece_mobility<PAWN>(pos, si->mobility, lower_pieces);
+  lower_pieces |= pos.pieces(PAWN);
+  add_piece_mobility<KNIGHT, BISHOP, ROOK>(pos, si->mobility, lower_pieces);
+  lower_pieces |= pos.pieces(KNIGHT);
+  lower_pieces |= pos.pieces(BISHOP);
+  lower_pieces |= pos.pieces(ROOK);
+  add_piece_mobility<QUEEN>(pos, si->mobility, lower_pieces);
+  lower_pieces |= pos.pieces(QUEEN);
+  add_piece_mobility<KING>(pos, si->mobility, lower_pieces);
 }
 
 void Position::set_state(StateInfo* si) const {
