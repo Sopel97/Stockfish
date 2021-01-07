@@ -33,6 +33,22 @@ namespace Eval::NNUE {
     std::int16_t
         accumulation[2][kRefreshTriggers.size()][kTransformedFeatureDimensions];
     AccumulatorState state[2];
+    int familiarity[2][kRefreshTriggers.size()];
+    int familiarity_count[2][kRefreshTriggers.size()];
+
+    int get_familiarity() const
+    {
+      int sum = 0;
+      int count = 0;
+      for (int i = 0; i < 2; ++i)
+      {
+        sum += familiarity[i][0];
+        count += familiarity_count[i][0];
+      }
+      if (count == 0)
+        count = 1;
+      return sum / count;
+    }
   };
 
 }  // namespace Eval::NNUE
