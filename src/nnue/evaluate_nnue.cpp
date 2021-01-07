@@ -127,7 +127,7 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    bool b = feature_transformer->Transform(pos, transformed_features, 50);
+    bool b = feature_transformer->Transform(pos, transformed_features, 20);
     if (!b)
     {
       return VALUE_NONE;
