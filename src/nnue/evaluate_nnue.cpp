@@ -127,7 +127,11 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    feature_transformer->Transform(pos, transformed_features);
+    bool b = feature_transformer->Transform(pos, transformed_features, 100);
+    if (!b)
+    {
+      return VALUE_NONE;
+    }
     const auto output = network->Propagate(transformed_features, buffer);
 
     return static_cast<Value>(output[0] / FV_SCALE);

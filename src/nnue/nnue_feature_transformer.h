@@ -23,6 +23,7 @@
 
 #include "nnue_common.h"
 #include "nnue_architecture.h"
+#include "familiarity.h"
 #include "features/index_list.h"
 
 #include <cstring> // std::memset()
@@ -120,10 +121,13 @@ namespace Eval::NNUE {
     }
 
     // Convert input features
-    void Transform(const Position& pos, OutputType* output) const {
+    bool Transform(const Position& pos, OutputType* output, int familiarity_threshold) const {
 
       UpdateAccumulator(pos, WHITE);
       UpdateAccumulator(pos, BLACK);
+
+      if (pos.state()->accumulator.get_familiarity() < familiarity_threshold)
+        return false;
 
       const auto& accumulation = pos.state()->accumulator.accumulation;
 
@@ -233,6 +237,8 @@ namespace Eval::NNUE {
   #if defined(USE_MMX)
       _mm_empty();
   #endif
+
+      return true;
     }
 
    private:
@@ -289,6 +295,32 @@ namespace Eval::NNUE {
         // Now update the accumulators listed in info[], where the last element is a sentinel.
         StateInfo *info[3] =
           { next, next == pos.state() ? nullptr : pos.state(), nullptr };
+
+        {
+          auto source_st = &(st->accumulator);
+          for (IndexType i = 0; info[i]; ++i)
+          {
+            auto dest_st = &(info[i]->accumulator);
+
+            int familiarity = source_st->familiarity[c][0];
+            for (const auto index : removed[i])
+            {
+              familiarity -= feature_familiarities[index];
+            }
+
+            // Difference calculation for the activated features
+            for (const auto index : added[i])
+            {
+              familiarity += feature_familiarities[index];
+            }
+
+            dest_st->familiarity[c][0] = familiarity;
+            dest_st->familiarity_count[c][0] = source_st->familiarity_count[c][0] + added[i].size() - removed[i].size();
+
+            source_st = dest_st;
+          }
+        }
+
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
         {
@@ -361,6 +393,13 @@ namespace Eval::NNUE {
         accumulator.state[c] = COMPUTED;
         Features::IndexList active;
         Features::HalfKP<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
+        int familiarity = 0;
+        for (const auto index : active)
+        {
+          familiarity += feature_familiarities[index];
+        }
+        accumulator.familiarity[c][0] = familiarity;
+        accumulator.familiarity_count[c][0] = active.size();
 
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
