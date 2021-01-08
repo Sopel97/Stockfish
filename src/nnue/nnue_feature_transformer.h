@@ -256,6 +256,8 @@ namespace Stockfish::Eval::NNUE {
       // Look for a usable accumulator of an earlier position. We keep track
       // of the estimated gain in terms of features to be added/subtracted.
       StateInfo *st = pos.state(), *next = nullptr;
+      // gain must be calculated such that there is never more than kMaxActiveDimensions
+      // entries in removed[1] later on.
       int gain = pos.count<ALL_PIECES>() - 2;
       while (st->accumulator.state[c] == EMPTY)
       {
@@ -266,7 +268,7 @@ namespace Stockfish::Eval::NNUE {
               Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
               "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
         if (   dp.piece[0] == make_piece(c, KING)
-            || (gain -= dp.dirty_num + 1) < 0)
+            || (gain -= dp.dirty_num + 1 + popcount(pos.state()->previous->special ^ pos.state()->special)) < 0)
           break;
         next = st;
         st = st->previous;
@@ -280,15 +282,15 @@ namespace Stockfish::Eval::NNUE {
         // Update incrementally in two steps. First, we update the "next"
         // accumulator. Then, we update the current accumulator (pos.state()).
 
-        // Gather all features to be updated. This code assumes HalfKA features
+        // Gather all features to be updated. This code assumes HalfKAS2v1 features
         // only and doesn't support refresh triggers.
-        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKA<Features::Side::kFriend>>,
+        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKAS2v1<Features::Side::kFriend>>,
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
-        Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
+        Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
             next->dirtyPiece, c, &removed[0], &added[0]);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
-          Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
+          Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
               st2->dirtyPiece, c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
@@ -398,7 +400,7 @@ namespace Stockfish::Eval::NNUE {
         auto& accumulator = pos.state()->accumulator;
         accumulator.state[c] = COMPUTED;
         Features::IndexList active;
-        Features::HalfKA<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
+        Features::HalfKAS2v1<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
 
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
