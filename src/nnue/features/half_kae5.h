@@ -23,6 +23,8 @@
 
 #include "evaluate.h"
 
+#include <utility>
+
 //Definition of input features HalfKPK of NNUE evaluation function
 namespace Eval::NNUE::Features {
 
@@ -67,7 +69,20 @@ namespace Eval::NNUE::Features {
 
     private:
         // Index of a feature for a given king position and another piece on some square
-        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k, Bitboard mobility[COLOR_NB][3]);
+        static IndexType make_index(
+            Color perspective,
+            Square s,
+            Piece pc,
+            Square sq_k,
+            Bitboard mobility[COLOR_NB][3]);
+
+        static std::pair<IndexType, IndexType> make_index_2(
+            Color perspective,
+            Square s,
+            Piece pc,
+            Square sq_k,
+            Bitboard prev_mobility[COLOR_NB][3],
+            Bitboard curr_mobility[COLOR_NB][3]);
     };
 
 }  // namespace Eval::NNUE::Features

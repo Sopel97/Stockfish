@@ -38,15 +38,50 @@ namespace Eval::NNUE::Features {
         Bitboard mobility[COLOR_NB][3]) {
 
         int mobility_index = 2;
+        const Bitboard sqbb = 1ull << s;
         for (int i = 0; i < 3; ++i)
         {
-            mobility_index += bool(mobility[perspective][i] & s);
-            mobility_index -= bool(mobility[~perspective][i] & s);
+            mobility_index += bool(mobility[perspective][i] & sqbb);
+            mobility_index -= bool(mobility[~perspective][i] & sqbb);
         }
         mobility_index = std::clamp(mobility_index, 0, 4);
 
         return IndexType(orient(perspective, s) + kpp_board_index[pc][perspective] + PS_END2 * ksq)
             + (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * static_cast<IndexType>(mobility_index));
+    }
+
+    template <Side AssociatedKing>
+    inline std::pair<IndexType, IndexType> HalfKAE5<AssociatedKing>::make_index_2(
+        Color perspective,
+        Square s,
+        Piece pc,
+        Square ksq,
+        Bitboard prev_mobility[COLOR_NB][3],
+        Bitboard curr_mobility[COLOR_NB][3]) {
+
+        int prev_mobility_index = 2;
+        int curr_mobility_index = 2;
+        const Color us = perspective;
+        const Color them = ~perspective;
+        const Bitboard sqbb = 1ull << s;
+        for (int i = 0; i < 3; ++i)
+        {
+            prev_mobility_index += bool(prev_mobility[us][i] & sqbb);
+            prev_mobility_index -= bool(prev_mobility[them][i] & sqbb);
+
+            curr_mobility_index += bool(curr_mobility[us][i] & sqbb);
+            curr_mobility_index -= bool(curr_mobility[them][i] & sqbb);
+        }
+        prev_mobility_index = std::clamp(prev_mobility_index, 0, 4);
+        curr_mobility_index = std::clamp(curr_mobility_index, 0, 4);
+
+        const IndexType index_base = IndexType(orient(us, s) + kpp_board_index[pc][us] + PS_END2 * ksq);
+        constexpr IndexType mobility_index_mul = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
+
+        return std::make_pair(
+            index_base + mobility_index_mul * static_cast<IndexType>(prev_mobility_index),
+            index_base + mobility_index_mul * static_cast<IndexType>(curr_mobility_index)
+        );
     }
 
     // Get a list of indices for active features
@@ -62,9 +97,10 @@ namespace Eval::NNUE::Features {
                 AssociatedKing == Side::kFriend ? perspective : ~perspective));
 
         Bitboard bb = pos.pieces();
+        Bitboard (&curr_mobility)[COLOR_NB][3] = pos.state()->mobility;
         while (bb) {
             Square s = pop_lsb(&bb);
-            active->push_back(make_index(perspective, s, pos.piece_on(s), ksq, pos.state()->mobility));
+            active->push_back(make_index(perspective, s, pos.piece_on(s), ksq, curr_mobility));
         }
     }
 
@@ -85,24 +121,23 @@ namespace Eval::NNUE::Features {
         Bitboard (&prev_mobility)[COLOR_NB][3] = pos.state()->previous->mobility;
 
         const auto& dp = pos.state()->dirtyPiece;
-        Bitboard updated_ps = 0;
+        Bitboard updated = 0;
         for (int i = 0; i < dp.dirty_num; ++i) {
             Piece pc = dp.piece[i];
 
             if (dp.from[i] != SQ_NONE)
             {
-                updated_ps |= dp.from[i];
+                updated |= dp.from[i];
                 removed->push_back(make_index(perspective, dp.from[i], pc, ksq, prev_mobility));
             }
 
             if (dp.to[i] != SQ_NONE)
             {
-                updated_ps |= dp.to[i];
+                updated |= dp.to[i];
                 added->push_back(make_index(perspective, dp.to[i], pc, ksq, curr_mobility));
             }
         }
 
-        const Bitboard ps = pos.pieces() & ~updated_ps;
         Bitboard mobility_diff = 0;
         for (int i = 0; i < 3; ++i)
         {
@@ -110,13 +145,17 @@ namespace Eval::NNUE::Features {
             mobility_diff |= (curr_mobility[BLACK][i] ^ prev_mobility[BLACK][i]);
         }
 
-        Bitboard affected_pieces = ps & mobility_diff;
+        Bitboard affected_pieces = pos.pieces() & ~updated & mobility_diff;
         while (affected_pieces)
         {
             Square s = pop_lsb(&affected_pieces);
             Piece pc = pos.piece_on(s);
-            removed->push_back(make_index(perspective, s, pc, ksq, prev_mobility));
-            added->push_back(make_index(perspective, s, pc, ksq, curr_mobility));
+            auto [r, a] = make_index_2(perspective, s, pc, ksq, prev_mobility, curr_mobility);
+            if (r != a)
+            {
+                removed->push_back(r);
+                added->push_back(a);
+            }
         }
     }
 
