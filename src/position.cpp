@@ -419,6 +419,17 @@ static inline void set_mobility(const Position& pos)
   add_piece_mobility<KING>(pos, si->mobility, lower_pieces);
 }
 
+static inline void set_mobility_on_null_move(const Position& pos)
+{
+  auto si = pos.state();
+
+  for (int i = 0; i < 3; ++i)
+  {
+    si->mobility[WHITE][i] = si->previous->mobility[WHITE][i];
+    si->mobility[BLACK][i] = si->previous->mobility[BLACK][i];
+  }
+}
+
 void Position::set_state(StateInfo* si) const {
 
   si->key = si->materialKey = 0;
@@ -1116,6 +1127,8 @@ void Position::do_null_move(StateInfo& newSt) {
   set_check_info(st);
 
   st->repetition = 0;
+
+  set_mobility_on_null_move(*this);
 
   assert(pos_is_ok());
 }
