@@ -49,7 +49,7 @@ namespace Eval::NNUE {
       { PS_W_BISHOP, PS_B_BISHOP },
       { PS_W_ROOK,   PS_B_ROOK   },
       { PS_W_QUEEN,  PS_B_QUEEN  },
-      { PS_W_KING,   PS_B_KING   },
+      { PS_KING,     PS_KING     },
       { PS_NONE,     PS_NONE     },
       { PS_NONE,     PS_NONE     },
       { PS_B_PAWN,   PS_W_PAWN   },
@@ -57,7 +57,7 @@ namespace Eval::NNUE {
       { PS_B_BISHOP, PS_W_BISHOP },
       { PS_B_ROOK,   PS_W_ROOK   },
       { PS_B_QUEEN,  PS_W_QUEEN  },
-      { PS_B_KING,   PS_W_KING   },
+      { PS_KING,     PS_KING     },
       { PS_NONE,     PS_NONE     }
   };
 
