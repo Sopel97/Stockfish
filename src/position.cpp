@@ -22,6 +22,7 @@
 #include <cstring> // For std::memset, std::memcmp
 #include <iomanip>
 #include <sstream>
+#include <array>
 
 #include "bitboard.h"
 #include "misc.h"
@@ -343,6 +344,249 @@ void Position::set_check_info(StateInfo* si) const {
 }
 
 
+static inline Bitboard get_special_pawns(const Position& pos) {
+    static const std::array<Bitboard, SQUARE_NB> forward_white = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = square_bb(s);
+            for (int i = 1; i <= 6; ++i)
+            {
+                bb |= shift<NORTH>(bb);
+            }
+            bb ^= s;
+            arr[s] = bb;
+        }
+        return arr;
+    }();
+
+    static const std::array<Bitboard, SQUARE_NB> forward_black = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = square_bb(s);
+            for (int i = 1; i <= 6; ++i)
+            {
+                bb |= shift<SOUTH>(bb);
+            }
+            bb ^= s;
+            arr[s] = bb;
+        }
+        return arr;
+    }();
+
+    static const std::array<Bitboard, SQUARE_NB> forward_span_white = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = forward_white[s];
+            bb |= shift<WEST>(bb);
+            bb |= shift<EAST>(bb);
+            arr[s] = bb;
+        }
+        return arr;
+    }();
+
+    static const std::array<Bitboard, SQUARE_NB> forward_span_black = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = forward_black[s];
+            bb |= shift<WEST>(bb);
+            bb |= shift<EAST>(bb);
+            arr[s] = bb;
+        }
+        return arr;
+    }();
+
+    const Bitboard white_pawns = pos.pieces(WHITE, PAWN);
+    const Bitboard black_pawns = pos.pieces(BLACK, PAWN);
+    const Bitboard all_pawns = white_pawns | black_pawns;
+    Bitboard special = 0;
+    Bitboard white_pawns_cpy = white_pawns;
+    Bitboard black_pawns_cpy = black_pawns;
+
+    while(white_pawns_cpy)
+    {
+        Square sq = pop_lsb(&white_pawns_cpy);
+        if (
+            !((forward_white[sq] & all_pawns)
+              || (forward_span_white[sq] & black_pawns)))
+        {
+            special |= sq;
+        }
+    }
+
+    while(black_pawns_cpy)
+    {
+        Square sq = pop_lsb(&black_pawns_cpy);
+        if (
+            !((forward_black[sq] & all_pawns)
+              || (forward_span_black[sq] & white_pawns)))
+        {
+            special |= sq;
+        }
+    }
+
+    return special;
+}
+
+static inline Bitboard get_outpost_squares(const Position& pos)
+{
+    const Bitboard white_pawns = pos.pieces(WHITE, PAWN);
+    const Bitboard black_pawns = pos.pieces(BLACK, PAWN);
+    const Bitboard white_pawn_attacks = pawn_attacks_bb<WHITE>(white_pawns);
+    const Bitboard black_pawn_attacks = pawn_attacks_bb<BLACK>(black_pawns);
+
+    const Bitboard outposts = ((white_pawn_attacks | shift<SOUTH>(white_pawns)) & ~black_pawn_attacks)
+                              | ((black_pawn_attacks | shift<NORTH>(black_pawns)) & ~white_pawn_attacks);
+    return outposts;
+}
+
+static inline Bitboard get_special_rooks(const Position& pos, Bitboard special_pawns)
+{
+    const Bitboard white_pawns = pos.pieces(WHITE, PAWN);
+    const Bitboard black_pawns = pos.pieces(BLACK, PAWN);
+    const Bitboard non_special_pawns = (white_pawns | black_pawns) & ~special_pawns;
+    const Bitboard white_rooks = pos.pieces(WHITE, ROOK);
+    const Bitboard black_rooks = pos.pieces(BLACK, ROOK);
+    Bitboard white_rooks_cpy = white_rooks;
+    Bitboard black_rooks_cpy = black_rooks;
+    const Bitboard occupied = pos.pieces();
+    Bitboard special = 0;
+    while(white_rooks_cpy)
+    {
+        Square sq = pop_lsb(&white_rooks_cpy);
+        const auto filebb = file_bb(sq);
+        if (!(non_special_pawns & filebb)
+            || (attacks_bb<ROOK>(sq, occupied) & white_rooks))
+        {
+            special |= sq;
+        }
+    }
+    while(black_rooks_cpy)
+    {
+        Square sq = pop_lsb(&black_rooks_cpy);
+        const auto filebb = file_bb(sq);
+        if (!(non_special_pawns & filebb)
+            || (attacks_bb<ROOK>(sq, occupied) & black_rooks))
+        {
+            special |= sq;
+        }
+    }
+    return special;
+}
+
+static inline Bitboard get_special_queens(const Position& pos)
+{
+    const Bitboard white_queens = pos.pieces(WHITE, QUEEN);
+    const Bitboard black_queens = pos.pieces(BLACK, QUEEN);
+    if (popcount(white_queens) != popcount(black_queens))
+    {
+        return white_queens | black_queens;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+static inline Bitboard get_special_kings(const Position& pos)
+{
+    static const std::array<Bitboard, SQUARE_NB> forward_white = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = square_bb(s);
+            for (int i = 1; i <= 3; ++i)
+            {
+                bb |= shift<NORTH>(bb);
+            }
+            arr[s] = bb | shift<WEST>(bb) | shift<EAST>(bb);
+        }
+        return arr;
+    }();
+
+    static const std::array<Bitboard, SQUARE_NB> forward_black = [](){
+        std::array<Bitboard, SQUARE_NB> arr;
+        for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+        {
+            Bitboard bb = square_bb(s);
+            for (int i = 1; i <= 3; ++i)
+            {
+                bb |= shift<SOUTH>(bb);
+            }
+            arr[s] = bb | shift<WEST>(bb) | shift<EAST>(bb);
+        }
+        return arr;
+    }();
+
+    const Bitboard white_pawns = pos.pieces(WHITE, PAWN);
+    const Bitboard black_pawns = pos.pieces(BLACK, PAWN);
+    const Square king_white = pos.square<KING>(WHITE);
+    const Square king_black = pos.square<KING>(BLACK);
+
+    Bitboard special = 0;
+    if (popcount(forward_white[king_white] & white_pawns) >= 3)
+        special |= king_white;
+    if (popcount(forward_black[king_black] & black_pawns) >= 3)
+        special |= king_black;
+    return special;
+}
+
+static inline Bitboard get_special_squares(const Position& pos)
+{
+    /*
+        Squares are considered special if the piece on the square is special.
+        Special may also mean worse than normal, this is just a bucketing scheme.
+
+        Pawns:
+            - passed
+                - no other pawn in front of the pawn
+                - no opponent pawns in front sides of the pawn
+
+        Bishops & Bishops:
+            - outpost
+                - defended by pawn and not attacked by pawn
+                - behind pawn of the same color and not attacked by pawn
+
+        Rooks:
+            - connected rooks
+            - semiopen file
+            - attacks/defends special pawn
+
+        Queens:
+            - queen imbalance
+                - one side has more queens than the other
+
+        Kings:
+            - safe king
+                - at least 3 pawns of the same color in the frontmost (span) of 9 squares or to the sides
+    */
+
+    Bitboard special = 0;
+    const Bitboard special_pawns = get_special_pawns(pos);
+    special |= special_pawns;
+    special |= get_outpost_squares(pos) & (pos.pieces(BISHOP) | pos.pieces(KNIGHT));
+    special |= get_special_rooks(pos, special_pawns);
+    special |= get_special_queens(pos);
+    special |= get_special_kings(pos);
+
+    return special;
+}
+
+static inline void set_special(const Position& pos)
+{
+  pos.state()->special = get_special_squares(pos);
+}
+
+static inline void set_special_on_null_move(const Position& pos)
+{
+  auto si = pos.state();
+
+  si->special = si->previous->special;
+}
+
 /// Position::set_state() computes the hash keys of the position, and other
 /// data that once computed is updated incrementally as moves are made.
 /// The function is only used when a new position is set up, and to verify
@@ -381,6 +625,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  set_special(*this);
 }
 
 
@@ -889,6 +1135,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  set_special(*this);
+
   assert(pos_is_ok());
 }
 
@@ -1023,6 +1271,8 @@ void Position::do_null_move(StateInfo& newSt) {
   set_check_info(st);
 
   st->repetition = 0;
+
+  set_special_on_null_move(*this);
 
   assert(pos_is_ok());
 }
