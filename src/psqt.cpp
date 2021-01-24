@@ -98,6 +98,7 @@ constexpr Score PBonus[RANK_NB][FILE_NB] =
 #undef S
 
 Score psq[PIECE_NB][SQUARE_NB];
+int mgpsq[PIECE_NB][SQUARE_NB];
 
 
 // PSQT::init() initializes piece-square tables: the white halves of the tables are
@@ -115,6 +116,10 @@ void init() {
           psq[ pc][s] = score + (type_of(pc) == PAWN ? PBonus[rank_of(s)][file_of(s)]
                                                      : Bonus[pc][rank_of(s)][f]);
           psq[~pc][flip_rank(s)] = -psq[pc][s];
+
+          const int v = (mg_value(psq[pc][s]) + eg_value(psq[pc][s])) / 2;
+          mgpsq[ pc][s] = v;
+          mgpsq[~pc][flip_rank(s)] = v;
       }
   }
 }

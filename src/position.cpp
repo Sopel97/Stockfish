@@ -1073,11 +1073,11 @@ bool Position::see_ge(Move m, Value threshold) const {
 
   Square from = from_sq(m), to = to_sq(m);
 
-  int swap = PieceValue[MG][piece_on(to)] - threshold;
+  int swap = PSQT::mgpsq[piece_on(to)][to] - threshold;
   if (swap < 0)
       return false;
 
-  swap = PieceValue[MG][piece_on(from)] - swap;
+  swap = PSQT::mgpsq[piece_on(from)][from] - swap;
   if (swap <= 0)
       return true;
 
@@ -1110,7 +1110,7 @@ bool Position::see_ge(Move m, Value threshold) const {
       // the bitboard 'attackers' any X-ray attackers behind it.
       if ((bb = stmAttackers & pieces(PAWN)))
       {
-          if ((swap = PawnValueMg - swap) < res)
+          if ((swap = PSQT::mgpsq[make_piece(stm, PAWN)][to] - swap) < res)
               break;
 
           occupied ^= lsb(bb);
@@ -1119,7 +1119,7 @@ bool Position::see_ge(Move m, Value threshold) const {
 
       else if ((bb = stmAttackers & pieces(KNIGHT)))
       {
-          if ((swap = KnightValueMg - swap) < res)
+          if ((swap = PSQT::mgpsq[make_piece(stm, KNIGHT)][to] - swap) < res)
               break;
 
           occupied ^= lsb(bb);
@@ -1127,7 +1127,7 @@ bool Position::see_ge(Move m, Value threshold) const {
 
       else if ((bb = stmAttackers & pieces(BISHOP)))
       {
-          if ((swap = BishopValueMg - swap) < res)
+          if ((swap = PSQT::mgpsq[make_piece(stm, BISHOP)][to] - swap) < res)
               break;
 
           occupied ^= lsb(bb);
@@ -1136,7 +1136,7 @@ bool Position::see_ge(Move m, Value threshold) const {
 
       else if ((bb = stmAttackers & pieces(ROOK)))
       {
-          if ((swap = RookValueMg - swap) < res)
+          if ((swap = PSQT::mgpsq[make_piece(stm, ROOK)][to] - swap) < res)
               break;
 
           occupied ^= lsb(bb);
@@ -1145,7 +1145,7 @@ bool Position::see_ge(Move m, Value threshold) const {
 
       else if ((bb = stmAttackers & pieces(QUEEN)))
       {
-          if ((swap = QueenValueMg - swap) < res)
+          if ((swap = PSQT::mgpsq[make_piece(stm, QUEEN)][to] - swap) < res)
               break;
 
           occupied ^= lsb(bb);

@@ -202,6 +202,7 @@ private:
 
 namespace PSQT {
   extern Score psq[PIECE_NB][SQUARE_NB];
+  extern int mgpsq[PIECE_NB][SQUARE_NB];
 }
 
 extern std::ostream& operator<<(std::ostream& os, const Position& pos);
