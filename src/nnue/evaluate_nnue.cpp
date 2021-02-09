@@ -31,15 +31,6 @@
 
 namespace Eval::NNUE {
 
-  // Input feature converter
-  LargePagePtr<FeatureTransformer> feature_transformer;
-
-  // Evaluation function
-  AlignedPtr<Network> network;
-
-  // Evaluation function file name
-  std::string fileName;
-
   namespace Detail {
 
   // Initialize the evaluation function parameters
@@ -70,12 +61,23 @@ namespace Eval::NNUE {
 
   }  // namespace Detail
 
-  // Initialize the evaluation function parameters
-  void Initialize() {
+  struct nnue_data {
+    // Input feature converter
+    LargePagePtr<FeatureTransformer> feature_transformer;
 
-    Detail::Initialize(feature_transformer);
-    Detail::Initialize(network);
-  }
+    // Evaluation function
+    AlignedPtr<Network> network;
+
+    nnue_data() {
+      Detail::Initialize(feature_transformer);
+      Detail::Initialize(network);
+    }
+
+  };
+
+  // Evaluation function file name
+  std::string fileName;
+  std::vector<nnue_data> ndata;
 
   // Read network header
   bool ReadHeader(std::istream& stream, std::uint32_t* hash_value, std::string* architecture)
@@ -94,17 +96,22 @@ namespace Eval::NNUE {
   // Read network parameters
   bool ReadParameters(std::istream& stream) {
 
-    std::uint32_t hash_value;
-    std::string architecture;
-    if (!ReadHeader(stream, &hash_value, &architecture)) return false;
-    if (hash_value != kHashValue) return false;
-    if (!Detail::ReadParameters(stream, *feature_transformer)) return false;
-    if (!Detail::ReadParameters(stream, *network)) return false;
-    return stream && stream.peek() == std::ios::traits_type::eof();
+    for ( ;; ) {
+      std::uint32_t hash_value;
+      std::string architecture;
+      if (!ReadHeader(stream, &hash_value, &architecture)) return false;
+      if (hash_value != kHashValue) return false;
+      ndata.push_back(nnue_data());
+      if (!Detail::ReadParameters(stream, *ndata.back().feature_transformer))
+        return false;
+      if (!Detail::ReadParameters(stream, *ndata.back().network)) return false;
+      if (!stream) return false;
+      if (stream.peek() == std::ios::traits_type::eof()) return true;
+    }
   }
 
   // Evaluation function. Perform differential calculation.
-  Value evaluate(const Position& pos) {
+  Value evaluate(const Position& pos, unsigned nnue_index) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -127,8 +134,9 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    feature_transformer->Transform(pos, transformed_features);
-    const auto output = network->Propagate(transformed_features, buffer);
+    ndata[nnue_index].feature_transformer->Transform(pos, transformed_features);
+    const auto output =
+      ndata[nnue_index].network->Propagate(transformed_features, buffer);
 
     return static_cast<Value>(output[0] / FV_SCALE);
   }
@@ -136,7 +144,6 @@ namespace Eval::NNUE {
   // Load eval, from a file stream or a memory stream
   bool load_eval(std::string name, std::istream& stream) {
 
-    Initialize();
     fileName = name;
     return ReadParameters(stream);
   }
