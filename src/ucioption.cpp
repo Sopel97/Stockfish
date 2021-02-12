@@ -59,7 +59,7 @@ void on_dump_dir(const Option& o) {
 
   void on_dump_type(const Option& o) {
   if (string(o) == "Q") dumper.dtype = Dump::Q;
-  if (string(o) == "N") dumper.dtype = Dump::N;
+  if (string(o) == "T") dumper.dtype = Dump::T;
   if (string(o) == "P") dumper.dtype = Dump::P;
   if (string(o) == "R") dumper.dtype = Dump::R;
   if (string(o) == "E") dumper.dtype = Dump::E;
