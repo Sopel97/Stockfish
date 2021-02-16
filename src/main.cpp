@@ -27,6 +27,9 @@
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
+#include "dump.h"
+
+Dump::Dumper dumper;
 
 int main(int argc, char* argv[]) {
 
@@ -47,5 +50,7 @@ int main(int argc, char* argv[]) {
   UCI::loop(argc, argv);
 
   Threads.set(0);
+  dumper.dump();
+
   return 0;
 }

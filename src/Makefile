@@ -1,5 +1,7 @@
 # Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-# Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+# Copyright (C) 2004-2008 Tord Romstad (Glaurung author)
+# Copyright (C) 2008-2015 Marco Costalba, Joona Kiiski, Tord Romstad
+# Copyright (C) 2015-2019 Marco Costalba, Joona Kiiski, Gary Linscott, Tord Romstad
 #
 # Stockfish is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,6 +40,12 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	material.cpp misc.cpp movegen.cpp movepick.cpp pawns.cpp position.cpp psqt.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
 	nnue/evaluate_nnue.cpp nnue/features/half_kp.cpp
+
+ifeq ($(shell test -s time.cpp && echo -n yes),yes)
+  SRCS += time.cpp
+else
+  SRCS += notime.cpp
+endif
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
 

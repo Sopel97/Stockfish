@@ -25,12 +25,14 @@
 
 class Position;
 
+enum EvalType { CLASSICAL, NNUE_ONLY, HYBRID };
+
 namespace Eval {
 
-  std::string trace(const Position& pos);
-  Value evaluate(const Position& pos);
+  std::string trace(const Position& pos, unsigned nnue_index);
+  Value evaluate(const Position& pos, unsigned nnue_index);
 
-  extern bool useNNUE;
+  extern EvalType useNNUE;
   extern std::string eval_file_loaded;
 
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
@@ -40,7 +42,8 @@ namespace Eval {
 
   namespace NNUE {
 
-    Value evaluate(const Position& pos);
+    Value evaluate(const Position& pos, unsigned nnue_index);
+    unsigned num_nnues();
     bool load_eval(std::string name, std::istream& stream);
     void init();
     void verify();

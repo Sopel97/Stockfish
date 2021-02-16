@@ -20,6 +20,7 @@
 #include <cassert>
 #include <ostream>
 #include <sstream>
+#include <unistd.h>
 
 #include "evaluate.h"
 #include "misc.h"
@@ -28,6 +29,7 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
+#include "dump.h"
 
 using std::string;
 
@@ -43,6 +45,25 @@ void on_threads(const Option& o) { Threads.set(size_t(o)); }
 void on_tb_path(const Option& o) { Tablebases::init(o); }
 void on_use_NNUE(const Option& ) { Eval::NNUE::init(); }
 void on_eval_file(const Option& ) { Eval::NNUE::init(); }
+void on_dump_file(const Option& o) { dumper.fname = string(o); }
+
+// figure out dump file name if dumpdir supplied.  No idea what to do
+// if Windows and the file separator is different.
+
+void on_dump_dir(const Option& o) {
+  std::string p = string(o);
+  if (p.back() != '/') p += '/';
+  p += dumper.fname + std::to_string(getpid());
+  dumper.fname = p;
+}
+
+  void on_dump_type(const Option& o) {
+  if (string(o) == "Q") dumper.dtype = Dump::Q;
+  if (string(o) == "T") dumper.dtype = Dump::T;
+  if (string(o) == "P") dumper.dtype = Dump::P;
+  if (string(o) == "R") dumper.dtype = Dump::R;
+  if (string(o) == "E") dumper.dtype = Dump::E;
+}
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -81,6 +102,9 @@ void init(OptionsMap& o) {
   o["SyzygyProbeLimit"]      << Option(7, 0, 7);
   o["Use NNUE"]              << Option(true, on_use_NNUE);
   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
+  o["DumpFile"]              << Option("",on_dump_file);
+  o["DumpDir"]               << Option("",on_dump_dir);
+  o["DumpType"]              << Option("",on_dump_type);
 }
 
 

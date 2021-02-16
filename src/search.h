@@ -26,6 +26,8 @@
 #include "types.h"
 
 class Position;
+static const Depth ADJUSTMENT_DEPTH = 3;
+Depth adjust_extension(Depth d, const Position &pos);
 
 namespace Search {
 

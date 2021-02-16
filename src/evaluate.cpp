@@ -58,7 +58,7 @@ using namespace Eval::NNUE;
 
 namespace Eval {
 
-  bool useNNUE;
+  EvalType useNNUE;
   string eval_file_loaded = "None";
 
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
@@ -71,8 +71,8 @@ namespace Eval {
 
   void NNUE::init() {
 
-    useNNUE = Options["Use NNUE"];
-    if (!useNNUE)
+    useNNUE = Options["Use NNUE"]? HYBRID : CLASSICAL;
+    if (useNNUE == CLASSICAL)
         return;
 
     string eval_file = string(Options["EvalFile"]);
@@ -423,6 +423,7 @@ namespace {
             score += BishopOnKingRing;
 
         int mob = popcount(b & mobilityArea[Us]);
+
         mobility[Us] += MobilityBonus[Pt - 2][mob];
 
         if (Pt == BISHOP || Pt == KNIGHT)
@@ -1042,41 +1043,59 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos) {
+Value Eval::evaluate(const Position& pos, unsigned nnue_index) {
 
   Value v;
 
-  if (!Eval::useNNUE)
+  if (Eval::useNNUE == CLASSICAL)
       v = Evaluation<NO_TRACE>(pos).value();
   else
   {
       // Scale and shift NNUE for compatibility with search and classical evaluation
       auto  adjusted_NNUE = [&](){
          int mat = pos.non_pawn_material() + 2 * PawnValueMg * pos.count<PAWN>();
-         return NNUE::evaluate(pos) * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
+         return NNUE::evaluate(pos,nnue_index) * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
       };
 
-      // If there is PSQ imbalance use classical eval, with small probability if it is small
+      // "random" test that has a 1/8 probability of being true
+      // because 0xB has three bits set
+      auto unlikely = [&]() { return !(pos.this_thread()->nodes & 0xB); };
+
+      // Deciding whether to use classical or NNUE evaluation works as
+      // follows:
+      // 1. For low piece endgames, use classical (most critical is
+      // bishop + A/H file pawn vs naked king is a draw),
+      // "classical" below.
+      // 2. If the PSQ imbalance is large:
+      // 2a. If the classical imbalance is small, use NNUE.
+      // 2b. If there are opposite bishops and the classical imbalance
+      //     is modest, use NNUE a small fraction of the time.
+      // 2c. In other large PSQ cases, use the classical result.
+      // 3. If the PSQ imbalance is not large:
+      // 3a. If the PSQ imabalance is not small, use the classical
+      //     valuation a small fraction of the time.
+      // 3b. Otherwise, use NNUE
+      
       Value psq = Value(abs(eg_value(pos.psq_score())));
       int   r50 = 16 + pos.rule50_count();
-      bool  largePsq = psq * 16 > (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50;
-      bool  classical = largePsq || (psq > PawnValueMg / 4 && !(pos.this_thread()->nodes & 0xB));
+      Value thresh = (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50;
+      bool  largePsq = (psq * 16 > thresh);
 
-      // Use classical evaluation for really low piece endgames.
-      // The most critical case is a bishop + A/H file pawn vs naked king draw.
-      bool strongClassical = pos.non_pawn_material() < 2 * RookValueMg && pos.count<PAWN>() < 2;
+      bool  lowPieceEG = pos.non_pawn_material() < 2 * RookValueMg && pos.count<PAWN>() < 2;
 
-      v = classical || strongClassical ? Evaluation<NO_TRACE>(pos).value() : adjusted_NNUE();
-
-      // If the classical eval is small and imbalance large, use NNUE nevertheless.
-      // For the case of opposite colored bishops, switch to NNUE eval with
-      // small probability if the classical eval is less than the threshold.
-      if (   largePsq && !strongClassical
-          && (   abs(v) * 16 < NNUEThreshold2 * r50
-              || (   pos.opposite_bishops()
-                  && abs(v) * 16 < (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50
-                  && !(pos.this_thread()->nodes & 0xB))))
+      if (Eval::useNNUE == NNUE_ONLY) v = adjusted_NNUE();
+      else if (lowPieceEG) v = Evaluation<NO_TRACE>(pos).value();    // case 1
+      else if (largePsq) {
+        v = Evaluation<NO_TRACE>(pos).value();                       // case 2c
+        if (   abs(v) * 16 < NNUEThreshold2 * r50                    // case 2a
+            || (   pos.opposite_bishops()                            // case 2b
+                && abs(v) * 16 < thresh
+                && unlikely()))
           v = adjusted_NNUE();
+      }
+      else if (psq > PawnValueMg / 4 && unlikely())                  // case 3a
+        v = Evaluation<NO_TRACE>(pos).value();
+      else v = adjusted_NNUE();                                      // case 3b
   }
 
   // Damp down the evaluation linearly when shuffling
@@ -1093,7 +1112,7 @@ Value Eval::evaluate(const Position& pos) {
 /// descriptions and values of each evaluation term. Useful for debugging.
 /// Trace scores are from white's point of view
 
-std::string Eval::trace(const Position& pos) {
+std::string Eval::trace(const Position& pos, unsigned nnue_index) {
 
   if (pos.checkers())
       return "Final evaluation: none (in check)";
@@ -1135,12 +1154,12 @@ std::string Eval::trace(const Position& pos) {
 
   if (Eval::useNNUE)
   {
-      v = NNUE::evaluate(pos);
+      v = NNUE::evaluate(pos,nnue_index);
       v = pos.side_to_move() == WHITE ? v : -v;
       ss << "\nNNUE evaluation:      " << to_cp(v) << " (white side)\n";
   }
 
-  v = evaluate(pos);
+  v = evaluate(pos,nnue_index);
   v = pos.side_to_move() == WHITE ? v : -v;
   ss << "\nFinal evaluation:     " << to_cp(v) << " (white side)\n";
 

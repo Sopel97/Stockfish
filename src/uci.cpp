@@ -30,6 +30,7 @@
 #include "timeman.h"
 #include "tt.h"
 #include "uci.h"
+#include "dump.h"
 #include "syzygy/tbprobe.h"
 
 using namespace std;
@@ -87,7 +88,7 @@ namespace {
 
     Eval::NNUE::verify();
 
-    sync_cout << "\n" << Eval::trace(p) << sync_endl;
+    sync_cout << "\n" << Eval::trace(p,0) << sync_endl;
   }
 
 
@@ -182,7 +183,11 @@ namespace {
         }
         else if (token == "setoption")  setoption(is);
         else if (token == "position")   position(pos, is, states);
-        else if (token == "ucinewgame") { Search::clear(); elapsed = now(); } // Search::clear() may take some while
+        else if (token == "ucinewgame") {
+          Search::clear();      // may take a while
+          dumper.dump();
+          elapsed = now();
+        }
     }
 
     elapsed = now() - elapsed + 1; // Ensure positivity to avoid a 'divide by zero'
@@ -265,7 +270,10 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "setoption")  setoption(is);
       else if (token == "go")         go(pos, is, states);
       else if (token == "position")   position(pos, is, states);
-      else if (token == "ucinewgame") Search::clear();
+      else if (token == "ucinewgame") {
+        Search::clear();      // may take a while
+        dumper.dump();
+      }
       else if (token == "isready")    sync_cout << "readyok" << sync_endl;
 
       // Additional custom non-UCI commands, mainly for debugging.
@@ -275,6 +283,10 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "d")        sync_cout << pos << sync_endl;
       else if (token == "eval")     trace_eval(pos);
       else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
+      else if (token == "#") {
+        string junk;
+        getline(is,junk);
+      }
       else
           sync_cout << "Unknown command: " << cmd << sync_endl;
 

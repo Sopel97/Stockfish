@@ -49,7 +49,7 @@ class Thread {
 public:
   explicit Thread(size_t);
   virtual ~Thread();
-  virtual void search();
+  virtual bool search();
   void clear();
   void idle_loop();
   void start_searching();
@@ -83,7 +83,7 @@ struct MainThread : public Thread {
 
   using Thread::Thread;
 
-  void search() override;
+  bool search() override;
   void check_time();
 
   double previousTimeReduction;
