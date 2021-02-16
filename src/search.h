@@ -27,6 +27,9 @@
 
 class Position;
 static const Depth ADJUSTMENT_DEPTH = 3;
+enum { EVAL, SHALLOWER, DEEPER };
+extern int HOT, COLD;
+
 Depth adjust_extension(Depth d, const Position &pos);
 
 namespace Search {

@@ -17,5 +17,6 @@
 */
 
 #include "position.h"
+int HOT, COLD;
 
-Depth adjust_extension(Depth d, const Position &pos) { return 0; }
+Depth adjust_extension(Depth, const Position &) { return 0; }

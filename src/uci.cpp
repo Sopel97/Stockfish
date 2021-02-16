@@ -88,7 +88,7 @@ namespace {
 
     Eval::NNUE::verify();
 
-    sync_cout << "\n" << Eval::trace(p,0) << sync_endl;
+    sync_cout << "\n" << Eval::trace(p,EVAL) << sync_endl;
   }
 
 

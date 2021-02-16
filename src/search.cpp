@@ -431,7 +431,7 @@ bool Thread::search() {
             for (Move *x = ss->pv ; is_ok(*x) ; ++x) rootPos.do_move(*x,si);
             dumper << rootPos.fen();
             if (dumper.dtype == Dump::E)
-              dumper << ' ' << Eval::evaluate(rootPos,0);
+              dumper << ' ' << Eval::evaluate(rootPos,EVAL);
             dumper << std::endl;
             return true;
           }
@@ -448,7 +448,7 @@ bool Thread::search() {
             Value evals[3];
             for (unsigned i = 0 ; i < 3 ; ++i) {
               Eval::useNNUE = EvalType(i);
-              evals[i] = Eval::evaluate(rootPos,0);
+              evals[i] = Eval::evaluate(rootPos,EVAL);
             }
             Eval::useNNUE = tmp;
             Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
@@ -622,7 +622,7 @@ namespace {
       {
         // Never assume anything about values stored in TT
         if ((ss->staticEval = val = tte->eval()) == VALUE_NONE)
-          ss->staticEval = val = evaluate(pos,0);
+          ss->staticEval = val = evaluate(pos,EVAL);
 
         // Randomize draw evaluation
         if (thisThread && val == VALUE_DRAW)
@@ -638,7 +638,7 @@ namespace {
         // In case of null move search use previous static eval with a different sign
         // and addition of two tempos
       ss->staticEval = val =
-        (ss-1)->currentMove != MOVE_NULL ? evaluate(pos,0)
+        (ss-1)->currentMove != MOVE_NULL ? evaluate(pos,EVAL)
         : -(ss-1)->staticEval + 2 * Tempo;
 
         // Save static evaluation into transposition table
@@ -723,7 +723,7 @@ namespace {
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,0)
+            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,EVAL)
                                                         : value_draw(pos.this_thread());
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
@@ -1531,7 +1531,7 @@ moves_loop: // When in check, search starts from here
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
         || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,0) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,EVAL) : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
