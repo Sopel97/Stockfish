@@ -29,8 +29,8 @@ enum EvalType { CLASSICAL, NNUE_ONLY, HYBRID };
 
 namespace Eval {
 
-  std::string trace(const Position& pos);
-  Value evaluate(const Position& pos);
+  std::string trace(const Position& pos, unsigned nnue_index);
+  Value evaluate(const Position& pos, unsigned nnue_index);
 
   extern EvalType useNNUE;
   extern std::string eval_file_loaded;
@@ -43,6 +43,7 @@ namespace Eval {
   namespace NNUE {
 
     Value evaluate(const Position& pos, unsigned nnue_index);
+    unsigned num_nnues();
     bool load_eval(std::string name, std::istream& stream);
     void init();
     void verify();

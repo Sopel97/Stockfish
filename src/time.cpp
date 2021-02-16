@@ -16,8 +16,9 @@
 */
 
 #include "position.h"
+#include "search.h"
 
-Depth adjust_depth(Depth d, const Position &, bool done) {
-  if (d != 3 || done) return d;
-  return d;
+Depth adjust_extension(Depth d, const Position &pos) {
+  if (d != ADJUSTMENT_DEPTH) return 0;
+  return 0;
 }

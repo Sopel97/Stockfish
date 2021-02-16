@@ -147,7 +147,7 @@ namespace {
   };
 
   template <NodeType NT>
-  Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode, bool depth_adjusted);
+  Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode);
 
   template <NodeType NT>
   Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth = 0);
@@ -425,13 +425,21 @@ bool Thread::search() {
           // abortive dumps: P just splats out the position, E dumps
           // the value. R includes all sorts of evaluations
           switch (dumper.dtype) {
-          case Dump::P: case Dump::E: {
+          case Dump::P: {
             qsearch<PV>(rootPos,ss,alpha,beta,0);
             StateInfo si;
             for (Move *x = ss->pv ; is_ok(*x) ; ++x) rootPos.do_move(*x,si);
             dumper << rootPos.fen();
             if (dumper.dtype == Dump::E)
-              dumper << ' ' << Eval::evaluate(rootPos);
+              dumper << ' ' << Eval::evaluate(rootPos,0);
+            dumper << std::endl;
+            return true;
+          }
+          case Dump::E: {
+            Eval::useNNUE = NNUE_ONLY;
+            dumper << rootPos.fen();
+            for (unsigned i = 0 ; i < Eval::NNUE::num_nnues() ; ++i)
+              dumper << ' ' << Eval::evaluate(rootPos,i);
             dumper << std::endl;
             return true;
           }
@@ -440,13 +448,13 @@ bool Thread::search() {
             Value evals[3];
             for (unsigned i = 0 ; i < 3 ; ++i) {
               Eval::useNNUE = EvalType(i);
-              evals[i] = Eval::evaluate(rootPos);
+              evals[i] = Eval::evaluate(rootPos,0);
             }
             Eval::useNNUE = tmp;
             Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
             std::vector<Value> by_depth;
             for (int i = 1 ; i <= Limits.depth ; ++i)
-              by_depth.push_back(::search<PV>(rootPos,ss,alpha,beta,i,false,true));
+              by_depth.push_back(::search<PV>(rootPos,ss,alpha,beta,i,false));
             dumper << rootPos.fen() << ' '
                    << UCI::move(rootMoves[0].pv[0],rootPos.is_chess960());
             for (unsigned i = 0 ; i < 3 ; ++i) dumper << ' ' << evals[i];
@@ -466,7 +474,7 @@ bool Thread::search() {
           while (true)
           {
               Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - searchAgainCounter);
-              bestValue = ::search<PV>(rootPos, ss, alpha, beta, adjustedDepth, false,false);
+              bestValue = ::search<PV>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
               // Bring the best move to the front. It is critical that sorting
               // is done with a stable algorithm because all the values but the
@@ -614,7 +622,7 @@ namespace {
       {
         // Never assume anything about values stored in TT
         if ((ss->staticEval = val = tte->eval()) == VALUE_NONE)
-          ss->staticEval = val = evaluate(pos);
+          ss->staticEval = val = evaluate(pos,0);
 
         // Randomize draw evaluation
         if (thisThread && val == VALUE_DRAW)
@@ -630,7 +638,7 @@ namespace {
         // In case of null move search use previous static eval with a different sign
         // and addition of two tempos
       ss->staticEval = val =
-        (ss-1)->currentMove != MOVE_NULL ? evaluate(pos)
+        (ss-1)->currentMove != MOVE_NULL ? evaluate(pos,0)
         : -(ss-1)->staticEval + 2 * Tempo;
 
         // Save static evaluation into transposition table
@@ -646,7 +654,7 @@ namespace {
   // search<>() is the main search function for both PV and non-PV nodes
 
   template <NodeType NT>
-  Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode, bool depth_adjusted) {
+  Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, bool cutNode) {
 
     constexpr bool PvNode = NT == PV;
     const bool rootNode = PvNode && ss->ply == 0;
@@ -715,7 +723,7 @@ namespace {
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
+            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,0)
                                                         : value_draw(pos.this_thread());
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
@@ -913,7 +921,7 @@ namespace {
 
         pos.do_null_move(st);
 
-        Value nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode,true);
+        Value nullValue = -search<NonPV>(pos, ss+1, -beta, -beta+1, depth-R, !cutNode);
 
         pos.undo_null_move();
 
@@ -933,7 +941,7 @@ namespace {
             thisThread->nmpMinPly = ss->ply + 3 * (depth-R) / 4;
             thisThread->nmpColor = us;
 
-            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, false, true);
+            Value v = search<NonPV>(pos, ss, beta-1, beta, depth-R, false);
 
             thisThread->nmpMinPly = 0;
 
@@ -998,7 +1006,7 @@ namespace {
 
                 // If the qsearch held, perform the regular search
                 if (value >= probCutBeta)
-                  value = -search<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1, depth - 4, !cutNode, true);
+                  value = -search<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1, depth - 4, !cutNode);
 
                 pos.undo_move(move);
 
@@ -1151,7 +1159,7 @@ moves_loop: // When in check, search starts from here
           Value singularBeta = ttValue - ((formerPv + 4) * depth) / 2;
           Depth singularDepth = (depth - 1 + 3 * formerPv) / 2;
           ss->excludedMove = move;
-          value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode,true);
+          value = search<NonPV>(pos, ss, singularBeta - 1, singularBeta, singularDepth, cutNode);
           ss->excludedMove = MOVE_NONE;
 
           if (value < singularBeta)
@@ -1173,7 +1181,7 @@ moves_loop: // When in check, search starts from here
           else if (ttValue >= beta)
           {
               ss->excludedMove = move;
-              value = search<NonPV>(pos, ss, beta - 1, beta, (depth + 3) / 2, cutNode,true);
+              value = search<NonPV>(pos, ss, beta - 1, beta, (depth + 3) / 2, cutNode);
               ss->excludedMove = MOVE_NONE;
 
               if (value >= beta)
@@ -1192,13 +1200,14 @@ moves_loop: // When in check, search starts from here
           extension = 1;
 
       // Add extension to new depth
-      if (extension) ++newDepth;
-      else {
-        if (!depth_adjusted && depth == 3 && dumper.dtype == Dump::T &&
+      if (extension == 0) {
+        if (depth == ADJUSTMENT_DEPTH && dumper.dtype == Dump::T &&
             (pos.this_thread()->nodes & 0x1FF) == 0)
           dumper << pos.fen() << std::endl;
-        newDepth = adjust_depth(newDepth,pos,depth_adjusted);
+        extension = adjust_extension(depth,pos);
       }
+
+      newDepth += extension;
 
       // Speculative prefetch as early as possible
       prefetch(TT.first_entry(pos.key_after(move)));
@@ -1306,8 +1315,7 @@ moves_loop: // When in check, search starts from here
 
           Depth d = std::clamp(newDepth - r, 1, newDepth);
 
-          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true,
-                                 depth_adjusted);
+          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, d, true);
 
           doFullDepthSearch = value > alpha && d != newDepth;
 
@@ -1323,8 +1331,7 @@ moves_loop: // When in check, search starts from here
       // Step 16. Full depth search when LMR is skipped or fails high
       if (doFullDepthSearch)
       {
-        value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode,
-                               depth_adjusted);
+        value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
 
           // If the move passed LMR update its stats
           if (didLMR && !captureOrPromotion)
@@ -1345,8 +1352,7 @@ moves_loop: // When in check, search starts from here
           (ss+1)->pv[0] = MOVE_NONE;
 
           value = -search<PV>(pos, ss+1, -beta, -alpha,
-                              std::min(maxNextDepth, newDepth), false,
-                              depth_adjusted);
+                              std::min(maxNextDepth, newDepth), false);
       }
 
       // Step 17. Undo move
@@ -1516,7 +1522,7 @@ moves_loop: // When in check, search starts from here
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
         || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,0) : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 

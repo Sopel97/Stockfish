@@ -96,6 +96,7 @@ namespace Eval::NNUE {
   // Read network parameters
   bool ReadParameters(std::istream& stream) {
 
+    ndata.clear();
     for ( ;; ) {
       std::uint32_t hash_value;
       std::string architecture;
@@ -140,6 +141,8 @@ namespace Eval::NNUE {
 
     return static_cast<Value>(output[0] / FV_SCALE);
   }
+
+  unsigned num_nnues() { return ndata.size(); }
 
   // Load eval, from a file stream or a memory stream
   bool load_eval(std::string name, std::istream& stream) {

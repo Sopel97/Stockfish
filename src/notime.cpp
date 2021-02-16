@@ -18,4 +18,4 @@
 
 #include "position.h"
 
-Depth adjust_depth(Depth d, const Position &, bool) { return d; }
+Depth adjust_extension(Depth d, const Position &pos) { return 0; }
