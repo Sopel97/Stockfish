@@ -58,7 +58,7 @@ using namespace Eval::NNUE;
 
 namespace Eval {
 
-  EvalType useNNUE;
+  bool useNNUE;
   string eval_file_loaded = "None";
 
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
@@ -71,8 +71,8 @@ namespace Eval {
 
   void NNUE::init() {
 
-    useNNUE = Options["Use NNUE"]? HYBRID : CLASSICAL;
-    if (useNNUE == CLASSICAL)
+    useNNUE = Options["Use NNUE"];
+    if (!useNNUE)
         return;
 
     string eval_file = string(Options["EvalFile"]);
@@ -1046,7 +1046,7 @@ Value Eval::evaluate(const Position& pos) {
 
   Value v;
 
-  if (Eval::useNNUE == CLASSICAL)
+  if (!Eval::useNNUE)
       v = Evaluation<NO_TRACE>(pos).value();
   else
   {
@@ -1082,8 +1082,7 @@ Value Eval::evaluate(const Position& pos) {
 
       bool  lowPieceEG = pos.non_pawn_material() < 2 * RookValueMg && pos.count<PAWN>() < 2;
 
-      if (Eval::useNNUE == NNUE_ONLY) v = adjusted_NNUE();
-      else if (lowPieceEG) v = Evaluation<NO_TRACE>(pos).value();    // case 1
+      if (lowPieceEG) v = Evaluation<NO_TRACE>(pos).value();         // case 1
       else if (largePsq) {
         v = Evaluation<NO_TRACE>(pos).value();                       // case 2c
         if (   abs(v) * 16 < NNUEThreshold2 * r50                    // case 2a
@@ -1112,7 +1111,7 @@ Value Eval::evaluate(const Position& pos, NetType nnue_index) {
     return v * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
   };
 
-  Value v;
+  Value v = VALUE_ZERO;
   
   switch (nnue_index) {
   case EVAL:      v = NNUE::evaluate<EVAL>(pos);        break;

@@ -22,8 +22,8 @@ int HOT  = 32000;
 int COLD = -32000;
 
 Depth adjust_extension(Depth d, const Position &pos) {
-  if (d != ADJUSTMENT_DEPTH) return 0;
-  //  Eval::evaluate(pos,DEEPER);
+  if (d != ADJUSTMENT_DEPTH || !Eval::useNNUE) return 0;
+  Eval::evaluate(pos,DEEPER);
   // Eval::evaluate(pos,SHALLOWER);
   // if (Eval::evaluate(pos,DEEPER) > HOT) return 1;
   // if (Eval::evaluate(pos,SHALLOWER) < COLD) return -1;

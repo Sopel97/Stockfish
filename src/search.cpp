@@ -437,19 +437,20 @@ bool Thread::search() {
           }
           case Dump::E: {
             dumper << rootPos.fen();
-            for (int i = 0 ; i < Eval::NNUE::num_nnues() ; ++i)
+            for (unsigned i = 0 ; i < Eval::NNUE::num_nnues() ; ++i)
               dumper << ' ' << Eval::evaluate(rootPos,NetType(i));
             dumper << std::endl;
             return true;
           }
           case Dump::R: {
-            EvalType tmp = Eval::useNNUE;
+            bool tmp = Eval::useNNUE;
             Value evals[3];
-            for (unsigned i = 0 ; i < 3 ; ++i) {
-              Eval::useNNUE = EvalType(i);
+            for (unsigned i = 0 ; i < 2 ; ++i) {
+              Eval::useNNUE = i;
               evals[i] = Eval::evaluate(rootPos);
             }
             Eval::useNNUE = tmp;
+            evals[2] = Eval::evaluate(rootPos,EVAL);
             Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
             std::vector<Value> by_depth;
             for (int i = 1 ; i <= Limits.depth ; ++i)

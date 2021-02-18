@@ -27,15 +27,13 @@ enum NetType { EVAL, SHALLOWER, DEEPER, NUM_NETS };
 
 class Position;
 
-enum EvalType { CLASSICAL, NNUE_ONLY, HYBRID };
-
 namespace Eval {
 
   std::string trace(const Position& pos);
   Value evaluate(const Position& pos);
   Value evaluate(const Position& pos, NetType nnue_index);
 
-  extern EvalType useNNUE;
+  extern bool useNNUE;
   extern std::string eval_file_loaded;
 
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
