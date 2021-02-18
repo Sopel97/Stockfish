@@ -31,7 +31,6 @@
 
 #include "nnue/nnue_accumulator.h"
 
-
 /// StateInfo struct stores information needed to restore a Position object to
 /// its previous state when we retract a move. Whenever a move is made on the
 /// board (by calling Position::do_move), a StateInfo object must be passed.
@@ -58,8 +57,15 @@ struct StateInfo {
   int        repetition;
 
   // Used by NNUE
-  Eval::NNUE::Accumulator accumulator;
+  Eval::NNUE::Accumulator accumulator[NUM_NETS];
   DirtyPiece dirtyPiece;
+
+  void reset_accumulators(Eval::NNUE::AccumulatorState a) {
+    for (unsigned i = 0 ; i < NUM_NETS ; ++i) {
+      accumulator[i].state[WHITE] = a;
+      accumulator[i].state[BLACK] = a;
+    }
+  }
 };
 
 

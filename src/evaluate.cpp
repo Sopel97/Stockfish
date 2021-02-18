@@ -1042,7 +1042,7 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos, unsigned nnue_index) {
+Value Eval::evaluate(const Position& pos) {
 
   Value v;
 
@@ -1053,7 +1053,7 @@ Value Eval::evaluate(const Position& pos, unsigned nnue_index) {
       // Scale and shift NNUE for compatibility with search and classical evaluation
       auto  adjusted_NNUE = [&](){
          int mat = pos.non_pawn_material() + 2 * PawnValueMg * pos.count<PAWN>();
-         return NNUE::evaluate(pos,nnue_index) * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
+         return NNUE::evaluate<EVAL>(pos) * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
       };
 
       // "random" test that has a 1/8 probability of being true
@@ -1106,12 +1106,33 @@ Value Eval::evaluate(const Position& pos, unsigned nnue_index) {
   return v;
 }
 
+Value Eval::evaluate(const Position& pos, NetType nnue_index) {
+  auto  adjusted_NNUE = [&](Value v){
+    int mat = pos.non_pawn_material() + 2 * PawnValueMg * pos.count<PAWN>();
+    return v * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
+  };
+
+  Value v;
+  
+  switch (nnue_index) {
+  case EVAL:      v = NNUE::evaluate<EVAL>(pos);        break;
+  case SHALLOWER: v = NNUE::evaluate<SHALLOWER>(pos);   break;
+  case DEEPER:    v = NNUE::evaluate<DEEPER>(pos);      break;
+  default:                                              break; // compiler warn
+  }
+
+  v = adjusted_NNUE(v);
+  v = v * (100 - pos.rule50_count()) / 100;
+  v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
+  return v;
+}
+
 /// trace() is like evaluate(), but instead of returning a value, it returns
 /// a string (suitable for outputting to stdout) that contains the detailed
 /// descriptions and values of each evaluation term. Useful for debugging.
 /// Trace scores are from white's point of view
 
-std::string Eval::trace(const Position& pos, unsigned nnue_index) {
+std::string Eval::trace(const Position& pos) {
 
   if (pos.checkers())
       return "Final evaluation: none (in check)";
@@ -1153,12 +1174,12 @@ std::string Eval::trace(const Position& pos, unsigned nnue_index) {
 
   if (Eval::useNNUE)
   {
-      v = NNUE::evaluate(pos,nnue_index);
+    v = NNUE::evaluate<EVAL>(pos);
       v = pos.side_to_move() == WHITE ? v : -v;
       ss << "\nNNUE evaluation:      " << to_cp(v) << " (white side)\n";
   }
 
-  v = evaluate(pos,nnue_index);
+  v = evaluate(pos);
   v = pos.side_to_move() == WHITE ? v : -v;
   ss << "\nFinal evaluation:     " << to_cp(v) << " (white side)\n";
 

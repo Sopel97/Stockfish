@@ -112,7 +112,8 @@ namespace Eval::NNUE {
   }
 
   // Evaluation function. Perform differential calculation.
-  Value evaluate(const Position& pos, unsigned nnue_index) {
+  template<NetType nnue_index>
+  Value evaluate(const Position& pos) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -135,7 +136,7 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    ndata[nnue_index].feature_transformer->Transform(pos, transformed_features);
+    ndata[nnue_index].feature_transformer->Transform<nnue_index>(pos, transformed_features);
     const auto output =
       ndata[nnue_index].network->Propagate(transformed_features, buffer);
 
@@ -150,5 +151,9 @@ namespace Eval::NNUE {
     fileName = name;
     return ReadParameters(stream);
   }
+
+  template Value evaluate<EVAL>(const Position& pos);
+  template Value evaluate<SHALLOWER>(const Position& pos);
+  template Value evaluate<DEEPER>(const Position& pos);
 
 } // namespace Eval::NNUE

@@ -431,15 +431,14 @@ bool Thread::search() {
             for (Move *x = ss->pv ; is_ok(*x) ; ++x) rootPos.do_move(*x,si);
             dumper << rootPos.fen();
             if (dumper.dtype == Dump::E)
-              dumper << ' ' << Eval::evaluate(rootPos,EVAL);
+              dumper << ' ' << Eval::evaluate(rootPos);
             dumper << std::endl;
             return true;
           }
           case Dump::E: {
-            Eval::useNNUE = NNUE_ONLY;
             dumper << rootPos.fen();
-            for (unsigned i = 0 ; i < Eval::NNUE::num_nnues() ; ++i)
-              dumper << ' ' << Eval::evaluate(rootPos,i);
+            for (int i = 0 ; i < Eval::NNUE::num_nnues() ; ++i)
+              dumper << ' ' << Eval::evaluate(rootPos,NetType(i));
             dumper << std::endl;
             return true;
           }
@@ -448,7 +447,7 @@ bool Thread::search() {
             Value evals[3];
             for (unsigned i = 0 ; i < 3 ; ++i) {
               Eval::useNNUE = EvalType(i);
-              evals[i] = Eval::evaluate(rootPos,EVAL);
+              evals[i] = Eval::evaluate(rootPos);
             }
             Eval::useNNUE = tmp;
             Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
@@ -616,40 +615,37 @@ bool Thread::search() {
 
 namespace {
 
-  bool check_tt(Position &pos, Key posKey, Stack *ss, Value &val, TTEntry *tte,
-                 Value ttValue, Value beta, Thread *thisThread) {
-    if (ss->ttHit)
-      {
-        // Never assume anything about values stored in TT
-        if ((ss->staticEval = val = tte->eval()) == VALUE_NONE)
-          ss->staticEval = val = evaluate(pos,EVAL);
+    bool check_tt(Position &pos, Key posKey, Stack *ss, Value &val, TTEntry *tte,
+                  Value ttValue, Value beta, Thread *thisThread) {
+        if (ss->ttHit)
+        {
+            // Never assume anything about values stored in TT
+            if ((ss->staticEval = val = tte->eval()) == VALUE_NONE)
+                ss->staticEval = val = evaluate(pos);
 
-        // Randomize draw evaluation
-        if (thisThread && val == VALUE_DRAW)
-          val = value_draw(thisThread);
+            // Randomize draw evaluation
+            if (thisThread && val == VALUE_DRAW) val = value_draw(thisThread);
 
-        // Can ttValue be used as a better position evaluation?
-        if (    ttValue != VALUE_NONE
+            // Can ttValue be used as a better position evaluation?
+            if (    ttValue != VALUE_NONE
                 && (tte->bound() & (ttValue > val ? BOUND_LOWER : BOUND_UPPER)))
-          val = ttValue;
-      }
-    else
-      {
-        // In case of null move search use previous static eval with a different sign
-        // and addition of two tempos
-      ss->staticEval = val =
-        (ss-1)->currentMove != MOVE_NULL ? evaluate(pos,EVAL)
-        : -(ss-1)->staticEval + 2 * Tempo;
-
-        // Save static evaluation into transposition table
-      if (thisThread || val < beta)
-        tte->save(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, val);
-      else
-          tte->save(posKey, value_to_tt(val, ss->ply), false, BOUND_LOWER,
-                    DEPTH_NONE, MOVE_NONE, ss->staticEval);
-      }
-    return val >= beta;         // ignored unless qsearch
-  }
+                val = ttValue;
+        }
+        else
+        {
+            // In case of null move search use previous static eval with a different sign
+            // and addition of two tempos
+            ss->staticEval = val =
+            (ss-1)->currentMove != MOVE_NULL ? evaluate(pos)
+                                             : -(ss-1)->staticEval + 2 * Tempo;
+            if (thisThread)
+              tte->save(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE ,DEPTH_NONE, MOVE_NONE, val);
+            else if (val >= beta)
+              tte->save(posKey, value_to_tt(val, ss->ply), false, BOUND_LOWER,
+                        DEPTH_NONE, MOVE_NONE, ss->staticEval);
+        }
+        return val >= beta;
+    }
 
   // search<>() is the main search function for both PV and non-PV nodes
 
@@ -723,7 +719,7 @@ namespace {
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,EVAL)
+            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
                                                         : value_draw(pos.this_thread());
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
@@ -878,6 +874,7 @@ namespace {
         goto moves_loop;
     }
     else check_tt(pos,posKey,ss,eval,tte,ttValue,VALUE_NONE,thisThread);
+
     // Use static evaluation difference to improve quiet move ordering
     if (is_ok((ss-1)->currentMove) && !(ss-1)->inCheck && !priorCapture)
     {
@@ -1006,7 +1003,7 @@ namespace {
 
                 // If the qsearch held, perform the regular search
                 if (value >= probCutBeta)
-                  value = -search<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1, depth - 4, !cutNode);
+                    value = -search<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1, depth - 4, !cutNode);
 
                 pos.undo_move(move);
 
@@ -1340,7 +1337,7 @@ moves_loop: // When in check, search starts from here
       // Step 16. Full depth search when LMR is skipped or fails high
       if (doFullDepthSearch)
       {
-        value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
+          value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
 
           // If the move passed LMR update its stats
           if (didLMR && !captureOrPromotion)
@@ -1531,7 +1528,7 @@ moves_loop: // When in check, search starts from here
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
         || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos,EVAL) : VALUE_DRAW;
+        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1563,7 +1560,7 @@ moves_loop: // When in check, search starts from here
     }
     else
     {
-      if (check_tt(pos,posKey,ss,bestValue,tte,ttValue,beta,nullptr)) return bestValue;
+        if (check_tt(pos,posKey,ss,bestValue,tte,ttValue,beta,nullptr)) return bestValue;
         if (PvNode && bestValue > alpha)
             alpha = bestValue;
 
