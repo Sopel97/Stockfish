@@ -331,6 +331,85 @@ void Position::set_check_info(StateInfo* si) const {
   si->checkSquares[KING]   = 0;
 }
 
+static inline void set_special(const Position& pos)
+{
+  if (pos.this_thread() == nullptr)
+    return;
+
+  constexpr Bitboard WhiteOutpostRanks = Rank4BB | Rank5BB | Rank6BB;
+  constexpr Bitboard BlackOutpostRanks = Rank5BB | Rank4BB | Rank3BB;
+  constexpr Direction WhiteDown = -pawn_push(WHITE);
+  constexpr Direction BlackDown = -pawn_push(BLACK);
+
+  auto si = pos.state();
+
+  si->special = 0;
+
+  const auto* pe = Pawns::probe(pos);
+  si->special |= pe->passed_pawns(WHITE) | pe->passed_pawns(BLACK);
+
+  const Bitboard white_pawn_span = pe->pawn_attacks_span(WHITE);
+  const Bitboard black_pawn_span = pe->pawn_attacks_span(BLACK);
+  const Bitboard white_outpost =
+    WhiteOutpostRanks & (white_pawn_span | shift<WhiteDown>(pos.pieces(PAWN))) & ~black_pawn_span;
+  const Bitboard black_outpost =
+    BlackOutpostRanks & (black_pawn_span | shift<BlackDown>(pos.pieces(PAWN))) & ~white_pawn_span;
+  si->special |= white_outpost & pos.pieces(WHITE, KNIGHT, BISHOP);
+  si->special |= black_outpost & pos.pieces(BLACK, KNIGHT, BISHOP);
+
+  {
+    const Square* pl = pos.squares<ROOK>(WHITE);
+    for (Square s = *pl; s != SQ_NONE; s = *++pl)
+    {
+      if (pos.is_on_semiopen_file(WHITE, s))
+      {
+        si->special |= s;
+      }
+    }
+  }
+
+  {
+    const Square* pl = pos.squares<ROOK>(BLACK);
+    for (Square s = *pl; s != SQ_NONE; s = *++pl)
+    {
+      if (pos.is_on_semiopen_file(BLACK, s))
+      {
+        si->special |= s;
+      }
+    }
+  }
+
+  {
+    const Square* pl = pos.squares<QUEEN>(WHITE);
+    for (Square s = *pl; s != SQ_NONE; s = *++pl)
+    {
+      Bitboard queenPinners;
+      if (pos.slider_blockers(pos.pieces(BLACK, ROOK, BISHOP), s, queenPinners))
+      {
+        si->special |= s;
+      }
+    }
+  }
+
+  {
+    const Square* pl = pos.squares<QUEEN>(BLACK);
+    for (Square s = *pl; s != SQ_NONE; s = *++pl)
+    {
+      Bitboard queenPinners;
+      if (pos.slider_blockers(pos.pieces(WHITE, ROOK, BISHOP), s, queenPinners))
+      {
+        si->special |= s;
+      }
+    }
+  }
+}
+
+static inline void set_special_on_null_move(const Position& pos)
+{
+  auto si = pos.state();
+
+  si->special = si->previous->special;
+}
 
 /// Position::set_state() computes the hash keys of the position, and other
 /// data that once computed is updated incrementally as moves are made.
@@ -370,6 +449,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  set_special(*this);
 }
 
 
@@ -896,6 +977,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  set_special(*this);
+
   assert(pos_is_ok());
 }
 
@@ -1030,6 +1113,8 @@ void Position::do_null_move(StateInfo& newSt) {
   set_check_info(st);
 
   st->repetition = 0;
+
+  set_special_on_null_move(*this);
 
   assert(pos_is_ok());
 }
