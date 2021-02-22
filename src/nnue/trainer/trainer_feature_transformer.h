@@ -86,6 +86,10 @@ namespace Eval::NNUE {
                 biases_[i] = static_cast<LearnFloatType>(0.5);
             }
 
+            for (IndexType i = 0; i < kInputDimensions; ++i) {
+                psqt_values_[i] = 0.0f;
+            }
+
             quantize_parameters();
         }
 
@@ -95,7 +99,7 @@ namespace Eval::NNUE {
 
             if ((long)output_.size() < (long)kOutputDimensions * size) {
                 output_.resize(kOutputDimensions * size);
-                psqt_output_.resize(size);
+                psqt_output_.resize(size * 2);
                 gradients_.resize(kOutputDimensions * size);
                 psqt_gradients_.resize(size);
             }
@@ -147,6 +151,8 @@ namespace Eval::NNUE {
                 for (IndexType c = 0; c < 2; ++c) {
                     const IndexType output_offset = batch_offset + kHalfDimensions * c;
 
+                    float psqt = 0.0f;
+
 #if defined(USE_BLAS)
 
                     cblas_scopy(
@@ -159,6 +165,8 @@ namespace Eval::NNUE {
                             kHalfDimensions, (float)feature.get_count(),
                             &weights_[weights_offset], 1, &output_[output_offset], 1
                         );
+
+                        psqt += psqt_values_[feature.get_index()] * (float)feature.get_count();
                     }
 
 #else
@@ -172,9 +180,13 @@ namespace Eval::NNUE {
                             kHalfDimensions, (float)feature.get_count(),
                             &weights_[weights_offset], &output_[output_offset]
                         );
+
+                        psqt += psqt_values_[feature.get_index()] * (float)feature.get_count();
                     }
 
 #endif
+
+                    psqt_output_[b*2+c] = psqt;
                 }
             }
 
@@ -701,6 +713,7 @@ namespace Eval::NNUE {
         alignas(kCacheLineSize) LearnFloatType biases_[kHalfDimensions];
         alignas(kCacheLineSize)
             LearnFloatType weights_[kHalfDimensions * kInputDimensions];
+        alignas(kCacheLineSize) LearnFloatType psqt_values_[kInputDimensions];
 
         // Buffer used for updating parameters
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;

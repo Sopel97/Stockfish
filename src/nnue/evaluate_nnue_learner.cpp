@@ -235,8 +235,9 @@ namespace Eval::NNUE {
 
                     for (std::size_t b = offset; b < offset + count; ++b) {
                         const auto& e = *(batch_begin + b);
+                        const auto psqt = network_psqt_output[b*2] - network_psqt_output[b*2+1];
                         const auto shallow = static_cast<Value>(round<std::int32_t>(
-                            e.sign * (network_output[b] + network_psqt_output[b]) * kPonanzaConstant));
+                            e.sign * (network_output[b] + psqt) * kPonanzaConstant));
                         const auto discrete = e.sign * e.discrete_nn_eval;
                         const auto& psv = e.psv;
                         auto loss = calc_loss(shallow, (Value)psv.score, psv.game_result, psv.gamePly);
