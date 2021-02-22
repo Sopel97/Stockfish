@@ -511,7 +511,7 @@ namespace Eval::NNUE {
                                 const auto scale = static_cast<LearnFloatType>(
                                     effective_learning_rate / feature.get_count());
 
-                                psqt_values_[feature_index] -= scale * psqt_gradients_[b];
+                                psqt_values_[feature_index] -= scale * psqt_gradients_[b] * (kWeightScale / kPsqtScale);
 
 #if defined (USE_BLAS)
 
@@ -578,6 +578,17 @@ namespace Eval::NNUE {
                         target_layer_->weights_[kHalfDimensions * j + i] =
                             round<typename LayerType::WeightType>(sum * kWeightScale);
                     }
+
+                    {
+                        double sum = 0.0;
+                        for (const auto& feature : training_features) {
+                            const auto idx = feature.get_index();
+                            sum += psqt_values_[idx];
+                        }
+
+                        target_layer_->psqt_values_[j] =
+                            round<typename LayerType::PSQTValueType>(sum * kPsqtScale);
+                    }
                 }
             );
             Threads.wait_for_workers_finished();
@@ -596,10 +607,16 @@ namespace Eval::NNUE {
             }
 
             std::fill(std::begin(weights_), std::end(weights_), +kZero);
+            std::fill(std::begin(psqt_values_), std::end(psqt_values_), +kZero);
 
             for (IndexType i = 0; i < kHalfDimensions * RawFeatures::kDimensions; ++i) {
                 weights_[i] = static_cast<LearnFloatType>(
                     target_layer_->weights_[i] / kWeightScale);
+            }
+
+            for (IndexType i = 0; i < RawFeatures::kDimensions; ++i) {
+                psqt_values_[i] = static_cast<LearnFloatType>(
+                    target_layer_->psqt_values_[i] / kPsqtScale);
             }
 
             reset_stats();
@@ -699,6 +716,8 @@ namespace Eval::NNUE {
             std::numeric_limits<std::int8_t>::max();
         static constexpr LearnFloatType kBiasScale = kActivationScale;
         static constexpr LearnFloatType kWeightScale = kActivationScale;
+
+        static constexpr LearnFloatType kPsqtScale = kPonanzaConstant * FV_SCALE;
 
         // LearnFloatType constant
         static constexpr LearnFloatType kZero = static_cast<LearnFloatType>(0.0);
