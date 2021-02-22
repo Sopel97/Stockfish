@@ -147,7 +147,7 @@ namespace Eval::NNUE {
         {
           weights_[i*kHalfDimensions + j] = read_little_endian<WeightType>(stream);
         }
-        psqt_values[i] = read_little_endian<PSQTValueType>(stream);
+        psqt_values_[i] = read_little_endian<PSQTValueType>(stream);
       }
       return !stream.fail();
     }

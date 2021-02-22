@@ -89,13 +89,15 @@ namespace Eval::NNUE {
             quantize_parameters();
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
             if ((long)output_.size() < (long)kOutputDimensions * size) {
                 output_.resize(kOutputDimensions * size);
+                psqt_output_.resize(size);
                 gradients_.resize(kOutputDimensions * size);
+                psqt_gradients_.resize(size);
             }
 
             if (thread_stat_states_.size() < thread_pool.size())
@@ -130,7 +132,7 @@ namespace Eval::NNUE {
             for (IndexType i = 1; i < thread_bias_states_.size(); ++i)
                 thread_bias_states_[i].reset();
 
-            return output_.data();
+            return { output_.data(), psqt_output_.data() };
         }
 
         // forward propagation
@@ -311,6 +313,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            uint64_t offset,
                            uint64_t count) {
 
@@ -379,6 +382,10 @@ namespace Eval::NNUE {
             }
 
 #endif
+
+            for (IndexType b = offset; b < offset + count; ++b) {
+                psqt_gradients_[b] = psqt_gradients[b];
+            }
 
             thread_stat_state.num_total_ += count * kOutputDimensions;
 
@@ -697,9 +704,11 @@ namespace Eval::NNUE {
 
         // Buffer used for updating parameters
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;
+        std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> psqt_gradients_;
 
         // Forward propagation buffer
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> output_;
+        std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> psqt_output_;
 
         // Features that appeared in the training data
         using BitsetType = LargeBitset<kInputDimensions>;
