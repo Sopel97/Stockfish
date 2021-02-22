@@ -141,8 +141,14 @@ namespace Eval::NNUE {
 
       for (std::size_t i = 0; i < kHalfDimensions; ++i)
         biases_[i] = read_little_endian<BiasType>(stream);
-      for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
-        weights_[i] = read_little_endian<WeightType>(stream);
+      for (std::size_t i = 0; i < kInputDimensions; ++i)
+      {
+        for (std::size_t j = 0; j < kHalfDimensions; ++j)
+        {
+          weights_[i*kHalfDimensions + j] = read_little_endian<WeightType>(stream);
+        }
+        psqt_values[i] = read_little_endian<PSQTValueType>(stream);
+      }
       return !stream.fail();
     }
 
@@ -174,12 +180,13 @@ namespace Eval::NNUE {
     }
 
     // Convert input features
-    void Transform(const Position& pos, OutputType* output) const {
+    void Transform(const Position& pos, OutputType* output, std::int32_t& psqt) const {
 
       if (!update_accumulator_if_possible(pos))
         refresh_accumulator(pos);
 
       const auto& accumulation = pos.state()->accumulator.accumulation;
+      const auto& psqt_accumulation = pos.state()->accumulator.psqt_accumulation;
 
   #if defined(USE_AVX512)
       constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
@@ -322,6 +329,13 @@ namespace Eval::NNUE {
   #endif
 
       }
+
+      psqt = 0;
+      for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
+        psqt += psqt_accumulation[static_cast<int>(perspectives[0])][i];
+        psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][i];
+      }
+
   #if defined(USE_MMX)
       _mm_empty();
   #endif
@@ -357,12 +371,16 @@ namespace Eval::NNUE {
                   acc[k] = vec_zero;
               }
 
+              accumulator.psqt_accumulation[perspective][i] = 0;
+
               for (const auto index : active_indices[perspective]) {
                 const IndexType offset = kHalfDimensions * index + j * kTileHeight;
                 auto column = reinterpret_cast<const vec_t*>(&weights_[offset]);
 
                 for (IndexType k = 0; k < kNumRegs; ++k)
                   acc[k] = vec_add_16(acc[k], column[k]);
+
+                accumulator.psqt_accumulation[perspective][i] += psqt_values_[index];
               }
 
               for (IndexType k = 0; k < kNumRegs; k++)
@@ -377,11 +395,15 @@ namespace Eval::NNUE {
                           kHalfDimensions * sizeof(BiasType));
             }
 
+            accumulator.psqt_accumulation[perspective][i] = 0;
+
             for (const auto index : active_indices[perspective]) {
               const IndexType offset = kHalfDimensions * index;
 
               for (IndexType j = 0; j < kHalfDimensions; ++j)
                 accumulator.accumulation[perspective][i][j] += weights_[offset + j];
+
+              accumulator.psqt_accumulation[perspective][i] += psqt_values_[index];
             }
 #endif
           }
@@ -427,12 +449,17 @@ namespace Eval::NNUE {
               for (IndexType k = 0; k < kNumRegs; ++k)
                 acc[k] = vec_zero;
             }
+
+            accumulator.psqt_accumulation[perspective][i] = 0;
+
           } else {
             auto prevAccTile = reinterpret_cast<const vec_t*>(
                 &prev_accumulator.accumulation[perspective][i][j * kTileHeight]);
 
             for (IndexType k = 0; k < kNumRegs; ++k)
               acc[k] = vec_load(&prevAccTile[k]);
+
+            accumulator.psqt_accumulation[perspective][i] = prev_accumulator.psqt_accumulation[perspective][i];
 
             // Difference calculation for the deactivated features
             for (const auto index : removed_indices[perspective]) {
@@ -441,6 +468,8 @@ namespace Eval::NNUE {
 
               for (IndexType k = 0; k < kNumRegs; ++k)
                 acc[k] = vec_sub_16(acc[k], column[k]);
+
+              accumulator.psqt_accumulation[perspective][i] -= psqt_values_[index];
             }
           }
 
@@ -451,6 +480,8 @@ namespace Eval::NNUE {
 
               for (IndexType k = 0; k < kNumRegs; ++k)
                 acc[k] = vec_add_16(acc[k], column[k]);
+
+              accumulator.psqt_accumulation[perspective][i] += psqt_values_[index];
             }
           }
 
@@ -473,16 +504,24 @@ namespace Eval::NNUE {
             std::memset(accumulator.accumulation[perspective][i], 0,
                         kHalfDimensions * sizeof(BiasType));
           }
+
+          accumulator.psqt_accumulation[perspective][i] = 0;
+
         } else {
           std::memcpy(accumulator.accumulation[perspective][i],
                       prev_accumulator.accumulation[perspective][i],
                       kHalfDimensions * sizeof(BiasType));
+
+          accumulator.psqt_accumulation[perspective][i] = prev_accumulator.psqt_accumulation[perspective][i];
+
           // Difference calculation for the deactivated features
           for (const auto index : removed_indices[perspective]) {
             const IndexType offset = kHalfDimensions * index;
 
             for (IndexType j = 0; j < kHalfDimensions; ++j)
               accumulator.accumulation[perspective][i][j] -= weights_[offset + j];
+
+            accumulator.psqt_accumulation[perspective][i] -= psqt_values_[index];
           }
         }
         { // Difference calculation for the activated features
@@ -491,6 +530,8 @@ namespace Eval::NNUE {
 
             for (IndexType j = 0; j < kHalfDimensions; ++j)
               accumulator.accumulation[perspective][i][j] += weights_[offset + j];
+
+            accumulator.psqt_accumulation[perspective][i] += psqt_values_[index];
           }
         }
       }
@@ -501,6 +542,7 @@ namespace Eval::NNUE {
 
     using BiasType = std::int16_t;
     using WeightType = std::int16_t;
+    using PSQTValueType = std::int32_t;
 
     // Make the learning class a friend
     friend class Trainer<FeatureTransformer>;
@@ -508,6 +550,7 @@ namespace Eval::NNUE {
     alignas(kCacheLineSize) BiasType biases_[kHalfDimensions];
     alignas(kCacheLineSize)
         WeightType weights_[kHalfDimensions * kInputDimensions];
+    alignas(kCacheLineSize) std::int32_t psqt_values_[kInputDimensions];
   };
 
 }  // namespace Eval::NNUE
