@@ -157,8 +157,12 @@ namespace Eval::NNUE {
       stream.write(reinterpret_cast<const char*>(biases_),
           kHalfDimensions * sizeof(BiasType));
 
-      stream.write(reinterpret_cast<const char*>(weights_),
-          kHalfDimensions * kInputDimensions * sizeof(WeightType));
+      for (std::size_t i = 0; i < kInputDimensions; ++i)
+      {
+        stream.write(reinterpret_cast<const char*>(weights_+i*kHalfDimensions),
+          kHalfDimensions * sizeof(WeightType));
+        stream.write(reinterpret_cast<const char*>(psqt_values_+i), 1 * sizeof(PSQTValueType));
+      }
 
       return !stream.fail();
     }
