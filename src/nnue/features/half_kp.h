@@ -65,6 +65,10 @@ namespace Eval::NNUE::Features {
             IndexList* removed,
             IndexList* added);
 
+        static void init_psqt_values(
+            float* psqt_values_,
+            float scale);
+
     private:
         // Index of a feature for a given king position and another piece on some square
         static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k);

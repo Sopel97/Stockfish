@@ -223,7 +223,7 @@ namespace Eval::NNUE {
             auto batch_begin = prev_batch_begin - batch_size;
             auto batch_end = prev_batch_begin;
             auto size = batch_end - batch_begin;
-            const auto network_output = trainer->step_start(thread_pool, batch_begin, batch_end);
+            const auto [network_output, network_psqt_output] = trainer->step_start(thread_pool, batch_begin, batch_end);
             std::vector<LearnFloatType> gradients(size);
 
             thread_pool.for_each_index_chunk_with_workers(
@@ -235,8 +235,9 @@ namespace Eval::NNUE {
 
                     for (std::size_t b = offset; b < offset + count; ++b) {
                         const auto& e = *(batch_begin + b);
+                        const auto psqt = (network_psqt_output[b*2] - network_psqt_output[b*2+1]) * 0.5f;
                         const auto shallow = static_cast<Value>(round<std::int32_t>(
-                            e.sign * network_output[b] * kPonanzaConstant));
+                            e.sign * (network_output[b] + psqt) * kPonanzaConstant));
                         const auto discrete = e.sign * e.discrete_nn_eval;
                         const auto& psv = e.psv;
                         auto loss = calc_loss(shallow, (Value)psv.score, psv.game_result, psv.gamePly);
@@ -256,7 +257,7 @@ namespace Eval::NNUE {
                         }
                     }
 
-                    trainer->backpropagate(th, gradients.data(), offset, count);
+                    trainer->backpropagate(th, gradients.data(), gradients.data(), offset, count);
                 }
             );
 

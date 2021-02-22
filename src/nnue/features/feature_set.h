@@ -264,6 +264,10 @@ namespace Eval::NNUE::Features {
             return FeatureType::kName;
         }
 
+        static void init_psqt_values(float* psqt, float scale) {
+            FeatureType::init_psqt_values(psqt, scale);
+        }
+
     private:
         // Get a list of indices for active features
         static void collect_active_indices(

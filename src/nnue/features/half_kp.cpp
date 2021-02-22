@@ -27,7 +27,7 @@ namespace Eval::NNUE::Features {
     // this has to stay until we find a better arch that works with "flip".
     // allows us to use current master net for gensfen (primarily needed for higher quality data)
     inline Square orient(Color perspective, Square s) {
-        return Square(int(s) ^ (bool(perspective) * 63));
+        return Square(int(s) ^ (bool(perspective) * SQ_A8));
     }
 
     // Find the index of the feature quantity from the king position and PieceSquare
@@ -85,6 +85,27 @@ namespace Eval::NNUE::Features {
 
             if (dp.to[i] != SQ_NONE)
                 added->push_back(make_index(perspective, dp.to[i], pc, ksq));
+        }
+    }
+
+    template <Side AssociatedKing>
+    void HalfKP<AssociatedKing>::init_psqt_values(
+        float* psqt_values_,
+        float scale
+        )
+    {
+        for (Square ksq = SQUARE_ZERO; ksq < SQUARE_NB; ++ksq)
+        {
+            for (Square s = SQUARE_ZERO; s < SQUARE_NB; ++s)
+            {
+                for (Piece pc : {W_PAWN, W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN})
+                {
+                    const int idxw = s + kpp_board_index[pc][0] + PS_END * ksq;
+                    const int idxb = s + kpp_board_index[pc][1] + PS_END * ksq;
+                    psqt_values_[idxw] = (float)(PieceValue[MG][pc]) / scale;
+                    psqt_values_[idxb] = (float)(-PieceValue[MG][pc]) / scale;
+                }
+            }
         }
     }
 

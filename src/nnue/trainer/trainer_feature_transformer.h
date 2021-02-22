@@ -86,16 +86,24 @@ namespace Eval::NNUE {
                 biases_[i] = static_cast<LearnFloatType>(0.5);
             }
 
+            for (IndexType i = 0; i < kInputDimensions; ++i) {
+                psqt_values_[i] = 0.0f;
+            }
+
+            RawFeatures::init_psqt_values(psqt_values_, kPonanzaConstant);
+
             quantize_parameters();
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
             if ((long)output_.size() < (long)kOutputDimensions * size) {
                 output_.resize(kOutputDimensions * size);
+                psqt_output_.resize(size * 2);
                 gradients_.resize(kOutputDimensions * size);
+                psqt_gradients_.resize(size);
             }
 
             if (thread_stat_states_.size() < thread_pool.size())
@@ -130,7 +138,7 @@ namespace Eval::NNUE {
             for (IndexType i = 1; i < thread_bias_states_.size(); ++i)
                 thread_bias_states_[i].reset();
 
-            return output_.data();
+            return { output_.data(), psqt_output_.data() };
         }
 
         // forward propagation
@@ -145,6 +153,8 @@ namespace Eval::NNUE {
                 for (IndexType c = 0; c < 2; ++c) {
                     const IndexType output_offset = batch_offset + kHalfDimensions * c;
 
+                    float psqt = 0.0f;
+
 #if defined(USE_BLAS)
 
                     cblas_scopy(
@@ -157,6 +167,8 @@ namespace Eval::NNUE {
                             kHalfDimensions, (float)feature.get_count(),
                             &weights_[weights_offset], 1, &output_[output_offset], 1
                         );
+
+                        psqt += psqt_values_[feature.get_index()] * (float)feature.get_count();
                     }
 
 #else
@@ -170,9 +182,13 @@ namespace Eval::NNUE {
                             kHalfDimensions, (float)feature.get_count(),
                             &weights_[weights_offset], &output_[output_offset]
                         );
+
+                        psqt += psqt_values_[feature.get_index()] * (float)feature.get_count();
                     }
 
 #endif
+
+                    psqt_output_[b*2+c] = psqt;
                 }
             }
 
@@ -311,6 +327,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            uint64_t offset,
                            uint64_t count) {
 
@@ -379,6 +396,10 @@ namespace Eval::NNUE {
             }
 
 #endif
+
+            for (IndexType b = offset; b < offset + count; ++b) {
+                psqt_gradients_[b] = psqt_gradients[b];
+            }
 
             thread_stat_state.num_total_ += count * kOutputDimensions;
 
@@ -492,6 +513,11 @@ namespace Eval::NNUE {
                                 const auto scale = static_cast<LearnFloatType>(
                                     effective_learning_rate / feature.get_count());
 
+                                const auto psqt_grad =
+                                    c == 0 ? psqt_gradients_[b] : -psqt_gradients_[b];
+
+                                psqt_values_[feature_index] -= scale * psqt_grad * (kWeightScale / kPsqtScale / 2.0f);
+
 #if defined (USE_BLAS)
 
                                 cblas_saxpy(
@@ -557,6 +583,16 @@ namespace Eval::NNUE {
                         target_layer_->weights_[kHalfDimensions * j + i] =
                             round<typename LayerType::WeightType>(sum * kWeightScale);
                     }
+
+                    {
+                        double sum = 0.0;
+                        for (const auto& feature : training_features) {
+                            sum += psqt_values_[feature.get_index()];
+                        }
+
+                        target_layer_->psqt_values_[j] =
+                            round<typename LayerType::PSQTValueType>(sum * kPsqtScale);
+                    }
                 }
             );
             Threads.wait_for_workers_finished();
@@ -575,10 +611,16 @@ namespace Eval::NNUE {
             }
 
             std::fill(std::begin(weights_), std::end(weights_), +kZero);
+            std::fill(std::begin(psqt_values_), std::end(psqt_values_), +kZero);
 
             for (IndexType i = 0; i < kHalfDimensions * RawFeatures::kDimensions; ++i) {
                 weights_[i] = static_cast<LearnFloatType>(
                     target_layer_->weights_[i] / kWeightScale);
+            }
+
+            for (IndexType i = 0; i < RawFeatures::kDimensions; ++i) {
+                psqt_values_[i] = static_cast<LearnFloatType>(
+                    target_layer_->psqt_values_[i] / kPsqtScale);
             }
 
             reset_stats();
@@ -617,6 +659,7 @@ namespace Eval::NNUE {
 
             double abs_bias_sum = 0.0;
             double abs_weight_sum = 0.0;
+            double abs_psqt = 0.0;
 
             for(auto b : biases_)
                 abs_bias_sum += std::abs(b);
@@ -632,6 +675,8 @@ namespace Eval::NNUE {
                     for (IndexType i = 0; i < kHalfDimensions; ++i) {
                         abs_weight_sum += std::abs(weights_[kHalfDimensions * feature.get_index() + i]);
                     }
+
+                    abs_psqt += std::abs(psqt_values_[feature.get_index()]);
                 }
             }
 
@@ -658,6 +703,7 @@ namespace Eval::NNUE {
 
             out << "  - avg_abs_bias   = " << abs_bias_sum / std::size(biases_) << std::endl;
             out << "  - avg_abs_weight = " << abs_weight_sum / std::size(weights_) << std::endl;
+            out << "  - avg_abs_psqt = " << abs_psqt / std::size(psqt_values_) << std::endl;
 
             out << "  - clipped " << static_cast<double>(main_thread_state.num_clipped_) / main_thread_state.num_total_ * 100.0 << "% of outputs"
                 << std::endl;
@@ -679,6 +725,8 @@ namespace Eval::NNUE {
         static constexpr LearnFloatType kBiasScale = kActivationScale;
         static constexpr LearnFloatType kWeightScale = kActivationScale;
 
+        static constexpr LearnFloatType kPsqtScale = kPonanzaConstant * FV_SCALE;
+
         // LearnFloatType constant
         static constexpr LearnFloatType kZero = static_cast<LearnFloatType>(0.0);
         static constexpr LearnFloatType kOne = static_cast<LearnFloatType>(1.0);
@@ -694,12 +742,15 @@ namespace Eval::NNUE {
         alignas(kCacheLineSize) LearnFloatType biases_[kHalfDimensions];
         alignas(kCacheLineSize)
             LearnFloatType weights_[kHalfDimensions * kInputDimensions];
+        alignas(kCacheLineSize) LearnFloatType psqt_values_[kInputDimensions];
 
         // Buffer used for updating parameters
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;
+        std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> psqt_gradients_;
 
         // Forward propagation buffer
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> output_;
+        std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> psqt_output_;
 
         // Features that appeared in the training data
         using BitsetType = LargeBitset<kInputDimensions>;

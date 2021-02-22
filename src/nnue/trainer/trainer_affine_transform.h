@@ -91,7 +91,7 @@ namespace Eval::NNUE {
             quantize_parameters();
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
@@ -106,7 +106,8 @@ namespace Eval::NNUE {
             }
 
             combined_batch_size_ = size;
-            combined_batch_input_ = previous_layer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            auto [combined_batch_input, psqt_output_] = previous_layer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            combined_batch_input_ = combined_batch_input;
 
             auto& main_thread_state = thread_states_[0];
 
@@ -128,7 +129,7 @@ namespace Eval::NNUE {
             for (IndexType i = 1; i < thread_states_.size(); ++i)
                 thread_states_[i].reset_biases();
 
-            return output_.data();
+            return { output_.data(), psqt_output_ };
         }
 
         // forward propagation
@@ -179,6 +180,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            uint64_t offset,
                            uint64_t count) {
 
@@ -245,7 +247,7 @@ namespace Eval::NNUE {
 
 #endif
 
-            previous_layer_trainer_->backpropagate(th, gradients_.data(), offset, count);
+            previous_layer_trainer_->backpropagate(th, gradients_.data(), psqt_gradients, offset, count);
         }
 
         void reduce_thread_state()

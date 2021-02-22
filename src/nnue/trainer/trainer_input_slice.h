@@ -80,7 +80,7 @@ namespace Eval::NNUE {
             }
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
@@ -99,7 +99,9 @@ namespace Eval::NNUE {
 
             if (thread_state.num_calls == 0) {
                 thread_state.current_operation = Operation::kStepStart;
-                output_ = feature_transformer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+                auto [output, psqt_output] = feature_transformer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+                output_ = output;
+                psqt_output_ = psqt_output;
             }
 
             assert(thread_state.current_operation == Operation::kStepStart);
@@ -109,7 +111,7 @@ namespace Eval::NNUE {
                 thread_state.current_operation = Operation::kNone;
             }
 
-            return output_;
+            return { output_, psqt_output_ };
         }
 
         // forward propagation
@@ -134,6 +136,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            uint64_t offset,
                            uint64_t count) {
 
@@ -142,7 +145,7 @@ namespace Eval::NNUE {
             auto& thread_state = thread_states_[thread_id];
 
             if (num_referrers_ == 1) {
-                feature_transformer_trainer_->backpropagate(th, gradients, offset, count);
+                feature_transformer_trainer_->backpropagate(th, gradients, psqt_gradients, offset, count);
                 return;
             }
 
@@ -167,7 +170,7 @@ namespace Eval::NNUE {
 
             if (++thread_state.num_calls == num_referrers_) {
                 feature_transformer_trainer_->backpropagate(
-                    th, gradients_.data(), offset, count);
+                    th, gradients_.data(), psqt_gradients, offset, count);
                 thread_state.num_calls = 0;
                 thread_state.current_operation = Operation::kNone;
             }
@@ -239,6 +242,8 @@ namespace Eval::NNUE {
         // pointer to output shared for forward propagation
         const LearnFloatType* output_;
 
+        const LearnFloatType* psqt_output_;
+
         // buffer for back propagation
         std::vector<LearnFloatType, CacheLineAlignedAllocator<LearnFloatType>> gradients_;
     };
@@ -269,7 +274,7 @@ namespace Eval::NNUE {
             shared_input_trainer_->initialize(rng);
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
@@ -280,9 +285,10 @@ namespace Eval::NNUE {
 
             batch_size_ = size;
 
-            input_ = shared_input_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            auto [input, psqt_output] = shared_input_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            input_ = input;
 
-            return output_.data();
+            return { output_.data(), psqt_output };
         }
 
         // forward propagation
@@ -314,6 +320,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            uint64_t offset,
                            uint64_t count) {
 
@@ -343,7 +350,7 @@ namespace Eval::NNUE {
                 }
             }
 
-            shared_input_trainer_->backpropagate(th, gradients_.data(), offset, count);
+            shared_input_trainer_->backpropagate(th, gradients_.data(), psqt_gradients, offset, count);
         }
 
         void step_end(ThreadPool& thread_pool, LearnFloatType learning_rate) {

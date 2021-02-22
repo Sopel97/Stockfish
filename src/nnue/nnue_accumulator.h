@@ -28,6 +28,7 @@ namespace Eval::NNUE {
   // Class that holds the result of affine transformation of input features
   struct alignas(kCacheLineSize) Accumulator {
       std::int16_t accumulation[2][kRefreshTriggers.size()][kTransformedFeatureDimensions];
+      std::int32_t psqt_accumulation[2][kRefreshTriggers.size()];
       bool computed_accumulation;
   };
 

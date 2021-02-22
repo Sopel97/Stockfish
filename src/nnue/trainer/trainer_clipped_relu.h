@@ -42,7 +42,7 @@ namespace Eval::NNUE {
             previous_layer_trainer_->initialize(rng);
         }
 
-        const LearnFloatType* step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
+        std::pair<const LearnFloatType*, const LearnFloatType*> step_start(ThreadPool& thread_pool, std::vector<Example>::const_iterator batch_begin, std::vector<Example>::const_iterator batch_end)
         {
             const auto size = batch_end - batch_begin;
 
@@ -56,11 +56,12 @@ namespace Eval::NNUE {
                 thread_states_.resize(thread_pool.size());
             }
 
-            input_ = previous_layer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            auto [input, psqt_output_] = previous_layer_trainer_->step_start(thread_pool, batch_begin, batch_end);
+            input_ = input;
 
             batch_size_ = size;
 
-            return output_.data();
+            return { output_.data(), psqt_output_ };
         }
 
         // forward propagation
@@ -150,6 +151,7 @@ namespace Eval::NNUE {
         // backpropagation
         void backpropagate(Thread& th,
                            const LearnFloatType* gradients,
+                           const LearnFloatType* psqt_gradients,
                            const uint64_t offset,
                            const uint64_t count) {
 
@@ -221,7 +223,7 @@ namespace Eval::NNUE {
 
             thread_state.num_total_ += count * kOutputDimensions;
 
-            previous_layer_trainer_->backpropagate(th, gradients_.data(), offset, count);
+            previous_layer_trainer_->backpropagate(th, gradients_.data(), psqt_gradients, offset, count);
         }
 
         void reduce_thread_state()
