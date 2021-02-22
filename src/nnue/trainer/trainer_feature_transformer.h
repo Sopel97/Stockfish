@@ -582,8 +582,7 @@ namespace Eval::NNUE {
                     {
                         double sum = 0.0;
                         for (const auto& feature : training_features) {
-                            const auto idx = feature.get_index();
-                            sum += psqt_values_[idx];
+                            sum += psqt_values_[feature.get_index()];
                         }
 
                         target_layer_->psqt_values_[j] =
@@ -655,6 +654,7 @@ namespace Eval::NNUE {
 
             double abs_bias_sum = 0.0;
             double abs_weight_sum = 0.0;
+            double abs_psqt = 0.0;
 
             for(auto b : biases_)
                 abs_bias_sum += std::abs(b);
@@ -670,6 +670,8 @@ namespace Eval::NNUE {
                     for (IndexType i = 0; i < kHalfDimensions; ++i) {
                         abs_weight_sum += std::abs(weights_[kHalfDimensions * feature.get_index() + i]);
                     }
+
+                    abs_psqt += std::abs(psqt_values_[feature.get_index()]);
                 }
             }
 
@@ -696,6 +698,7 @@ namespace Eval::NNUE {
 
             out << "  - avg_abs_bias   = " << abs_bias_sum / std::size(biases_) << std::endl;
             out << "  - avg_abs_weight = " << abs_weight_sum / std::size(weights_) << std::endl;
+            out << "  - avg_abs_psqt = " << abs_psqt / std::size(psqt_values_) << std::endl;
 
             out << "  - clipped " << static_cast<double>(main_thread_state.num_clipped_) / main_thread_state.num_total_ * 100.0 << "% of outputs"
                 << std::endl;
