@@ -511,6 +511,8 @@ namespace Eval::NNUE {
                                 const auto scale = static_cast<LearnFloatType>(
                                     effective_learning_rate / feature.get_count());
 
+                                psqt_values_[feature_index] -= scale * psqt_gradients_[b];
+
 #if defined (USE_BLAS)
 
                                 cblas_saxpy(
