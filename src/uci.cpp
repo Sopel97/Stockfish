@@ -35,6 +35,7 @@
 using namespace std;
 
 extern vector<string> setup_bench(const Position&, istream&);
+extern const vector<string>& get_bench_for_pgo_start_positions();
 
 namespace {
 
@@ -195,6 +196,70 @@ namespace {
          << "\nNodes/second    : " << 1000 * nodes / elapsed << endl;
   }
 
+  // The purpose of this function is to cover most hot code that is
+  // used during normal play or analysis. The approach is to go through
+  // some (~30) different starting positions and play short games
+  // at fixed nodes per move for each such starting position.
+  // The uci settings used are the defaults, and output is
+  // supressed for the duration of this bench.
+  void bench_for_pgo(Position& pos, istream& args, StateListPtr& states) {
+    auto& list = get_bench_for_pgo_start_positions();
+    int cnt = 0;
+    int num = list.size();
+    uint64_t nodes = 0;
+    TimePoint elapsed = now();
+    for (auto&& fen : list) {
+      states = StateListPtr(new std::deque<StateInfo>(1)); // Drop old and create a new one
+      pos.set(fen, false, &states->back(), Threads.main());
+
+      cerr << "\nPosition: " << cnt++ << '/' << num << " (" << pos.fen() << ")" << endl;
+
+      // We don't need these to be long. Just reasonable.
+      for(int ply = 0; ply < 30; ++ply) {
+        Search::LimitsType limits;
+        limits.nodes = 50000;
+
+        // This supresses most outputs during search so that they don't slow
+        // down the program and don't affect the profiler data gathering.
+        // The only output with this set to true is full depth updates.
+        limits.silent = true;
+
+        // Not needed but it's good to have it initialized as it's accessed during search.
+        limits.startTime = now();
+
+        Threads.start_thinking(pos, states, limits, false);
+        Threads.main()->wait_for_search_finished();
+        nodes += Threads.nodes_searched();
+
+        if (Threads.main()->rootMoves.empty())
+          break;
+
+        if (pos.is_draw(ply))
+          break;
+
+        Move m = Threads.main()->rootMoves[0].pv[0];
+
+        if (m == MOVE_NONE) {
+          break;
+        }
+        else {
+          states = StateListPtr(new std::deque<StateInfo>(2));
+          pos.set(pos.fen(), false, &states->front(), Threads.main());
+          pos.do_move(m, states->back());
+        }
+      }
+
+      cerr << "End position: " << pos.fen() << endl;
+    }
+
+    elapsed = now() - elapsed + 1;
+
+    cerr << "\n==========================="
+         << "\nTotal time (ms) : " << elapsed
+         << "\nNodes searched  : " << nodes
+         << "\nNodes/second    : " << 1000 * nodes / elapsed << endl;
+  }
+
   // The win rate model returns the probability (per mille) of winning given an eval
   // and a game-ply. The model fits rather accurately the LTC fishtest statistics.
   int win_rate_model(Value v, int ply) {
@@ -272,6 +337,7 @@ void UCI::loop(int argc, char* argv[]) {
       // Do not use these commands during a search!
       else if (token == "flip")     pos.flip();
       else if (token == "bench")    bench(pos, is, states);
+      else if (token == "bench_for_pgo") bench_for_pgo(pos, is, states);
       else if (token == "d")        sync_cout << pos << sync_endl;
       else if (token == "eval")     trace_eval(pos);
       else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
