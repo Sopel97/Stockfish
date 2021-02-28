@@ -34,9 +34,6 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
-#include "dump.h"
-
-extern Dump::Dumper dumper;
 
 namespace Search {
 
@@ -216,15 +213,13 @@ void Search::clear() {
 /// MainThread::search() is started when the program receives the UCI 'go'
 /// command. It searches from the root position and outputs the "bestmove".
 
-/// Returns true if the search was aborted by the dumping mechanism
-
-bool MainThread::search() {
+void MainThread::search() {
 
   if (Limits.perft)
   {
       nodes = perft<true>(rootPos, Limits.perft);
       sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
-      return false;
+      return;
   }
 
   Color us = rootPos.side_to_move();
@@ -242,8 +237,8 @@ bool MainThread::search() {
   }
   else
   {
-      Threads.start_searching();    // start non-main threads
-      if (Thread::search()) return true; // main thread start searching
+      Threads.start_searching(); // start non-main threads
+      Thread::search();          // main thread start searching
   }
 
   // When we reach the maximum depth, we can arrive here without a raise of
@@ -287,16 +282,14 @@ bool MainThread::search() {
       std::cout << " ponder " << UCI::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
 
   std::cout << sync_endl;
-  return false;
 }
+
 
 /// Thread::search() is the main iterative deepening loop. It calls search()
 /// repeatedly with increasing depth until the allocated thinking time has been
 /// consumed, the user stops the search, or the maximum search depth is reached.
 
-/// Return true if search was aborted by the dumping mechanism.
-
-bool Thread::search() {
+void Thread::search() {
 
   // To allow access to (ss-7) up to (ss+2), the stack must be oversized.
   // The former is needed to allow update_continuation_histories(ss-1, ...),
@@ -420,40 +413,6 @@ bool Thread::search() {
 
               contempt = (us == WHITE ?  make_score(dct, dct / 2)
                                       : -make_score(dct, dct / 2));
-          }
-
-          // abortive dumps: P just splats out the position, E dumps
-          // the value. R includes all sorts of evaluations
-          switch (dumper.dtype) {
-          case 'P': {
-            qsearch<PV>(rootPos,ss,alpha,beta,0);
-            StateInfo si;
-            for (Move *x = ss->pv ; is_ok(*x) ; ++x) rootPos.do_move(*x,si);
-            dumper << rootPos.fen() << Eval::evaluate(rootPos) << std::endl;
-            return true;
-          }
-          case 'R': {
-            bool tmp = Eval::useNNUE;
-            Value evals[2];
-            for (unsigned i = 0 ; i < 2 ; ++i) {
-              Eval::useNNUE = i;
-              evals[i] = Eval::evaluate(rootPos);
-            }
-            Eval::useNNUE = tmp;
-            Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
-            std::vector<Value> by_depth;
-            for (int i = 1 ; i <= Limits.depth ; ++i)
-              by_depth.push_back(::search<PV>(rootPos,ss,alpha,beta,i,false));
-            dumper << rootPos.fen() << ' '
-                   << UCI::move(rootMoves[0].pv[0],rootPos.is_chess960());
-            for (unsigned i = 0 ; i < 2 ; ++i) dumper << ' ' << evals[i];
-            dumper << ' ' << q;
-            for (unsigned i = 0 ; i < by_depth.size() ; ++i)
-              dumper << ' ' << by_depth[i];
-            dumper << std::endl;
-            return true;
-          }
-          default: ;            // compiler warning
           }
 
           // Start with a small aspiration window and, in the case of a fail
@@ -591,7 +550,7 @@ bool Thread::search() {
   }
 
   if (!mainThread)
-      return false;
+      return;
 
   mainThread->previousTimeReduction = timeReduction;
 
@@ -599,43 +558,10 @@ bool Thread::search() {
   if (skill.enabled())
       std::swap(rootMoves[0], *std::find(rootMoves.begin(), rootMoves.end(),
                 skill.best ? skill.best : skill.pick_best(multiPV)));
-  return false;
 }
 
 
 namespace {
-
-    bool check_tt(Position &pos, Key posKey, Stack *ss, Value &val, TTEntry *tte,
-                  Value ttValue, Value beta, Thread *thisThread) {
-        if (ss->ttHit)
-        {
-            // Never assume anything about values stored in TT
-            if ((ss->staticEval = val = tte->eval()) == VALUE_NONE)
-                ss->staticEval = val = evaluate(pos);
-
-            // Randomize draw evaluation
-            if (thisThread && val == VALUE_DRAW) val = value_draw(thisThread);
-
-            // Can ttValue be used as a better position evaluation?
-            if (    ttValue != VALUE_NONE
-                && (tte->bound() & (ttValue > val ? BOUND_LOWER : BOUND_UPPER)))
-                val = ttValue;
-        }
-        else
-        {
-            // In case of null move search use previous static eval with a different sign
-            // and addition of two tempos
-            ss->staticEval = val =
-            (ss-1)->currentMove != MOVE_NULL ? evaluate(pos)
-                                             : -(ss-1)->staticEval + 2 * Tempo;
-            if (thisThread)
-              tte->save(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE ,DEPTH_NONE, MOVE_NONE, val);
-            else if (val >= beta)
-              tte->save(posKey, value_to_tt(val, ss->ply), false, BOUND_LOWER,
-                        DEPTH_NONE, MOVE_NONE, ss->staticEval);
-        }
-        return val >= beta;
-    }
 
   // search<>() is the main search function for both PV and non-PV nodes
 
@@ -658,13 +584,9 @@ namespace {
             return alpha;
     }
 
-    // Dive into quiescence search when the depth reaches zero.  Dump
-    // out the position if dump type is Q, but only infrequently.
-    if (depth <= 0) {
-      if (dumper.dtype == 'Q' && (pos.this_thread()->nodes & 0x3FF) == 0)
-        dumper << pos.fen() << std::endl;
-      return qsearch<NT>(pos, ss, alpha, beta);
-    }
+    // Dive into quiescence search when the depth reaches zero
+    if (depth <= 0)
+        return qsearch<NT>(pos, ss, alpha, beta);
 
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -864,7 +786,34 @@ namespace {
         improving = false;
         goto moves_loop;
     }
-    else check_tt(pos,posKey,ss,eval,tte,ttValue,VALUE_NONE,thisThread);
+    else if (ss->ttHit)
+    {
+        // Never assume anything about values stored in TT
+        ss->staticEval = eval = tte->eval();
+        if (eval == VALUE_NONE)
+            ss->staticEval = eval = evaluate(pos);
+
+        // Randomize draw evaluation
+        if (eval == VALUE_DRAW)
+            eval = value_draw(thisThread);
+
+        // Can ttValue be used as a better position evaluation?
+        if (    ttValue != VALUE_NONE
+            && (tte->bound() & (ttValue > eval ? BOUND_LOWER : BOUND_UPPER)))
+            eval = ttValue;
+    }
+    else
+    {
+        // In case of null move search use previous static eval with a different sign
+        // and addition of two tempos
+        if ((ss-1)->currentMove != MOVE_NULL)
+            ss->staticEval = eval = evaluate(pos);
+        else
+            ss->staticEval = eval = -(ss-1)->staticEval + 2 * Tempo;
+
+        // Save static evaluation into transposition table
+        tte->save(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
+    }
 
     // Use static evaluation difference to improve quiet move ordering
     if (is_ok((ss-1)->currentMove) && !(ss-1)->inCheck && !priorCapture)
@@ -1114,7 +1063,6 @@ moves_loop: // When in check, search starts from here
 
           // Reduced depth of the next LMR search
           int lmrDepth = std::max(newDepth - reduction(improving, depth, moveCount), 0);
-          bool prunable = false;
 
           if (   captureOrPromotion
               || givesCheck)
@@ -1123,11 +1071,11 @@ moves_loop: // When in check, search starts from here
               if (   !givesCheck
                   && lmrDepth < 1
                   && captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))] < 0)
-                prunable = true;
+                  continue;
 
               // SEE based pruning
-              else if (!pos.see_ge(move, Value(-218) * depth)) // (~25 Elo)
-                  prunable = true;
+              if (!pos.see_ge(move, Value(-218) * depth)) // (~25 Elo)
+                  continue;
           }
           else
           {
@@ -1135,36 +1083,22 @@ moves_loop: // When in check, search starts from here
               if (   lmrDepth < 4 + ((ss-1)->statScore > 0 || (ss-1)->moveCount == 1)
                   && (*contHist[0])[movedPiece][to_sq(move)] < CounterMovePruneThreshold
                   && (*contHist[1])[movedPiece][to_sq(move)] < CounterMovePruneThreshold)
-                prunable = true;
+                  continue;
 
               // Futility pruning: parent node (~5 Elo)
-              else if (   lmrDepth < 7
+              if (   lmrDepth < 7
                   && !ss->inCheck
                   && ss->staticEval + 174 + 157 * lmrDepth <= alpha
                   &&  (*contHist[0])[movedPiece][to_sq(move)]
                     + (*contHist[1])[movedPiece][to_sq(move)]
                     + (*contHist[3])[movedPiece][to_sq(move)]
                     + (*contHist[5])[movedPiece][to_sq(move)] / 3 < 28255)
-                  prunable = true;
+                  continue;
 
               // Prune moves with negative SEE (~20 Elo)
-              else if (!pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18)) * lmrDepth * lmrDepth)))
-                prunable = true;
+              if (!pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18)) * lmrDepth * lmrDepth)))
+                  continue;
           }
-          if (dumper.dtype == 'L' && !(pos.this_thread()->nodes & 0x1FFFF)) {
-            dumper << pos.fen() << ' ' << depth << ' ' << improving << ' '
-                   << moveCount << ' ' << alpha << ' ' << captureOrPromotion
-                   << ' ' << givesCheck << ' ' << lmrDepth;
-            for (unsigned i : { 0,1,3,5 })
-              dumper << ' ' << (*contHist[i])[movedPiece][to_sq(move)];
-            dumper << ' ' << captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))]
-                   << ' ' << (ss-1)->statScore << ' ' << (ss-1)->moveCount
-                   << ' ' << ss->inCheck << ' ' << ss->staticEval;
-            for (int i = 0 ; i >= -600 ; --i)
-              dumper << ' ' << pos.see_ge(move,Value(i));
-            dumper << ' ' << prunable << std::endl;
-          }
-          if (prunable) continue;
       }
 
       // Step 14. Extensions (~75 Elo)
@@ -1581,7 +1515,35 @@ moves_loop: // When in check, search starts from here
     }
     else
     {
-        if (check_tt(pos,posKey,ss,bestValue,tte,ttValue,beta,nullptr)) return bestValue;
+        if (ss->ttHit)
+        {
+            // Never assume anything about values stored in TT
+            if ((ss->staticEval = bestValue = tte->eval()) == VALUE_NONE)
+                ss->staticEval = bestValue = evaluate(pos);
+
+            // Can ttValue be used as a better position evaluation?
+            if (    ttValue != VALUE_NONE
+                && (tte->bound() & (ttValue > bestValue ? BOUND_LOWER : BOUND_UPPER)))
+                bestValue = ttValue;
+        }
+        else
+            // In case of null move search use previous static eval with a different sign
+            // and addition of two tempos
+            ss->staticEval = bestValue =
+            (ss-1)->currentMove != MOVE_NULL ? evaluate(pos)
+                                             : -(ss-1)->staticEval + 2 * Tempo;
+
+        // Stand pat. Return immediately if static value is at least beta
+        if (bestValue >= beta)
+        {
+            // Save gathered info in transposition table
+            if (!ss->ttHit)
+                tte->save(posKey, value_to_tt(bestValue, ss->ply), false, BOUND_LOWER,
+                          DEPTH_NONE, MOVE_NONE, ss->staticEval);
+
+            return bestValue;
+        }
+
         if (PvNode && bestValue > alpha)
             alpha = bestValue;
 
