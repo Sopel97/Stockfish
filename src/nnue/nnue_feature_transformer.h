@@ -120,13 +120,12 @@ namespace Eval::NNUE {
     }
 
     // Convert input features
-    template<unsigned nnue_index>
     void Transform(const Position& pos, OutputType* output) const {
 
-      UpdateAccumulator<nnue_index>(pos, WHITE);
-      UpdateAccumulator<nnue_index>(pos, BLACK);
+      UpdateAccumulator(pos, WHITE);
+      UpdateAccumulator(pos, BLACK);
 
-      const auto& accumulation = pos.state()->accumulator[nnue_index].accumulation;
+      const auto& accumulation = pos.state()->accumulator.accumulation;
 
   #if defined(USE_AVX512)
       constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
@@ -237,7 +236,6 @@ namespace Eval::NNUE {
     }
 
    private:
-    template<unsigned nnue_index>
     void UpdateAccumulator(const Position& pos, const Color c) const {
 
   #ifdef VECTOR
@@ -250,7 +248,7 @@ namespace Eval::NNUE {
       // of the estimated gain in terms of features to be added/subtracted.
       StateInfo *st = pos.state(), *next = nullptr;
       int gain = pos.count<ALL_PIECES>() - 2;
-      while (st->accumulator[nnue_index].state[c] == EMPTY)
+      while (st->accumulator.state[c] == EMPTY)
       {
         auto& dp = st->dirtyPiece;
         // The first condition tests whether an incremental update is
@@ -265,7 +263,7 @@ namespace Eval::NNUE {
         st = st->previous;
       }
 
-      if (st->accumulator[nnue_index].state[c] == COMPUTED)
+      if (st->accumulator.state[c] == COMPUTED)
       {
         if (next == nullptr)
           return;
@@ -285,8 +283,8 @@ namespace Eval::NNUE {
               st2->dirtyPiece, c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
-        next->accumulator[nnue_index].state[c] = COMPUTED;
-        pos.state()->accumulator[nnue_index].state[c] = COMPUTED;
+        next->accumulator.state[c] = COMPUTED;
+        pos.state()->accumulator.state[c] = COMPUTED;
 
         // Now update the accumulators listed in info[], where the last element is a sentinel.
         StateInfo *info[3] =
@@ -296,7 +294,7 @@ namespace Eval::NNUE {
         {
           // Load accumulator
           auto accTile = reinterpret_cast<vec_t*>(
-            &st->accumulator[nnue_index].accumulation[c][0][j * kTileHeight]);
+            &st->accumulator.accumulation[c][0][j * kTileHeight]);
           for (IndexType k = 0; k < kNumRegs; ++k)
             acc[k] = vec_load(&accTile[k]);
 
@@ -322,7 +320,7 @@ namespace Eval::NNUE {
 
             // Store accumulator
             accTile = reinterpret_cast<vec_t*>(
-              &info[i]->accumulator[nnue_index].accumulation[c][0][j * kTileHeight]);
+              &info[i]->accumulator.accumulation[c][0][j * kTileHeight]);
             for (IndexType k = 0; k < kNumRegs; ++k)
               vec_store(&accTile[k], acc[k]);
           }
@@ -360,7 +358,7 @@ namespace Eval::NNUE {
       {
         // Refresh the accumulator
         auto& accumulator = pos.state()->accumulator;
-        accumulator[nnue_index].state[c] = COMPUTED;
+        accumulator.state[c] = COMPUTED;
         Features::IndexList active;
         Features::HalfKP<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
 
@@ -382,7 +380,7 @@ namespace Eval::NNUE {
           }
 
           auto accTile = reinterpret_cast<vec_t*>(
-              &accumulator[nnue_index].accumulation[c][0][j * kTileHeight]);
+              &accumulator.accumulation[c][0][j * kTileHeight]);
           for (unsigned k = 0; k < kNumRegs; k++)
             vec_store(&accTile[k], acc[k]);
         }

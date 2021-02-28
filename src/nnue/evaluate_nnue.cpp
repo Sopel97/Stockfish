@@ -77,7 +77,7 @@ namespace Eval::NNUE {
 
   // Evaluation function file name
   std::string fileName;
-  std::vector<nnue_data> ndata;
+  nnue_data   ndata;
 
   // Read network header
   bool ReadHeader(std::istream& stream, std::uint32_t* hash_value, std::string* architecture)
@@ -96,23 +96,17 @@ namespace Eval::NNUE {
   // Read network parameters
   bool ReadParameters(std::istream& stream) {
 
-    ndata.clear();
-    for ( ;; ) {
-      std::uint32_t hash_value;
-      std::string architecture;
-      if (!ReadHeader(stream, &hash_value, &architecture)) return false;
-      if (hash_value != kHashValue) return false;
-      ndata.push_back(nnue_data());
-      if (!Detail::ReadParameters(stream, *ndata.back().feature_transformer))
-        return false;
-      if (!Detail::ReadParameters(stream, *ndata.back().network)) return false;
-      if (!stream) return false;
-      if (stream.peek() == std::ios::traits_type::eof()) return true;
-    }
+    std::uint32_t hash_value;
+    std::string architecture;
+    if (!ReadHeader(stream, &hash_value, &architecture)) return false;
+    if (hash_value != kHashValue) return false;
+    if (!Detail::ReadParameters(stream, *ndata.feature_transformer))
+      return false;
+    if (!Detail::ReadParameters(stream, *ndata.network)) return false;
+    return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
   // Evaluation function. Perform differential calculation.
-  template<NetType nnue_index>
   Value evaluate(const Position& pos) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
@@ -136,14 +130,11 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    ndata[nnue_index].feature_transformer->Transform<nnue_index>(pos, transformed_features);
-    const auto output =
-      ndata[nnue_index].network->Propagate(transformed_features, buffer);
+    ndata.feature_transformer->Transform(pos, transformed_features);
+    const auto output = ndata.network->Propagate(transformed_features, buffer);
 
     return static_cast<Value>(output[0] / FV_SCALE);
   }
-
-  unsigned num_nnues() { return ndata.size(); }
 
   // Load eval, from a file stream or a memory stream
   bool load_eval(std::string name, std::istream& stream) {
@@ -151,9 +142,5 @@ namespace Eval::NNUE {
     fileName = name;
     return ReadParameters(stream);
   }
-
-  template Value evaluate<EVAL>(const Position& pos);
-  template Value evaluate<SHALLOWER>(const Position& pos);
-  template Value evaluate<DEEPER>(const Position& pos);
 
 } // namespace Eval::NNUE

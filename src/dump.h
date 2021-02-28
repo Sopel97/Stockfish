@@ -29,17 +29,16 @@
 // you're dumping to.
 
 namespace Dump {
-  enum DType { Q, T, P, R, E }; // Q = dump root of qsearch tree
+  struct Dumper : std::ostringstream {
+    std::string        fname;
+    char               dtype;
+                                // Q = dump root of qsearch tree
                                 // T = dump depth Three nodes
                                 // P = dump position at end of qsearch PV
                                 // R = results of various evaluation functions
-                                // E = dump value at end of qsearch PV
+                                // L = LMR data
 
-  struct Dumper : std::ostringstream {
-    std::string        fname;
-    DType              dtype;
-
-    Dumper(const std::string &f = std::string()) : fname(f) { }
+    Dumper(const std::string &f = std::string()) : fname(f), dtype(0) { }
 
     operator bool() { return !fname.empty(); }
 

@@ -51,6 +51,5 @@ int main(int argc, char* argv[]) {
 
   Threads.set(0);
   dumper.dump();
-
   return 0;
 }

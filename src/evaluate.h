@@ -23,15 +23,12 @@
 
 #include "types.h"
 
-enum NetType { EVAL, SHALLOWER, DEEPER, NUM_NETS };
-
 class Position;
 
 namespace Eval {
 
   std::string trace(const Position& pos);
   Value evaluate(const Position& pos);
-  Value evaluate(const Position& pos, NetType nnue_index);
 
   extern bool useNNUE;
   extern std::string eval_file_loaded;
@@ -39,12 +36,11 @@ namespace Eval {
   // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
   // for the build process (profile-build and fishtest) to work. Do not change the
   // name of the macro, as it is used in the Makefile.
-  #define EvalFileDefaultName   "nn-9aaa2abe4015.nnue"
+  #define EvalFileDefaultName   "nn-62ef826d1a6d.nnue"
 
   namespace NNUE {
 
-    template<NetType> Value evaluate(const Position& pos);
-    unsigned num_nnues();
+    Value evaluate(const Position& pos);
     bool load_eval(std::string name, std::istream& stream);
     void init();
     void verify();
