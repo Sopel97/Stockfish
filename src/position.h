@@ -57,14 +57,12 @@ struct StateInfo {
   int        repetition;
 
   // Used by NNUE
-  Eval::NNUE::Accumulator accumulator[NUM_NETS];
+  Eval::NNUE::Accumulator accumulator;
   DirtyPiece dirtyPiece;
 
   void reset_accumulators(Eval::NNUE::AccumulatorState a) {
-    for (unsigned i = 0 ; i < NUM_NETS ; ++i) {
-      accumulator[i].state[WHITE] = a;
-      accumulator[i].state[BLACK] = a;
-    }
+    accumulator.state[WHITE] = a;
+    accumulator.state[BLACK] = a;
   }
 };
 

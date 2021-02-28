@@ -57,16 +57,7 @@ void on_dump_dir(const Option& o) {
   dumper.fname = p;
 }
 
-void on_dump_type(const Option& o) {
-  if (string(o) == "Q") dumper.dtype = Dump::Q;
-  if (string(o) == "T") dumper.dtype = Dump::T;
-  if (string(o) == "P") dumper.dtype = Dump::P;
-  if (string(o) == "R") dumper.dtype = Dump::R;
-  if (string(o) == "E") dumper.dtype = Dump::E;
-}
-
-void on_cold(const Option &o) { COLD = double(o); }
-void on_hot (const Option &o) { HOT  = double(o); }
+void on_dump_type(const Option& o) { dumper.dtype = string(o)[0]; }
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -108,8 +99,6 @@ void init(OptionsMap& o) {
   o["DumpFile"]              << Option("",on_dump_file);
   o["DumpDir"]               << Option("",on_dump_dir);
   o["DumpType"]              << Option("",on_dump_type);
-  o["Hot"]                   << Option(32000,-32000,32000,on_hot);
-  o["Cold"]                  << Option(-32000,-32000,32000,on_cold);
 }
 
 

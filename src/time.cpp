@@ -17,15 +17,12 @@
 
 #include "position.h"
 #include "search.h"
+#include <sstream>
+#include <iomanip>
 
-int HOT  = 32000;
-int COLD = -32000;
+using namespace std;
+using namespace Search;
 
-Depth adjust_extension(Depth d, const Position &pos) {
-  if (d != ADJUSTMENT_DEPTH || !Eval::useNNUE) return 0;
-  Eval::evaluate(pos,DEEPER);
-  // Eval::evaluate(pos,SHALLOWER);
-  // if (Eval::evaluate(pos,DEEPER) > HOT) return 1;
-  // if (Eval::evaluate(pos,SHALLOWER) < COLD) return -1;
+Depth adjust_extension(Depth, const Position &) {
   return 0;
 }
