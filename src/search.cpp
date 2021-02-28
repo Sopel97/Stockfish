@@ -366,6 +366,10 @@ void Thread::search() {
 
   int searchAgainCounter = 0;
 
+  uint64_t totalNodesPrev = 0;
+  uint64_t prevDepthNodes = 0;
+  double bf = 1.7;
+
   // Iterative deepening loop until requested to stop or the target depth is reached
   while (   ++rootDepth < MAX_PLY
          && !Threads.stop
@@ -540,10 +544,16 @@ void Thread::search() {
             diffTwoMostSearched = rootMoves[0].nodes - rootMoves[1].nodes;
           }
           double nodeBudget = totalNodes / elapsed * (totalTime - elapsed);
-          double nodeBudget2 = totalNodes / elapsed * (totalTime * 0.58 - elapsed);
+
+          if (totalNodes > totalNodesPrev && prevDepthNodes != 0)
+          {
+            bf = bf * 0.75 + (totalNodes - totalNodesPrev) / prevDepthNodes * 0.25;
+          }
+          prevDepthNodes = totalNodes - totalNodesPrev;
+          totalNodesPrev = totalNodes;
 
           // Stop the search if we have exceeded the totalTime
-          if (nodeBudget <= diffTwoMostSearched)
+          if (elapsed >= totalTime)
           {
               // If we are allowed to ponder do not stop the search now but
               // keep pondering until the GUI sends "ponderhit" or "stop".
@@ -554,7 +564,7 @@ void Thread::search() {
           }
           else if (   Threads.increaseDepth
                    && !mainThread->ponder
-                   && nodeBudget2 <= diffTwoMostSearched)
+                   && nodeBudget <= diffTwoMostSearched / 2 + prevDepthNodes * bf)
                    Threads.increaseDepth = false;
           else
                    Threads.increaseDepth = true;
