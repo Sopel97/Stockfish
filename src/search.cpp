@@ -368,7 +368,6 @@ void Thread::search() {
 
   uint64_t totalNodesPrev = 0;
   uint64_t prevDepthNodes = 0;
-  double bf = 1.7;
 
   // Iterative deepening loop until requested to stop or the target depth is reached
   while (   ++rootDepth < MAX_PLY
@@ -545,10 +544,6 @@ void Thread::search() {
           }
           double nodeBudget = totalNodes / elapsed * (totalTime - elapsed);
 
-          if (totalNodes > totalNodesPrev && prevDepthNodes != 0)
-          {
-            bf = bf * 0.75 + (totalNodes - totalNodesPrev) / prevDepthNodes * 0.25;
-          }
           prevDepthNodes = totalNodes - totalNodesPrev;
           totalNodesPrev = totalNodes;
 
@@ -564,7 +559,7 @@ void Thread::search() {
           }
           else if (   Threads.increaseDepth
                    && !mainThread->ponder
-                   && nodeBudget <= diffTwoMostSearched / 2 + prevDepthNodes * bf)
+                   && nodeBudget <= diffTwoMostSearched / 2 + prevDepthNodes * 1.7)
                    Threads.increaseDepth = false;
           else
                    Threads.increaseDepth = true;
