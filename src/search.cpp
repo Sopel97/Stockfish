@@ -504,6 +504,8 @@ void Thread::search() {
           && !Threads.stop
           && !mainThread->stopOnPonderhit)
       {
+          double elapsed = Time.elapsed();
+
           double fallingEval = (318 + 6 * (mainThread->bestPreviousScore - bestValue)
                                     + 6 * (mainThread->iterValue[iterIdx] - bestValue)) / 825.0;
           fallingEval = std::clamp(fallingEval, 0.5, 1.5);
@@ -527,8 +529,21 @@ void Thread::search() {
           if (rootMoves.size() == 1)
               totalTime = std::min(500.0, totalTime);
 
+          double diffTwoMostSearched = 0;
+          double totalNodes = 0;
+          for (RootMove& rm : rootMoves)
+          {
+            totalNodes += rm.nodes;
+          }
+          if (rootMoves.size() >= 2 && rootMoves[0].nodes > rootMoves[1].nodes)
+          {
+            diffTwoMostSearched = rootMoves[0].nodes - rootMoves[1].nodes;
+          }
+          double nodeBudget = totalNodes / elapsed * (totalTime - elapsed);
+          double nodeBudget2 = totalNodes / elapsed * (totalTime * 0.58 - elapsed);
+
           // Stop the search if we have exceeded the totalTime
-          if (Time.elapsed() > totalTime)
+          if (nodeBudget <= diffTwoMostSearched)
           {
               // If we are allowed to ponder do not stop the search now but
               // keep pondering until the GUI sends "ponderhit" or "stop".
@@ -539,7 +554,7 @@ void Thread::search() {
           }
           else if (   Threads.increaseDepth
                    && !mainThread->ponder
-                   && Time.elapsed() > totalTime * 0.58)
+                   && nodeBudget2 <= diffTwoMostSearched)
                    Threads.increaseDepth = false;
           else
                    Threads.increaseDepth = true;
@@ -1013,6 +1028,8 @@ moves_loop: // When in check, search starts from here
     {
       assert(is_ok(move));
 
+      auto nodes_before = thisThread->nodes.load();
+
       if (move == excludedMove)
           continue;
 
@@ -1330,8 +1347,12 @@ moves_loop: // When in check, search starts from here
 
       if (rootNode)
       {
+          auto nodes_now = thisThread->nodes.load();
+
           RootMove& rm = *std::find(thisThread->rootMoves.begin(),
                                     thisThread->rootMoves.end(), move);
+
+          rm.nodes += nodes_now - nodes_before;
 
           // PV move or new best move?
           if (moveCount == 1 || value > alpha)
