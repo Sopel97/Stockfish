@@ -291,6 +291,20 @@ void MainThread::search() {
 /// repeatedly with increasing depth until the allocated thinking time has been
 /// consumed, the user stops the search, or the maximum search depth is reached.
 
+int InitialAspirationWindow[40*5] = {
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+  17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+};
+TUNE(SetRange(5, 100), InitialAspirationWindow);
+
 void Thread::search() {
 
   // To allow access to (ss-7) up to (ss+2), the stack must be oversized.
@@ -405,14 +419,15 @@ void Thread::search() {
           // Reset aspiration window starting size
           if (rootDepth >= 4)
           {
-              auto calc_delta = [](double prev) {
+              auto calc_bucket = [](double prev) {
                 double e = std::exp(prev / 600.0);
                 double f = e / (e + 1.0);
-                return Value(17 + std::abs(f * 50));
+                return std::clamp(int(f * 20), -20, 19) + 20;
               };
 
               Value prev = rootMoves[pvIdx].previousScore;
-              delta = calc_delta(prev);
+              int fhc = std::clamp(failedHighCnt, 0, 4);
+              delta = (Value)InitialAspirationWindow[fhc * 40 + calc_bucket(prev)];
               alpha = std::max(prev - delta,-VALUE_INFINITE);
               beta  = std::min(prev + delta, VALUE_INFINITE);
 
