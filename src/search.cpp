@@ -406,7 +406,9 @@ void Thread::search() {
           if (rootDepth >= 4)
           {
               auto calc_delta = [](double prev) {
-                return Value(std::pow(std::abs(prev), 0.33)) + 17;
+                double e = std::exp(prev / 600.0);
+                double f = e / (e + 1.0);
+                return Value(17 + std::abs(f * 50));
               };
 
               Value prev = rootMoves[pvIdx].previousScore;
