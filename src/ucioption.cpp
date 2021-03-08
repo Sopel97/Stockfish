@@ -32,6 +32,7 @@
 #include "dump.h"
 
 using std::string;
+double test_float = 1.0;
 
 UCI::OptionsMap Options; // Global object
 
@@ -58,6 +59,10 @@ void on_dump_dir(const Option& o) {
 }
 
 void on_dump_type(const Option& o) { dumper.dtype = string(o)[0]; }
+void on_test_float(const Option &o) {
+  string str(o);
+  test_float = stod(str.substr(str[0] == 's'));
+}
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -99,6 +104,7 @@ void init(OptionsMap& o) {
   o["DumpFile"]              << Option("",on_dump_file);
   o["DumpDir"]               << Option("",on_dump_dir);
   o["DumpType"]              << Option("",on_dump_type);
+  o["TestFloat"]             << Option("",on_test_float);
 }
 
 

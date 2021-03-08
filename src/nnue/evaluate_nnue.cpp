@@ -31,6 +31,15 @@
 
 namespace Eval::NNUE {
 
+  // Input feature converter
+  LargePagePtr<FeatureTransformer> feature_transformer;
+
+  // Evaluation function
+  AlignedPtr<Network> network;
+
+  // Evaluation function file name
+  std::string fileName;
+
   namespace Detail {
 
   // Initialize the evaluation function parameters
@@ -61,23 +70,12 @@ namespace Eval::NNUE {
 
   }  // namespace Detail
 
-  struct nnue_data {
-    // Input feature converter
-    LargePagePtr<FeatureTransformer> feature_transformer;
+  // Initialize the evaluation function parameters
+  void Initialize() {
 
-    // Evaluation function
-    AlignedPtr<Network> network;
-
-    nnue_data() {
-      Detail::Initialize(feature_transformer);
-      Detail::Initialize(network);
-    }
-
-  };
-
-  // Evaluation function file name
-  std::string fileName;
-  nnue_data   ndata;
+    Detail::Initialize(feature_transformer);
+    Detail::Initialize(network);
+  }
 
   // Read network header
   bool ReadHeader(std::istream& stream, std::uint32_t* hash_value, std::string* architecture)
@@ -100,9 +98,8 @@ namespace Eval::NNUE {
     std::string architecture;
     if (!ReadHeader(stream, &hash_value, &architecture)) return false;
     if (hash_value != kHashValue) return false;
-    if (!Detail::ReadParameters(stream, *ndata.feature_transformer))
-      return false;
-    if (!Detail::ReadParameters(stream, *ndata.network)) return false;
+    if (!Detail::ReadParameters(stream, *feature_transformer)) return false;
+    if (!Detail::ReadParameters(stream, *network)) return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
@@ -130,8 +127,8 @@ namespace Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    ndata.feature_transformer->Transform(pos, transformed_features);
-    const auto output = ndata.network->Propagate(transformed_features, buffer);
+    feature_transformer->Transform(pos, transformed_features);
+    const auto output = network->Propagate(transformed_features, buffer);
 
     return static_cast<Value>(output[0] / FV_SCALE);
   }
@@ -139,6 +136,7 @@ namespace Eval::NNUE {
   // Load eval, from a file stream or a memory stream
   bool load_eval(std::string name, std::istream& stream) {
 
+    Initialize();
     fileName = name;
     return ReadParameters(stream);
   }

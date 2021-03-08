@@ -34,6 +34,11 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
+#include "dump.h"
+
+extern Dump::Dumper dumper;
+double step13_prunable(const std::vector<int> &data);
+extern double test_float;
 
 namespace Search {
 
@@ -213,13 +218,15 @@ void Search::clear() {
 /// MainThread::search() is started when the program receives the UCI 'go'
 /// command. It searches from the root position and outputs the "bestmove".
 
-void MainThread::search() {
+/// Returns true if the search was aborted by the dumping mechanism
+
+bool MainThread::search() {
 
   if (Limits.perft)
   {
       nodes = perft<true>(rootPos, Limits.perft);
       sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;
-      return;
+      return false;
   }
 
   Color us = rootPos.side_to_move();
@@ -237,8 +244,8 @@ void MainThread::search() {
   }
   else
   {
-      Threads.start_searching(); // start non-main threads
-      Thread::search();          // main thread start searching
+      Threads.start_searching();    // start non-main threads
+      if (Thread::search()) return true; // main thread start searching
   }
 
   // When we reach the maximum depth, we can arrive here without a raise of
@@ -282,14 +289,16 @@ void MainThread::search() {
       std::cout << " ponder " << UCI::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
 
   std::cout << sync_endl;
+  return false;
 }
-
 
 /// Thread::search() is the main iterative deepening loop. It calls search()
 /// repeatedly with increasing depth until the allocated thinking time has been
 /// consumed, the user stops the search, or the maximum search depth is reached.
 
-void Thread::search() {
+/// Return true if search was aborted by the dumping mechanism.
+
+bool Thread::search() {
 
   // To allow access to (ss-7) up to (ss+2), the stack must be oversized.
   // The former is needed to allow update_continuation_histories(ss-1, ...),
@@ -413,6 +422,40 @@ void Thread::search() {
 
               contempt = (us == WHITE ?  make_score(dct, dct / 2)
                                       : -make_score(dct, dct / 2));
+          }
+
+          // abortive dumps: P just splats out the position, E dumps
+          // the value. R includes all sorts of evaluations
+          switch (dumper.dtype) {
+          case 'P': {
+            qsearch<PV>(rootPos,ss,alpha,beta,0);
+            StateInfo si;
+            for (Move *x = ss->pv ; is_ok(*x) ; ++x) rootPos.do_move(*x,si);
+            dumper << rootPos.fen() << Eval::evaluate(rootPos) << std::endl;
+            return true;
+          }
+          case 'R': {
+            bool tmp = Eval::useNNUE;
+            Value evals[2];
+            for (unsigned i = 0 ; i < 2 ; ++i) {
+              Eval::useNNUE = i;
+              evals[i] = Eval::evaluate(rootPos);
+            }
+            Eval::useNNUE = tmp;
+            Value q = qsearch<PV>(rootPos,ss,alpha,beta,0);
+            std::vector<Value> by_depth;
+            for (int i = 1 ; i <= Limits.depth ; ++i)
+              by_depth.push_back(::search<PV>(rootPos,ss,alpha,beta,i,false));
+            dumper << rootPos.fen() << ' '
+                   << UCI::move(rootMoves[0].pv[0],rootPos.is_chess960());
+            for (unsigned i = 0 ; i < 2 ; ++i) dumper << ' ' << evals[i];
+            dumper << ' ' << q;
+            for (unsigned i = 0 ; i < by_depth.size() ; ++i)
+              dumper << ' ' << by_depth[i];
+            dumper << std::endl;
+            return true;
+          }
+          default: ;            // compiler warning
           }
 
           // Start with a small aspiration window and, in the case of a fail
@@ -550,7 +593,7 @@ void Thread::search() {
   }
 
   if (!mainThread)
-      return;
+      return false;
 
   mainThread->previousTimeReduction = timeReduction;
 
@@ -558,6 +601,7 @@ void Thread::search() {
   if (skill.enabled())
       std::swap(rootMoves[0], *std::find(rootMoves.begin(), rootMoves.end(),
                 skill.best ? skill.best : skill.pick_best(multiPV)));
+  return false;
 }
 
 
@@ -584,9 +628,13 @@ namespace {
             return alpha;
     }
 
-    // Dive into quiescence search when the depth reaches zero
-    if (depth <= 0)
-        return qsearch<NT>(pos, ss, alpha, beta);
+    // Dive into quiescence search when the depth reaches zero.  Dump
+    // out the position if dump type is Q, but only infrequently.
+    if (depth <= 0) {
+      if (dumper.dtype == 'Q' && (pos.this_thread()->nodes & 0x3FF) == 0)
+        dumper << pos.fen() << std::endl;
+      return qsearch<NT>(pos, ss, alpha, beta);
+    }
 
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -1052,6 +1100,7 @@ moves_loop: // When in check, search starts from here
 
       // Calculate new depth for this move
       newDepth = depth - 1;
+      bool dumping_step13 = false;
 
       // Step 13. Pruning at shallow depth (~200 Elo)
       if (  !rootNode
@@ -1063,7 +1112,6 @@ moves_loop: // When in check, search starts from here
 
           // Reduced depth of the next LMR search
           int lmrDepth = std::max(newDepth - reduction(improving, depth, moveCount), 0);
-
           if (   captureOrPromotion
               || givesCheck)
           {
@@ -1071,11 +1119,11 @@ moves_loop: // When in check, search starts from here
               if (   !givesCheck
                   && lmrDepth < 1
                   && captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))] < 0)
-                  continue;
+                continue;
 
               // SEE based pruning
               if (!pos.see_ge(move, Value(-218) * depth)) // (~25 Elo)
-                  continue;
+                continue;
           }
           else
           {
@@ -1083,8 +1131,7 @@ moves_loop: // When in check, search starts from here
               if (   lmrDepth < 4 + ((ss-1)->statScore > 0 || (ss-1)->moveCount == 1)
                   && (*contHist[0])[movedPiece][to_sq(move)] < CounterMovePruneThreshold
                   && (*contHist[1])[movedPiece][to_sq(move)] < CounterMovePruneThreshold)
-                  continue;
-
+                continue;
               // Futility pruning: parent node (~5 Elo)
               if (   lmrDepth < 7
                   && !ss->inCheck
@@ -1093,12 +1140,48 @@ moves_loop: // When in check, search starts from here
                     + (*contHist[1])[movedPiece][to_sq(move)]
                     + (*contHist[3])[movedPiece][to_sq(move)]
                     + (*contHist[5])[movedPiece][to_sq(move)] / 3 < 28255)
-                  continue;
+                continue;
 
               // Prune moves with negative SEE (~20 Elo)
               if (!pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18)) * lmrDepth * lmrDepth)))
-                  continue;
+                continue;
           }
+
+          // gather the data that appears to be relevant to step 13 pruning
+
+          std::vector<int> data(19);
+          data[0] = depth;
+          data[1] = improving;
+          data[2] = moveCount;
+          data[3] = alpha;
+          data[4] = beta;
+          data[5] = captureOrPromotion;
+          data[6] = givesCheck;
+          data[7] = lmrDepth;
+          for (unsigned i = 0 ; i < 6 ; ++i)
+            data[8 + i] =
+              (*(ss-1-i)->continuationHistory)[movedPiece][to_sq(move)];
+          data[14] = captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))];
+          data[15] = (ss-1)->statScore;
+          data[16] = (ss-1)->moveCount;
+          data[17] = ss->inCheck;
+          data[18] = ss->staticEval;
+
+          double prunability = 0;
+          if (test_float != 1) prunability = step13_prunable(data);
+
+          // dump relevant data using dumping mechanism
+          if (dumper.dtype == 'L' && !(pos.this_thread()->nodes & 0xFFFF)) {
+            dumping_step13 = true;
+            dumper << pos.fen();
+            for (unsigned i = 0 ; i < 19 ; ++i) dumper << ' ' << data[i];
+            dumper << ' ' << prunability << ' ';
+            // still need to dump final value if no pruning, so
+            // test_float should be 1 if dumping is on
+          }
+
+          // prune!
+          if (!dumping_step13 && prunability > test_float) continue;
       }
 
       // Step 14. Extensions (~75 Elo)
@@ -1134,8 +1217,11 @@ moves_loop: // When in check, search starts from here
           // search without the ttMove. So we assume this expected Cut-node is not singular,
           // that multiple moves fail high, and we can prune the whole subtree by returning
           // a soft bound.
-          else if (singularBeta >= beta)
-              return singularBeta;
+          else if (singularBeta >= beta) {
+            if (dumping_step13)
+              dumper << singularBeta << " singularBeta" << std::endl;
+            return singularBeta;
+          }
 
           // If the eval of ttMove is greater than beta we try also if there is another
           // move that pushes it over beta, if so also produce a cutoff.
@@ -1145,8 +1231,10 @@ moves_loop: // When in check, search starts from here
               value = search<NonPV>(pos, ss, beta - 1, beta, (depth + 3) / 2, cutNode);
               ss->excludedMove = MOVE_NONE;
 
-              if (value >= beta)
-                  return beta;
+              if (value >= beta) {
+                if (dumping_step13) dumper << beta << " beta" << std::endl;
+                return beta;
+              }
           }
       }
 
@@ -1325,8 +1413,10 @@ moves_loop: // When in check, search starts from here
       // Finished searching the move. If a stop occurred, the return value of
       // the search cannot be trusted, and we return immediately without
       // updating best move, PV and TT.
-      if (Threads.stop.load(std::memory_order_relaxed))
-          return VALUE_ZERO;
+      if (Threads.stop.load(std::memory_order_relaxed)) {
+        if (dumping_step13) dumper << VALUE_ZERO << " stop" << std::endl;
+        return VALUE_ZERO;
+      }
 
       if (rootNode)
       {
@@ -1374,6 +1464,8 @@ moves_loop: // When in check, search starts from here
               {
                   assert(value >= beta); // Fail high
                   ss->statScore = 0;
+                  if (dumping_step13)
+                    dumper << value << " fail_high" << std::endl;
                   break;
               }
           }
@@ -1388,6 +1480,7 @@ moves_loop: // When in check, search starts from here
           else if (!captureOrPromotion && quietCount < 64)
               quietsSearched[quietCount++] = move;
       }
+      if (dumping_step13) dumper << value << " normal" << std::endl;
     }
 
     // The following condition would detect a stop only after move loop has been
