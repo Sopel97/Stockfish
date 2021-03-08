@@ -32,6 +32,8 @@ struct Node {
       children[1] = node_id;
       cutoff = std::numeric_limits<int32_t>::max();
       input_id = 0;
+    } else {
+      value = 0.0f;
     }
   }
 };
@@ -55,30 +57,45 @@ struct Forest {
       uint32_t num_nodes;
       is >> num_nodes;
 
-      trees_starts.push_back(nodes.size());
+      const uint32_t tree_root_node = nodes.size();
+
+      if (!trees_starts.empty()) {
+        const uint32_t prev_tree_root_node = trees_starts.back();
+        for (uint32_t node_id = prev_tree_root_node; node_id < tree_root_node; ++node_id) {
+          // A hacky condition for is_leaf
+          if (nodes[node_id].children[0] == nodes[node_id].children[1]) {
+            // Attach the previous tree leaves to the next tree root.
+            nodes[node_id].children[0] = tree_root_node;
+            nodes[node_id].children[1] = tree_root_node;
+          }
+        }
+      }
+
+      trees_starts.push_back(tree_root_node);
 
       for (uint32_t node_id = 0; node_id < num_nodes; ++node_id) {
-        nodes.emplace_back(tree_id, node_id, is);
+        auto& node = nodes.emplace_back(tree_id, node_id, is);
+        // We're making one big graph, so adjust the children indices
+        node.children[0] += tree_root_node;
+        node.children[1] += tree_root_node;
       }
     }
   }
 
   [[nodiscard]] float evaluate(int32_t input[]) const {
     float v = bias;
-    for (uint32_t tree_start : trees_starts) {
-      uint32_t node_id = tree_start;
-      for(;;) {
-        const auto& node = nodes[node_id];
-        const int32_t in = input[node.input_id];
-        const uint32_t choice = in <= node.cutoff;
-        const uint32_t next_node_id = tree_start + node.children[choice];
-        if (node_id == next_node_id) {
-          v += node.value;
-          break;
-        } else {
-          node_id = next_node_id;
-        }
-      }
+    uint32_t node_id = 0;
+    for (;;) {
+      const auto& node = nodes[node_id];
+      const int32_t in = input[node.input_id];
+      const uint32_t choice = in <= node.cutoff;
+      const uint32_t next_node_id = node.children[choice];
+      v += node.value;
+
+      if (node_id == next_node_id)
+        break;
+
+      node_id = next_node_id;
     }
     return v;
   }
