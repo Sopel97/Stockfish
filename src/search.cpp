@@ -35,9 +35,9 @@
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 #include "dump.h"
+#include "dforest.h"
 
 extern Dump::Dumper dumper;
-double step13_prunable(const std::vector<int> &data);
 extern double test_float;
 
 namespace Search {
@@ -1149,7 +1149,7 @@ moves_loop: // When in check, search starts from here
 
           // gather the data that appears to be relevant to step 13 pruning
 
-          std::vector<int> data(19);
+          int32_t data[19];
           data[0] = depth;
           data[1] = improving;
           data[2] = moveCount;
