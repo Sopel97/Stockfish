@@ -1052,33 +1052,28 @@ Value Eval::evaluate(const Position& pos) {
       v = Evaluation<NO_TRACE>(pos).value();
   else
   {
+      auto me = Material::probe(pos);
+
+      if (me->specialized_eval_exists())
+          return me->evaluate(pos);
+
+      Score score = pos.psq_score() + me->imbalance() + pos.this_thread()->contempt;
+
+      v = mg_value(score) * int(me->game_phase())
+        + eg_value(score) * int(PHASE_MIDGAME - me->game_phase());
+      v /= PHASE_MIDGAME;
+
+      // Side to move point of view
+      v = (pos.side_to_move() == WHITE ? v : -v) + Tempo;
+
       // Scale and shift NNUE for compatibility with search and classical evaluation
       auto  adjusted_NNUE = [&](){
          int mat = pos.non_pawn_material() + 2 * PawnValueMg * pos.count<PAWN>();
          return NNUE::evaluate(pos) * (641 + mat / 32 - 4 * pos.rule50_count()) / 1024 + Tempo;
       };
 
-      // If there is PSQ imbalance use classical eval, with small probability if it is small
-      Value psq = Value(abs(eg_value(pos.psq_score())));
-      int   r50 = 16 + pos.rule50_count();
-      bool  largePsq = psq * 16 > (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50;
-      bool  classical = largePsq || (psq > PawnValueMg / 4 && !(pos.this_thread()->nodes & 0xB));
-
-      // Use classical evaluation for really low piece endgames.
-      // The most critical case is a bishop + A/H file pawn vs naked king draw.
-      bool strongClassical = pos.non_pawn_material() < 2 * RookValueMg && pos.count<PAWN>() < 2;
-
-      v = classical || strongClassical ? Evaluation<NO_TRACE>(pos).value() : adjusted_NNUE();
-
-      // If the classical eval is small and imbalance large, use NNUE nevertheless.
-      // For the case of opposite colored bishops, switch to NNUE eval with
-      // small probability if the classical eval is less than the threshold.
-      if (   largePsq && !strongClassical
-          && (   abs(v) * 16 < NNUEThreshold2 * r50
-              || (   pos.opposite_bishops()
-                  && abs(v) * 16 < (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50
-                  && !(pos.this_thread()->nodes & 0xB))))
-          v = adjusted_NNUE();
+      if (abs(v) < NNUEThreshold1)
+        v = adjusted_NNUE();
   }
 
   // Damp down the evaluation linearly when shuffling
