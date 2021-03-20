@@ -64,7 +64,10 @@ namespace Stockfish::Eval::NNUE {
 
     std::uint32_t header;
     header = read_little_endian<std::uint32_t>(stream);
-    if (!stream || header != T::GetHashValue()) return false;
+    if (!stream || header != T::GetHashValue()) {
+      std::cerr << "Invalid header hash value " << header << ". Expected " << T::GetHashValue() << '\n';
+      return false;
+    }
     return reference.ReadParameters(stream);
   }
 
@@ -86,7 +89,10 @@ namespace Stockfish::Eval::NNUE {
     version     = read_little_endian<std::uint32_t>(stream);
     *hash_value = read_little_endian<std::uint32_t>(stream);
     size        = read_little_endian<std::uint32_t>(stream);
-    if (!stream || version != kVersion) return false;
+    if (!stream || version != kVersion) {
+      std::cerr << "Invalid version " << version << ". Expected " << kVersion << '\n';
+      return false;
+    }
     architecture->resize(size);
     stream.read(&(*architecture)[0], size);
     return !stream.fail();
