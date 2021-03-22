@@ -27,7 +27,7 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
   // Affine transformation layer
-  template <typename PreviousLayer, IndexType OutputDimensions>
+  template <typename PreviousLayer, IndexType OutputDimensions, bool Skip = false>
   class AffineTransform {
    public:
     // Input/output type
@@ -35,10 +35,16 @@ namespace Stockfish::Eval::NNUE::Layers {
     using OutputType = std::int32_t;
     static_assert(std::is_same<InputType, std::uint8_t>::value, "");
 
+    static constexpr bool kSkip = Skip;
+
     // Number of input/output dimensions
     static constexpr IndexType kInputDimensions =
         PreviousLayer::kOutputDimensions;
-    static constexpr IndexType kOutputDimensions = OutputDimensions;
+    static constexpr IndexType kAffineOutputDimensions = OutputDimensions;
+    static constexpr IndexType kOutputDimensions =
+        kAffineOutputDimensions
+        + (kSkip ? kInputDimensions : 0);
+
     static constexpr IndexType kPaddedInputDimensions =
         CeilToMultiple<IndexType>(kInputDimensions, kMaxSimdWidth);
 #if defined (USE_AVX512)
@@ -58,7 +64,7 @@ namespace Stockfish::Eval::NNUE::Layers {
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t GetHashValue() {
       std::uint32_t hash_value = 0xCC03DAE4u;
-      hash_value += kOutputDimensions;
+      hash_value += kAffineOutputDimensions;
       hash_value ^= PreviousLayer::GetHashValue() >> 1;
       hash_value ^= PreviousLayer::GetHashValue() << 31;
       return hash_value;
@@ -67,33 +73,33 @@ namespace Stockfish::Eval::NNUE::Layers {
    // Read network parameters
     bool ReadParameters(std::istream& stream) {
       if (!previous_layer_.ReadParameters(stream)) return false;
-      for (std::size_t i = 0; i < kOutputDimensions; ++i)
+      for (std::size_t i = 0; i < kAffineOutputDimensions; ++i)
         biases_[i] = read_little_endian<BiasType>(stream);
-      for (std::size_t i = 0; i < kOutputDimensions * kPaddedInputDimensions; ++i)
+      for (std::size_t i = 0; i < kAffineOutputDimensions * kPaddedInputDimensions; ++i)
 #if !defined (USE_SSSE3)
         weights_[i] = read_little_endian<WeightType>(stream);
 #else
         weights_[
-          (i / 4) % (kPaddedInputDimensions / 4) * kOutputDimensions * 4 +
+          (i / 4) % (kPaddedInputDimensions / 4) * kAffineOutputDimensions * 4 +
           i / kPaddedInputDimensions * 4 +
           i % 4
         ] = read_little_endian<WeightType>(stream);
 
       // Determine if eights of weight and input products can be summed using 16bits
       // without saturation. We assume worst case combinations of 0 and 127 for all inputs.
-      if (kOutputDimensions > 1 && !stream.fail())
+      if (kAffineOutputDimensions > 1 && !stream.fail())
       {
           canSaturate16.count = 0;
 #if !defined(USE_VNNI)
           for (IndexType i = 0; i < kPaddedInputDimensions; i += 16)
-              for (IndexType j = 0; j < kOutputDimensions; ++j)
+              for (IndexType j = 0; j < kAffineOutputDimensions; ++j)
                   for (int x = 0; x < 2; ++x)
                   {
-                      WeightType* w = &weights_[i * kOutputDimensions + j * 4 + x * 2];
+                      WeightType* w = &weights_[i * kAffineOutputDimensions + j * 4 + x * 2];
                       int sum[2] = {0, 0};
                       for (int k = 0; k < 8; ++k)
                       {
-                          IndexType idx = k / 2 * kOutputDimensions * 4 + k % 2;
+                          IndexType idx = k / 2 * kAffineOutputDimensions * 4 + k % 2;
                           sum[w[idx] < 0] += w[idx];
                       }
                       for (int sign : {-1, 1})
@@ -102,12 +108,12 @@ namespace Stockfish::Eval::NNUE::Layers {
                               int maxK = 0, maxW = 0;
                               for (int k = 0; k < 8; ++k)
                               {
-                                  IndexType idx = k / 2 * kOutputDimensions * 4 + k % 2;
+                                  IndexType idx = k / 2 * kAffineOutputDimensions * 4 + k % 2;
                                   if (maxW < sign * w[idx])
                                       maxK = k, maxW = sign * w[idx];
                               }
 
-                              IndexType idx = maxK / 2 * kOutputDimensions * 4 + maxK % 2;
+                              IndexType idx = maxK / 2 * kAffineOutputDimensions * 4 + maxK % 2;
                               sum[sign == -1] -= w[idx];
                               canSaturate16.add(j, i + maxK / 2 * 4 + maxK % 2 + x * 2, w[idx]);
                               w[idx] = 0;
@@ -266,22 +272,29 @@ namespace Stockfish::Eval::NNUE::Layers {
       auto& vec_hadd = m128_hadd;
 #endif
 
+      auto output = reinterpret_cast<OutputType*>(buffer);
+      if constexpr (kSkip) {
+        for (int i = 0; i < kInputDimensions; ++i) {
+          output[i] = ((int)input[i]) << kWeightScaleBits;
+        }
+        output += kInputDimensions;
+      }
+
 #if defined (USE_SSSE3)
 
-      const auto output = reinterpret_cast<OutputType*>(buffer);
       const auto input_vector = reinterpret_cast<const vec_t*>(input);
 
-      static_assert(kOutputDimensions % kOutputSimdWidth == 0 || kOutputDimensions == 1);
+      static_assert(kAffineOutputDimensions % kOutputSimdWidth == 0 || kAffineOutputDimensions == 1);
 
       // kOutputDimensions is either 1 or a multiple of kSimdWidth
       // because then it is also an input dimension.
-      if constexpr (kOutputDimensions % kOutputSimdWidth == 0)
+      if constexpr (kAffineOutputDimensions % kOutputSimdWidth == 0)
       {
           constexpr IndexType kNumChunks = kPaddedInputDimensions / 4;
 
           const auto input32 = reinterpret_cast<const std::int32_t*>(input);
           vec_t* outptr = reinterpret_cast<vec_t*>(output);
-          std::memcpy(output, biases_, kOutputDimensions * sizeof(OutputType));
+          std::memcpy(output, biases_, kAffineOutputDimensions * sizeof(OutputType));
 
           for (int i = 0; i < (int)kNumChunks - 3; i += 4)
           {
@@ -289,17 +302,17 @@ namespace Stockfish::Eval::NNUE::Layers {
               const vec_t in1 = vec_set_32(input32[i + 1]);
               const vec_t in2 = vec_set_32(input32[i + 2]);
               const vec_t in3 = vec_set_32(input32[i + 3]);
-              const auto col0 = reinterpret_cast<const vec_t*>(&weights_[(i + 0) * kOutputDimensions * 4]);
-              const auto col1 = reinterpret_cast<const vec_t*>(&weights_[(i + 1) * kOutputDimensions * 4]);
-              const auto col2 = reinterpret_cast<const vec_t*>(&weights_[(i + 2) * kOutputDimensions * 4]);
-              const auto col3 = reinterpret_cast<const vec_t*>(&weights_[(i + 3) * kOutputDimensions * 4]);
-              for (int j = 0; j * kOutputSimdWidth < kOutputDimensions; ++j)
+              const auto col0 = reinterpret_cast<const vec_t*>(&weights_[(i + 0) * kAffineOutputDimensions * 4]);
+              const auto col1 = reinterpret_cast<const vec_t*>(&weights_[(i + 1) * kAffineOutputDimensions * 4]);
+              const auto col2 = reinterpret_cast<const vec_t*>(&weights_[(i + 2) * kAffineOutputDimensions * 4]);
+              const auto col3 = reinterpret_cast<const vec_t*>(&weights_[(i + 3) * kAffineOutputDimensions * 4]);
+              for (int j = 0; j * kOutputSimdWidth < kAffineOutputDimensions; ++j)
                   vec_add_dpbusd_32x4(outptr[j], in0, col0[j], in1, col1[j], in2, col2[j], in3, col3[j]);
           }
           for (int i = 0; i < canSaturate16.count; ++i)
               output[canSaturate16.ids[i].out] += input[canSaturate16.ids[i].in] * canSaturate16.ids[i].w;
       }
-      else if constexpr (kOutputDimensions == 1)
+      else if constexpr (kAffineOutputDimensions == 1)
       {
 #if defined (USE_AVX512)
           if constexpr (kPaddedInputDimensions % (kSimdWidth * 2) != 0)
@@ -341,8 +354,6 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 // Use old implementation for the other architectures.
 
-      auto output = reinterpret_cast<OutputType*>(buffer);
-
 #if defined(USE_SSE2)
       constexpr IndexType kNumChunks = kPaddedInputDimensions / kSimdWidth;
       const __m128i kZeros = _mm_setzero_si128();
@@ -358,7 +369,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       const auto input_vector = reinterpret_cast<const int8x8_t*>(input);
 #endif
 
-      for (IndexType i = 0; i < kOutputDimensions; ++i) {
+      for (IndexType i = 0; i < kAffineOutputDimensions; ++i) {
         const IndexType offset = i * kPaddedInputDimensions;
 
 #if defined(USE_SSE2)
@@ -429,6 +440,10 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 #endif
 
+      if (kSkip) {
+        output -= kInputDimensions;
+      }
+
       return output;
     }
 
@@ -438,8 +453,8 @@ namespace Stockfish::Eval::NNUE::Layers {
 
     PreviousLayer previous_layer_;
 
-    alignas(kCacheLineSize) BiasType biases_[kOutputDimensions];
-    alignas(kCacheLineSize) WeightType weights_[kOutputDimensions * kPaddedInputDimensions];
+    alignas(kCacheLineSize) BiasType biases_[kAffineOutputDimensions];
+    alignas(kCacheLineSize) WeightType weights_[kAffineOutputDimensions * kPaddedInputDimensions];
 #if defined (USE_SSSE3)
     struct CanSaturate {
         int count;
@@ -447,7 +462,7 @@ namespace Stockfish::Eval::NNUE::Layers {
             uint16_t out;
             uint16_t in;
             int8_t w;
-        } ids[kPaddedInputDimensions * kOutputDimensions * 3 / 4];
+        } ids[kPaddedInputDimensions * kAffineOutputDimensions * 3 / 4];
 
         void add(int i, int j, int8_t w) {
             ids[count].out = i;
