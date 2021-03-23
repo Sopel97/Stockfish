@@ -122,13 +122,24 @@ namespace Stockfish::Eval::NNUE {
     }
 
     // Convert input features
-    void Transform(const Position& pos, OutputType* output, std::int32_t& psqt) const {
+    bool Transform(const Position& pos, OutputType* output, std::int32_t& psqt, std::int32_t lazy_threshold) const {
 
       UpdateAccumulator(pos, WHITE);
       UpdateAccumulator(pos, BLACK);
 
-      const auto& accumulation = pos.state()->accumulator.accumulation;
       const auto& psqt_accumulation = pos.state()->accumulator.psqt_accumulation;
+      const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
+
+      psqt = 0;
+      psqt += psqt_accumulation[static_cast<int>(perspectives[0])][0];
+      psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][0];
+      psqt /= 2;
+
+      if (abs(psqt) > lazy_threshold) {
+        return false;
+      }
+
+      const auto& accumulation = pos.state()->accumulator.accumulation;
 
   #if defined(USE_AVX512)
       constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
@@ -159,7 +170,6 @@ namespace Stockfish::Eval::NNUE {
       const int8x8_t kZero = {0};
   #endif
 
-      const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
       for (IndexType p = 0; p < 2; ++p) {
         const IndexType offset = kHalfDimensions * p;
 
@@ -233,14 +243,11 @@ namespace Stockfish::Eval::NNUE {
   #endif
       }
 
-      psqt = 0;
-      psqt += psqt_accumulation[static_cast<int>(perspectives[0])][0];
-      psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][0];
-      psqt /= 2;
-
   #if defined(USE_MMX)
       _mm_empty();
   #endif
+
+      return true;
     }
 
    private:

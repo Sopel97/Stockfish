@@ -109,6 +109,8 @@ namespace Stockfish::Eval::NNUE {
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
 
+    constexpr std::int32_t LazyThreshold = 1000;
+
     constexpr uint64_t alignment = kCacheLineSize;
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
@@ -128,10 +130,12 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(buffer, alignment);
 
     std::int32_t psqt = 0;
-    feature_transformer->Transform(pos, transformed_features, psqt);
-    const auto output = network->Propagate(transformed_features, buffer);
-
-    return static_cast<Value>((output[0] + psqt) / FV_SCALE);
+    if (feature_transformer->Transform(pos, transformed_features, psqt, LazyThreshold * FV_SCALE)) {
+      const auto output = network->Propagate(transformed_features, buffer);
+      return static_cast<Value>((output[0] + psqt) / FV_SCALE);
+    } else {
+      return static_cast<Value>(psqt / FV_SCALE);
+    }
   }
 
   // Load eval, from a file stream or a memory stream
