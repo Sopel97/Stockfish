@@ -22,7 +22,7 @@
 #define NNUE_ARCHITECTURE_H_INCLUDED
 
 // Defines the network structure
-#include "architectures/halfka_256x2-32-32.h"
+#include "architectures/halfka_256x2-semi-256-32-32.h"
 
 namespace Stockfish::Eval::NNUE {
 
