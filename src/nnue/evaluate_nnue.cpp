@@ -35,7 +35,7 @@ namespace Stockfish::Eval::NNUE {
   LargePagePtr<FeatureTransformer> feature_transformer;
 
   // Evaluation function
-  AlignedPtr<Network> network;
+  AlignedPtr<Network> network[kLayerStacks];
 
   // Evaluation function file name
   std::string fileName;
@@ -74,7 +74,8 @@ namespace Stockfish::Eval::NNUE {
   void Initialize() {
 
     Detail::Initialize(feature_transformer);
-    Detail::Initialize(network);
+    for (std::size_t i = 0; i < kLayerStacks; ++i)
+      Detail::Initialize(network[i]);
   }
 
   // Read network header
@@ -99,7 +100,8 @@ namespace Stockfish::Eval::NNUE {
     if (!ReadHeader(stream, &hash_value, &architecture)) return false;
     if (hash_value != kHashValue) return false;
     if (!Detail::ReadParameters(stream, *feature_transformer)) return false;
-    if (!Detail::ReadParameters(stream, *network)) return false;
+    for (std::size_t i = 0; i < kLayerStacks; ++i)
+      if (!Detail::ReadParameters(stream, *(network[i]))) return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
@@ -127,9 +129,10 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
+    const std::size_t bucket = (popcount(pos.pieces()) - 1) / 4;
     std::int32_t psqt = 0;
-    feature_transformer->Transform(pos, transformed_features, psqt);
-    const auto output = network->Propagate(transformed_features, buffer);
+    feature_transformer->Transform(pos, transformed_features, psqt, bucket);
+    const auto output = network[bucket]->Propagate(transformed_features, buffer);
 
     return static_cast<Value>((output[0] + psqt) / FV_SCALE);
   }
