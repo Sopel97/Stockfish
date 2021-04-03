@@ -117,12 +117,13 @@ namespace Stockfish::Eval::NNUE {
       for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
         weights_[i] = read_little_endian<WeightType>(stream);
       for (std::size_t i = 0; i < kInputDimensions; ++i)
-        psqt_weights_[i] = read_little_endian<PSQTWeightType>(stream);
+        for (std::size_t j = 0; j < kPSQTBuckets; ++j)
+          psqt_weights_[i*kPSQTBuckets + j] = read_little_endian<PSQTWeightType>(stream);
       return !stream.fail();
     }
 
     // Convert input features
-    void Transform(const Position& pos, OutputType* output, std::int32_t& psqt) const {
+    void Transform(const Position& pos, OutputType* output, std::int32_t& psqt, int bucket) const {
 
       UpdateAccumulator(pos, WHITE);
       UpdateAccumulator(pos, BLACK);
@@ -234,8 +235,8 @@ namespace Stockfish::Eval::NNUE {
       }
 
       psqt = 0;
-      psqt += psqt_accumulation[static_cast<int>(perspectives[0])][0];
-      psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][0];
+      psqt += psqt_accumulation[static_cast<int>(perspectives[0])][0][bucket];
+      psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][0][bucket];
       psqt /= 2;
 
   #if defined(USE_MMX)
@@ -334,18 +335,23 @@ namespace Stockfish::Eval::NNUE {
           }
         }
 
-        auto psqt = st->accumulator.psqt_accumulation[c][0];
+        std::int32_t psqt[kPSQTBuckets];
+        for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+          psqt[k] = st->accumulator.psqt_accumulation[c][0][k];
         for (IndexType i = 0; info[i]; ++i)
         {
           for (const auto index : removed[i]) {
-            psqt -= psqt_weights_[index];
+            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+              psqt[k] -= psqt_weights_[index*kPSQTBuckets+k];
           }
 
           for (const auto index : added[i]) {
-            psqt += psqt_weights_[index];
+            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+              psqt[k] += psqt_weights_[index*kPSQTBuckets+k];
           }
 
-          info[i]->accumulator.psqt_accumulation[c][0] = psqt;
+          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+            info[i]->accumulator.psqt_accumulation[c][0][k] = psqt[k];
         }
 
   #else
@@ -355,7 +361,8 @@ namespace Stockfish::Eval::NNUE {
               st->accumulator.accumulation[c][0],
               kHalfDimensions * sizeof(BiasType));
 
-          info[i]->accumulator.psqt_accumulation[c][0] = st->accumulator.psqt_accumulation[c][0];
+          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+            info[i]->accumulator.psqt_accumulation[c][0][k] = st->accumulator.psqt_accumulation[c][0][k];
 
           st = info[i];
 
@@ -367,7 +374,8 @@ namespace Stockfish::Eval::NNUE {
             for (IndexType j = 0; j < kHalfDimensions; ++j)
               st->accumulator.accumulation[c][0][j] -= weights_[offset + j];
 
-            st->accumulator.psqt_accumulation[c][0] -= psqt_weights_[index];
+            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+              st->accumulator.psqt_accumulation[c][0][k] -= psqt_weights_[index*kPSQTBuckets+k];
           }
 
           // Difference calculation for the activated features
@@ -378,7 +386,8 @@ namespace Stockfish::Eval::NNUE {
             for (IndexType j = 0; j < kHalfDimensions; ++j)
               st->accumulator.accumulation[c][0][j] += weights_[offset + j];
 
-            st->accumulator.psqt_accumulation[c][0] += psqt_weights_[index];
+            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+              st->accumulator.psqt_accumulation[c][0][k] += psqt_weights_[index*kPSQTBuckets+k];
           }
         }
   #endif
@@ -414,17 +423,20 @@ namespace Stockfish::Eval::NNUE {
             vec_store(&accTile[k], acc[k]);
         }
 
-        accumulator.psqt_accumulation[c][0] = 0;
+        for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+          accumulator.psqt_accumulation[c][0][k] = 0;
         for (const auto index : active)
         {
-          accumulator.psqt_accumulation[c][0] += psqt_weights_[index];
+          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+            accumulator.psqt_accumulation[c][0][k] += psqt_weights_[index*kPSQTBuckets+k];
         }
 
   #else
         std::memcpy(accumulator.accumulation[c][0], biases_,
             kHalfDimensions * sizeof(BiasType));
 
-        accumulator.psqt_accumulation[c][0] = 0;
+        for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+          accumulator.psqt_accumulation[c][0][k] = 0;
 
         for (const auto index : active)
         {
@@ -433,7 +445,8 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType j = 0; j < kHalfDimensions; ++j)
             accumulator.accumulation[c][0][j] += weights_[offset + j];
 
-          accumulator.psqt_accumulation[c][0] += psqt_weights_[index];
+          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
+            accumulator.psqt_accumulation[c][0][k] += psqt_weights_[index*kPSQTBuckets+k];
         }
   #endif
       }
@@ -450,7 +463,7 @@ namespace Stockfish::Eval::NNUE {
     alignas(kCacheLineSize) BiasType biases_[kHalfDimensions];
     alignas(kCacheLineSize)
         WeightType weights_[kHalfDimensions * kInputDimensions];
-    alignas(kCacheLineSize) std::int32_t psqt_weights_[kInputDimensions];
+    alignas(kCacheLineSize) std::int32_t psqt_weights_[kInputDimensions * kPSQTBuckets];
   };
 
 }  // namespace Stockfish::Eval::NNUE
