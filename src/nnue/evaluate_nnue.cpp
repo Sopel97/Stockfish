@@ -127,7 +127,10 @@ namespace Stockfish::Eval::NNUE {
     }
     return true;
   }
-
+  // Orient a square according to perspective (rotates by 180 for black)
+  inline Square orient(Color perspective, Square s) {
+    return Square(int(s) ^ (bool(perspective) * SQ_A8));
+  }
   // Evaluation function. Perform differential calculation.
   Value evaluate(const Position& pos) {
 
@@ -152,10 +155,11 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    const std::size_t bucket = (popcount(pos.pieces()) - 1) / 4;
+    const std::size_t psqt_bucket = (popcount(pos.pieces()) - 1) / 4;
+    const std::size_t ls_bucket = static_cast<std::size_t>(orient(pos.side_to_move(), lsb(pos.pieces(pos.side_to_move(), KING))));
     std::int32_t psqt = 0;
-    feature_transformer->Transform(pos, transformed_features, psqt, bucket);
-    const auto output = network[bucket]->Propagate(transformed_features, buffer);
+    feature_transformer->Transform(pos, transformed_features, psqt, psqt_bucket);
+    const auto output = network[ls_bucket]->Propagate(transformed_features, buffer);
 
     return static_cast<Value>((output[0] + psqt) / FV_SCALE);
   }
