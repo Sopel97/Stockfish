@@ -20,6 +20,8 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <random>
+#include <ctime>
 
 namespace Learner
 {
@@ -60,6 +62,19 @@ namespace Learner
         {
             depth = std::max(1, depth);
             research_count = std::max(0, research_count);
+        }
+    };
+
+    struct SampleFromGamesParams
+    {
+        std::string input_filename = "in.binpack";
+        std::string output_filename = "out.binpack";
+        int positions_per_game = 1;
+        std::uint64_t seed = 0;
+
+        void enforce_constraints()
+        {
+            positions_per_game = std::max(1, positions_per_game);
         }
     };
 
@@ -489,11 +504,151 @@ namespace Learner
         do_rescore(params);
     }
 
+    void do_sample_from_games(const SampleFromGamesParams& params)
+    {
+        Thread* th = Threads.main();
+        Position& pos = th->rootPos;
+        StateInfo si;
+
+        std::mt19937_64 rng(params.seed);
+        auto in = Learner::open_sfen_input_file(params.input_filename);
+        auto out = Learner::create_new_sfen_output(params.output_filename);
+
+        if (in == nullptr)
+        {
+            std::cerr << "Invalid input file type.\n";
+            return;
+        }
+
+        if (out == nullptr)
+        {
+            std::cerr << "Invalid output file type.\n";
+            return;
+        }
+
+        PSVector buffer;
+        uint64_t batch_size = 1'000'000;
+
+        buffer.reserve(batch_size);
+
+        int prev_ply = -1;
+        PSVector current_game;
+        uint64_t num_processed = 0;
+        uint64_t num_saved = 0;
+
+        auto process_game = [&]() {
+            if (current_game.empty())
+                return;
+
+            if (current_game.size() > params.positions_per_game)
+            {
+                std::shuffle(current_game.begin(), current_game.end(), rng);
+            }
+
+            int n = current_game.size() <= params.positions_per_game ? current_game.size() : params.positions_per_game;
+            for (int i = 0; i < n; ++i)
+            {
+                buffer.push_back(current_game[i]);
+            }
+            num_saved += n;
+
+            current_game.clear();
+        };
+
+        for (;;)
+        {
+            auto v = in->next();
+            if (!v.has_value())
+                break;
+
+            auto& ps = v.value();
+            int ps_ply = ps.gamePly;
+            if (prev_ply == -1 || prev_ply + 1 == ps_ply)
+            {
+                current_game.push_back(ps);
+                prev_ply = ps.gamePly;
+            }
+            else
+            {
+                process_game();
+                prev_ply = -1;
+            }
+
+            num_processed += 1;
+
+            if (buffer.size() >= batch_size)
+            {
+                out->write(buffer);
+                buffer.clear();
+            }
+
+            if (num_processed % batch_size == 0)
+            {
+                std::cout << "Processed " << num_processed << " positions. Saved " << num_saved << "\n";
+            }
+        }
+
+        process_game();
+
+        if (!buffer.empty())
+        {
+            num_processed += buffer.size();
+
+            out->write(buffer);
+            buffer.clear();
+
+            std::cout << "Processed " << num_processed << " positions. Saved " << num_saved << "\n";
+        }
+
+        std::cout << "Finished.\n";
+    }
+
+    void sample_from_games(std::istringstream& is)
+    {
+        SampleFromGamesParams params{};
+        std::uint64_t seed = 0;
+
+        while(true)
+        {
+            std::string token;
+            is >> token;
+
+            if (token == "")
+                break;
+
+            if (token == "input_file")
+                is >> params.input_filename;
+            else if (token == "output_file")
+                is >> params.output_filename;
+            else if (token == "positions_per_game")
+                is >> params.positions_per_game;
+            else if (token == "seed")
+                is >> seed;
+        }
+
+        if (seed == 0)
+            seed = time(0);
+
+        params.seed = seed;
+
+        params.enforce_constraints();
+
+        std::cout << "Performing transform sample_from_games with parameters:\n";
+        std::cout << "input_file          : " << params.input_filename << '\n';
+        std::cout << "output_file         : " << params.output_filename << '\n';
+        std::cout << "positions_per_game  : " << params.positions_per_game << '\n';
+        std::cout << "seed                : " << params.seed << '\n';
+        std::cout << '\n';
+
+        do_sample_from_games(params);
+    }
+
     void transform(std::istringstream& is)
     {
         const std::map<std::string, CommandFunc> subcommands = {
             { "nudged_static", &nudged_static },
-            { "rescore", &rescore }
+            { "rescore", &rescore },
+            { "sample_from_games", &sample_from_games }
         };
 
         Eval::NNUE::init();
