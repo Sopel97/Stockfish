@@ -30,7 +30,7 @@ namespace Stockfish::Eval::NNUE::Features {
 
   // Index of a feature for a given king position and another piece on some square
   inline IndexType make_index(Color perspective, Square s, Piece pc, Square ksq) {
-    return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END2 * ksq);
+    return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END * ksq);
   }
 
   // Get a list of indices for active features
@@ -44,6 +44,11 @@ namespace Stockfish::Eval::NNUE::Features {
       Square s = pop_lsb(&bb);
       active->push_back(make_index(perspective, s, pos.piece_on(s), ksq));
     }
+    int pc = pos.state()->pieceCount;
+    if (pc > 32) pc = 32;
+    if (pc < 2) pc = 2;
+    int offset = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END) + kMaxNumPieces * ksq;
+    active->push_back(offset + pc - 1);
   }
 
   // Get a list of indices for recently changed features
@@ -59,6 +64,18 @@ namespace Stockfish::Eval::NNUE::Features {
         removed->push_back(make_index(perspective, dp.from[i], pc, ksq));
       if (dp.to[i] != SQ_NONE)
         added->push_back(make_index(perspective, dp.to[i], pc, ksq));
+    }
+    if (pos.state()->pieceCount != pos.state()->previous->pieceCount)
+    {
+      int pco = pos.state()->pieceCount;
+      int pco_prev = pos.state()->previous->pieceCount;
+      if (pco > 32) pco = 32;
+      if (pco < 2) pco = 2;
+      if (pco_prev > 32) pco_prev = 32;
+      if (pco_prev < 2) pco_prev = 2;
+      int offset = static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END) + kMaxNumPieces * ksq;
+      removed->push_back(offset + pco_prev - 1);
+      added->push_back(offset + pco - 1);
     }
   }
 

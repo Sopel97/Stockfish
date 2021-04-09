@@ -266,7 +266,7 @@ namespace Stockfish::Eval::NNUE {
               Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
               "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
         if (   dp.piece[0] == make_piece(c, KING)
-            || (gain -= dp.dirty_num + 1) < 0)
+            || (gain -= dp.dirty_num + 2) < 0)
           break;
         next = st;
         st = st->previous;

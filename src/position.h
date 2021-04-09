@@ -57,6 +57,7 @@ struct StateInfo {
   Bitboard   pinners[COLOR_NB];
   Bitboard   checkSquares[PIECE_TYPE_NB];
   int        repetition;
+  int        pieceCount;
 
   // Used by NNUE
   Eval::NNUE::Accumulator accumulator;

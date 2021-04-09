@@ -381,6 +381,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  si->pieceCount = popcount(pieces());
 }
 
 
@@ -865,6 +867,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Calculate checkers bitboard (if move gives check)
   st->checkersBB = givesCheck ? attackers_to(square<KING>(them)) & pieces(us) : 0;
 
+  st->pieceCount = popcount(pieces());
+
   sideToMove = ~sideToMove;
 
   // Update king attacks used for fast check detection
@@ -1023,6 +1027,8 @@ void Position::do_null_move(StateInfo& newSt) {
   set_check_info(st);
 
   st->repetition = 0;
+
+  st->pieceCount = popcount(pieces());
 
   assert(pos_is_ok());
 }
