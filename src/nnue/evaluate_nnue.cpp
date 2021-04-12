@@ -28,6 +28,7 @@
 #include "../types.h"
 
 #include "evaluate_nnue.h"
+#include "imbalance_net.h"
 
 namespace Stockfish::Eval::NNUE {
 
@@ -36,6 +37,7 @@ namespace Stockfish::Eval::NNUE {
 
   // Evaluation function
   AlignedPtr<Network> network[kLayerStacks];
+  ImbalanceNet imbalance_net[kLayerStacks];
 
   // Evaluation function file name
   std::string fileName;
@@ -121,6 +123,12 @@ namespace Stockfish::Eval::NNUE {
         return false;
       }
     }
+    for (std::size_t i = 0; i < kLayerStacks; ++i) {
+      if (!imbalance_net[i].read_parameters(stream)) {
+        std::cerr << "Failed reading imbalance parameters\n";
+        return false;
+      }
+    }
     if (!(stream && stream.peek() == std::ios::traits_type::eof())) {
       std::cerr << "Expected end of stream.\n";
       return false;
@@ -156,8 +164,9 @@ namespace Stockfish::Eval::NNUE {
     std::int32_t psqt = 0;
     feature_transformer->Transform(pos, transformed_features, psqt, bucket);
     const auto output = network[bucket]->Propagate(transformed_features, buffer);
+    const auto imbalance = imbalance_net[bucket].evaluate(pos);
 
-    return static_cast<Value>((output[0] + psqt) / FV_SCALE);
+    return static_cast<Value>((output[0] + psqt + imbalance) / FV_SCALE);
   }
 
   // Load eval, from a file stream or a memory stream
