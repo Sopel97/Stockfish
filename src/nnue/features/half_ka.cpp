@@ -54,8 +54,11 @@ namespace Stockfish::Eval::NNUE::Features {
   // Get a list of indices for recently changed features
   template <Side AssociatedKing>
   void HalfKA<AssociatedKing>::AppendChangedIndices(
-      const Position& pos, const DirtyPiece& dp, Color perspective,
+      const Position& pos, Color perspective,
       IndexList* removed, IndexList* added) {
+
+    auto& st = *pos.state();
+    auto& dp = st.dirtyPiece;
 
     Square ksq = orient(perspective, pos.square<KING>(perspective));
     for (int i = 0; i < dp.dirty_num; ++i) {
