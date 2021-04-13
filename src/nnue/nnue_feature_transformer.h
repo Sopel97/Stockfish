@@ -256,20 +256,8 @@ namespace Stockfish::Eval::NNUE {
       // Look for a usable accumulator of an earlier position. We keep track
       // of the estimated gain in terms of features to be added/subtracted.
       StateInfo *st = pos.state(), *next = nullptr;
-      // gain must be calculated such that there is never more than kMaxActiveDimensions
-      // entries in removed[1] later on.
-      int gain = pos.count<ALL_PIECES>() - 2;
-      while (st->accumulator.state[c] == EMPTY)
+      if (st->accumulator.state[c] == EMPTY && st->dirtyPiece.piece[0] != make_piece(c, KING))
       {
-        auto& dp = st->dirtyPiece;
-        // The first condition tests whether an incremental update is
-        // possible at all: if this side's king has moved, it is not possible.
-        static_assert(std::is_same_v<RawFeatures::SortedTriggerSet,
-              Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
-              "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
-        if (   dp.piece[0] == make_piece(c, KING)
-            || (gain -= dp.dirty_num + 1 + popcount(pos.state()->previous->special ^ pos.state()->special)) < 0)
-          break;
         next = st;
         st = st->previous;
       }
@@ -288,18 +276,26 @@ namespace Stockfish::Eval::NNUE {
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
         Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
-            next->dirtyPiece, c, &removed[0], &added[0]);
+            c, &removed[0], &added[0]);
+        // This thing is shit. The original code in stockfish calls the
+        // AppendChangedIndices with the same position always, so inside
+        // AppendChangedIndices it's not possible to infer anything else from
+        // the position than the king square, the rest is not actually the state
+        // at the time of this state info. That's why the dirty piece is being passed directly.
+        // We change it here to pass the whole state instead.
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
-              st2->dirtyPiece, c, &removed[1], &added[1]);
+              c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
         next->accumulator.state[c] = COMPUTED;
         pos.state()->accumulator.state[c] = COMPUTED;
 
         // Now update the accumulators listed in info[], where the last element is a sentinel.
-        StateInfo *info[3] =
-          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
+        // HalfKAS2v1 note: We need the complete board state for the update so we cannot update
+        // more than one accumulator.
+        StateInfo *info[2] =
+          { next, nullptr };
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
         {
