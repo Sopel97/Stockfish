@@ -71,7 +71,6 @@ namespace Stockfish::Eval::NNUE::Features {
     template <Side AssociatedKing>
     void HalfKAS2v1<AssociatedKing>::AppendChangedIndices(
         const Position& pos,
-        const DirtyPiece& dp,
         Color perspective,
         IndexList* removed,
         IndexList* added) {
@@ -81,8 +80,10 @@ namespace Stockfish::Eval::NNUE::Features {
             pos.square<KING>(
                 AssociatedKing == Side::kFriend ? perspective : ~perspective));
 
-        Bitboard prev_special = pos.state()->previous->special;
-        Bitboard curr_special = pos.state()->special;
+        auto& st = *pos.state();
+        Bitboard prev_special = st.previous->special;
+        Bitboard curr_special = st.special;
+        auto& dp = st.dirtyPiece;
 
         Bitboard updated = 0;
         for (int i = 0; i < dp.dirty_num; ++i) {
