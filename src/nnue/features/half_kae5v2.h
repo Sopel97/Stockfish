@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef NNUE_FEATURES_HALF_KAS2V1_H_INCLUDED
-#define NNUE_FEATURES_HALF_KAS2V1_H_INCLUDED
+#ifndef NNUE_FEATURES_HALF_KAE5V2_H_INCLUDED
+#define NNUE_FEATURES_HALF_KAE5V2_H_INCLUDED
 
 #include "features_common.h"
 
@@ -27,20 +27,20 @@ namespace Stockfish::Eval::NNUE::Features {
     // Feature HalfKPK: Combination of the position of own king
     // and the position of pieces other than kings
     template <Side AssociatedKing>
-    class HalfKAS2v1 {
+    class HalfKAE5v2 {
 
     public:
         // Feature name
         static constexpr const char* kName = (AssociatedKing == Side::kFriend) ?
-            "HalfKAS2v1(Friend)" : "HalfKAS2v1(Enemy)";
+            "HalfKAE5v2(Friend)" : "HalfKAE5v2(Enemy)";
 
         // Hash value embedded in the evaluation file
         static constexpr std::uint32_t kHashValue =
-            0x5F134CB9u ^ (AssociatedKing == Side::kFriend);
+            0x5F1123B9u ^ (AssociatedKing == Side::kFriend);
 
         // Number of feature dimensions
         static constexpr IndexType kDimensions =
-            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 2;
+            static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 5;
 
         // Maximum number of simultaneously active features
         // The current code in nnue_feature_transformer is fucking retarded
@@ -67,9 +67,22 @@ namespace Stockfish::Eval::NNUE::Features {
 
     private:
         // Index of a feature for a given king position and another piece on some square
-        static IndexType make_index(Color perspective, Square s, Piece pc, Square sq_k, Bitboard special);
+        static IndexType make_index(
+            Color perspective,
+            Square s,
+            Piece pc,
+            Square sq_k,
+            Bitboard mobility[COLOR_NB][3]);
+
+        static std::pair<IndexType, IndexType> make_index_2(
+            Color perspective,
+            Square s,
+            Piece pc,
+            Square sq_k,
+            Bitboard prev_mobility[COLOR_NB][3],
+            Bitboard curr_mobility[COLOR_NB][3]);
     };
 
 }  // namespace Eval::NNUE::Features
 
-#endif // #ifndef NNUE_FEATURES_HALF_KAS2V1_H_INCLUDED
+#endif // #ifndef NNUE_FEATURES_HALF_KAE5V2_H_INCLUDED

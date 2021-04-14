@@ -47,7 +47,6 @@ struct StateInfo {
   int    rule50;
   int    pliesFromNull;
   Square epSquare;
-  Bitboard special;
 
   // Not copied when making a move (will be recomputed anyhow)
   Key        key;
@@ -62,6 +61,8 @@ struct StateInfo {
   // Used by NNUE
   Eval::NNUE::Accumulator accumulator;
   DirtyPiece dirtyPiece;
+
+  Bitboard mobility[COLOR_NB][3];
 };
 
 

@@ -308,12 +308,12 @@ namespace Stockfish::Eval::NNUE {
         // Update incrementally in two steps. First, we update the "next"
         // accumulator. Then, we update the current accumulator (pos.state()).
 
-        // Gather all features to be updated. This code assumes HalfKAS2v1 features
+        // Gather all features to be updated. This code assumes HalfKAE5v2 features
         // only and doesn't support refresh triggers.
-        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKAS2v1<Features::Side::kFriend>>,
+        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKAE5v2<Features::Side::kFriend>>,
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
-        Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
+        Features::HalfKAE5v2<Features::Side::kFriend>::AppendChangedIndices(pos,
             c, &removed[0], &added[0]);
         // This thing is shit. The original code in stockfish calls the
         // AppendChangedIndices with the same position always, so inside
@@ -322,7 +322,7 @@ namespace Stockfish::Eval::NNUE {
         // at the time of this state info. That's why the dirty piece is being passed directly.
         // We change it here to pass the whole state instead.
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
-          Features::HalfKAS2v1<Features::Side::kFriend>::AppendChangedIndices(pos,
+          Features::HalfKAE5v2<Features::Side::kFriend>::AppendChangedIndices(pos,
               c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
@@ -330,7 +330,7 @@ namespace Stockfish::Eval::NNUE {
         pos.state()->accumulator.state[c] = COMPUTED;
 
         // Now update the accumulators listed in info[], where the last element is a sentinel.
-        // HalfKAS2v1 note: We need the complete board state for the update so we cannot update
+        // HalfKAE5v2 note: We need the complete board state for the update so we cannot update
         // more than one accumulator.
         StateInfo *info[2] =
           { next, nullptr };
@@ -451,7 +451,7 @@ namespace Stockfish::Eval::NNUE {
         auto& accumulator = pos.state()->accumulator;
         accumulator.state[c] = COMPUTED;
         Features::IndexList active;
-        Features::HalfKAS2v1<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
+        Features::HalfKAE5v2<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
 
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
