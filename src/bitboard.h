@@ -184,6 +184,18 @@ inline Bitboard pawn_attacks_bb(Color c, Square s) {
   return PawnAttacks[c][s];
 }
 
+template<Color C>
+constexpr Bitboard pawn_attacks_bb_a(Bitboard b) {
+  return C == WHITE ? shift<NORTH_WEST>(b)
+                    : shift<SOUTH_WEST>(b);
+}
+
+template<Color C>
+constexpr Bitboard pawn_attacks_bb_b(Bitboard b) {
+  return C == WHITE ? shift<NORTH_EAST>(b)
+                    : shift<SOUTH_EAST>(b);
+}
+
 
 /// pawn_double_attacks_bb() returns the squares doubly attacked by pawns of the
 /// given color from the squares in the given bitboard.

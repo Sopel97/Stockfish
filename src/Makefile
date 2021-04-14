@@ -38,7 +38,7 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	material.cpp misc.cpp movegen.cpp movepick.cpp pawns.cpp position.cpp psqt.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
 	nnue/evaluate_nnue.cpp nnue/features/half_kp.cpp nnue/features/half_ka.cpp \
-	nnue/features/half_kas2v1.cpp
+	nnue/features/half_kae5v2.cpp
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
 
