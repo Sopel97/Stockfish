@@ -34,45 +34,82 @@ namespace Stockfish::Eval::NNUE {
   // vector registers.
   #define VECTOR
 
+  static_assert(kPSQTBuckets == 8);
+
   #ifdef USE_AVX512
   typedef __m512i vec_t;
+  typedef __m256i psqt_vec_t;
   #define vec_load(a) _mm512_load_si512(a)
   #define vec_store(a,b) _mm512_store_si512(a,b)
   #define vec_add_16(a,b) _mm512_add_epi16(a,b)
   #define vec_sub_16(a,b) _mm512_sub_epi16(a,b)
+  #define vec_load_psqt(a) _mm256_load_si256(a)
+  #define vec_store_psqt(a,b) _mm256_store_si256(a,b)
+  #define vec_add_psqt_32(a,b) _mm256_add_epi32(a,b)
+  #define vec_sub_psqt_32(a,b) _mm256_sub_epi32(a,b)
+  #define vec_zero_psqt() _mm256_setzero_si256()
   static constexpr IndexType kNumRegs = 8; // only 8 are needed
+  static constexpr IndexType kPsqtRegs = 1; // only 8 are needed
 
   #elif USE_AVX2
   typedef __m256i vec_t;
+  typedef __m256i psqt_vec_t;
   #define vec_load(a) _mm256_load_si256(a)
   #define vec_store(a,b) _mm256_store_si256(a,b)
   #define vec_add_16(a,b) _mm256_add_epi16(a,b)
   #define vec_sub_16(a,b) _mm256_sub_epi16(a,b)
+  #define vec_load_psqt(a) _mm256_load_si256(a)
+  #define vec_store_psqt(a,b) _mm256_store_si256(a,b)
+  #define vec_add_psqt_32(a,b) _mm256_add_epi32(a,b)
+  #define vec_sub_psqt_32(a,b) _mm256_sub_epi32(a,b)
+  #define vec_zero_psqt() _mm256_setzero_si256()
   static constexpr IndexType kNumRegs = 16;
+  static constexpr IndexType kPsqtRegs = 1; // only 8 are needed
 
   #elif USE_SSE2
   typedef __m128i vec_t;
+  typedef __m128i psqt_vec_t;
   #define vec_load(a) (*(a))
   #define vec_store(a,b) *(a)=(b)
   #define vec_add_16(a,b) _mm_add_epi16(a,b)
   #define vec_sub_16(a,b) _mm_sub_epi16(a,b)
+  #define vec_load_psqt(a) (*(a))
+  #define vec_store_psqt(a,b) *(a)=(b)
+  #define vec_add_psqt_32(a,b) _mm_add_epi32(a,b)
+  #define vec_sub_psqt_32(a,b) _mm_sub_epi32(a,b)
+  #define vec_zero_psqt() _mm_setzero_si128()
   static constexpr IndexType kNumRegs = Is64Bit ? 16 : 8;
+  static constexpr IndexType kPsqtRegs = 2; // only 8 are needed
 
   #elif USE_MMX
   typedef __m64 vec_t;
+  typedef std::int32_t psqt_vec_t;
   #define vec_load(a) (*(a))
   #define vec_store(a,b) *(a)=(b)
   #define vec_add_16(a,b) _mm_add_pi16(a,b)
   #define vec_sub_16(a,b) _mm_sub_pi16(a,b)
+  #define vec_load_psqt(a) (*(a))
+  #define vec_store_psqt(a,b) *(a)=(b)
+  #define vec_add_psqt_32(a,b) a+b
+  #define vec_sub_psqt_32(a,b) a-b
+  #define vec_zero_psqt() 0
   static constexpr IndexType kNumRegs = 8;
+  static constexpr IndexType kPsqtRegs = 4; // only 8 are needed
 
   #elif USE_NEON
   typedef int16x8_t vec_t;
+  typedef int32x4_t psqt_vec_t;
   #define vec_load(a) (*(a))
   #define vec_store(a,b) *(a)=(b)
   #define vec_add_16(a,b) vaddq_s16(a,b)
   #define vec_sub_16(a,b) vsubq_s16(a,b)
+  #define vec_load_psqt(a) (*(a))
+  #define vec_store_psqt(a,b) *(a)=(b)
+  #define vec_add_psqt_32(a,b) vaddq_s32(a,b)
+  #define vec_sub_psqt_32(a,b) vsubq_s32(a,b)
+  #define vec_zero_psqt() psqt_vec_t{0}
   static constexpr IndexType kNumRegs = 16;
+  static constexpr IndexType kPsqtRegs = 2; // only 8 are needed
 
   #else
   #undef VECTOR
@@ -88,6 +125,7 @@ namespace Stockfish::Eval::NNUE {
 
     #ifdef VECTOR
     static constexpr IndexType kTileHeight = kNumRegs * sizeof(vec_t) / 2;
+    static constexpr IndexType kPsqtTileHeight = kPsqtRegs * sizeof(psqt_vec_t) / 4;
     static_assert(kHalfDimensions % kTileHeight == 0, "kTileHeight must divide kHalfDimensions");
     #endif
 
@@ -335,25 +373,42 @@ namespace Stockfish::Eval::NNUE {
           }
         }
 
-        std::int32_t psqt[kPSQTBuckets];
-        for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-          psqt[k] = st->accumulator.psqt_accumulation[c][0][k];
-        for (IndexType i = 0; info[i]; ++i)
         {
-          for (const auto index : removed[i]) {
-            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-              psqt[k] -= psqt_weights_[index*kPSQTBuckets+k];
-          }
+          psqt_vec_t psqt[kPsqtRegs];
+          for (IndexType j = 0; j < kPSQTBuckets / kPsqtTileHeight; ++j)
+          {
+            // Load accumulator
+            auto accTilePsqt = reinterpret_cast<psqt_vec_t*>(
+              &st->accumulator.psqt_accumulation[c][0][j * kPsqtTileHeight]);
+            for (std::size_t k = 0; k < kPsqtRegs; ++k)
+              psqt[k] = vec_load_psqt(&accTilePsqt[k]);
 
-          for (const auto index : added[i]) {
-            for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-              psqt[k] += psqt_weights_[index*kPSQTBuckets+k];
-          }
+            for (IndexType i = 0; info[i]; ++i)
+            {
+              // Difference calculation for the deactivated features
+              for (const auto index : removed[i])
+              {
+                auto column_psqt = reinterpret_cast<const psqt_vec_t*>(&psqt_weights_[index*kPSQTBuckets + j * kPsqtTileHeight]);
+                for (std::size_t k = 0; k < kPsqtRegs; ++k)
+                  psqt[k] = vec_sub_psqt_32(psqt[k], column_psqt[k]);
+              }
 
-          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-            info[i]->accumulator.psqt_accumulation[c][0][k] = psqt[k];
+              // Difference calculation for the activated features
+              for (const auto index : added[i])
+              {
+                auto column_psqt = reinterpret_cast<const psqt_vec_t*>(&psqt_weights_[index*kPSQTBuckets + j * kPsqtTileHeight]);
+                for (std::size_t k = 0; k < kPsqtRegs; ++k)
+                  psqt[k] = vec_add_psqt_32(psqt[k], column_psqt[k]);
+              }
+
+              // Store accumulator
+              accTilePsqt = reinterpret_cast<psqt_vec_t*>(
+                &info[i]->accumulator.psqt_accumulation[c][0][j * kPsqtTileHeight]);
+              for (std::size_t k = 0; k < kPsqtRegs; ++k)
+                vec_store_psqt(&accTilePsqt[k], psqt[k]);
+            }
+          }
         }
-
   #else
         for (IndexType i = 0; info[i]; ++i)
         {
@@ -423,14 +478,27 @@ namespace Stockfish::Eval::NNUE {
             vec_store(&accTile[k], acc[k]);
         }
 
-        for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-          accumulator.psqt_accumulation[c][0][k] = 0;
-        for (const auto index : active)
         {
-          for (std::size_t k = 0; k < kPSQTBuckets; ++k)
-            accumulator.psqt_accumulation[c][0][k] += psqt_weights_[index*kPSQTBuckets+k];
-        }
+          psqt_vec_t psqt[kPsqtRegs];
+          for (IndexType j = 0; j < kPSQTBuckets / kPsqtTileHeight; ++j)
+          {
+            for (std::size_t k = 0; k < kPsqtRegs; ++k)
+              psqt[k] = vec_zero_psqt();
 
+            for (const auto index : active)
+            {
+              auto column_psqt = reinterpret_cast<const psqt_vec_t*>(&psqt_weights_[index*kPSQTBuckets + j * kPsqtTileHeight]);
+
+              for (std::size_t k = 0; k < kPsqtRegs; ++k)
+                psqt[k] = vec_add_psqt_32(psqt[k], column_psqt[k]);
+            }
+
+            auto accTilePsqt = reinterpret_cast<psqt_vec_t*>(
+              &accumulator.psqt_accumulation[c][0][j * kPsqtTileHeight]);
+            for (std::size_t k = 0; k < kPsqtRegs; ++k)
+              vec_store(&accTilePsqt[k], psqt[k]);
+          }
+        }
   #else
         std::memcpy(accumulator.accumulation[c][0], biases_,
             kHalfDimensions * sizeof(BiasType));
