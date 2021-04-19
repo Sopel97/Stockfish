@@ -362,7 +362,7 @@ void add_piece_mobility(const Position& pos, Bitboard mobility[3], Bitboard thei
       : Pt == QUEEN ? pos.pieces() ^ pos.pieces(Us, ROOK) ^ pos.pieces(Us, QUEEN)
       : pos.pieces();
     while (attackers) {
-      Square s = pop_lsb(&attackers);
+      Square s = pop_lsb(attackers);
       const Bitboard attacks = attacks_bb<Pt>(s, pieces) & ~their_lesser_mobility;
       mobility[2] |= mobility[1] & attacks;
       mobility[1] |= mobility[0] & attacks;
