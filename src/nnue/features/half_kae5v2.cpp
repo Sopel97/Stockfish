@@ -99,7 +99,7 @@ namespace Stockfish::Eval::NNUE::Features {
         Bitboard bb = pos.pieces();
         Bitboard (&curr_mobility)[COLOR_NB][3] = pos.state()->mobility;
         while (bb) {
-            Square s = pop_lsb(&bb);
+            Square s = pop_lsb(bb);
             active->push_back(make_index(perspective, s, pos.piece_on(s), ksq, curr_mobility));
         }
     }
@@ -148,7 +148,7 @@ namespace Stockfish::Eval::NNUE::Features {
         Bitboard affected_pieces = pos.pieces() & ~updated & mobility_diff;
         while (affected_pieces)
         {
-            Square s = pop_lsb(&affected_pieces);
+            Square s = pop_lsb(affected_pieces);
             Piece pc = pos.piece_on(s);
             auto [r, a] = make_index_2(perspective, s, pc, ksq, prev_mobility, curr_mobility);
             if (r != a)
