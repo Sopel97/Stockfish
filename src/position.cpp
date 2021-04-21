@@ -381,6 +381,8 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+
+  st->pc = popcount(pieces());
 }
 
 
@@ -870,6 +872,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Update king attacks used for fast check detection
   set_check_info(st);
 
+  st->pc = popcount(pieces());
+
   // Calculate the repetition info. It is the ply distance from the previous
   // occurrence of the same position, negative in the 3-fold case, or zero
   // if the position was not repeated.
@@ -1003,6 +1007,7 @@ void Position::do_null_move(StateInfo& newSt) {
 
   st->dirtyPiece.dirty_num = 0;
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
+  st->pc = popcount(pieces());
   st->accumulator.state[WHITE] = Eval::NNUE::EMPTY;
   st->accumulator.state[BLACK] = Eval::NNUE::EMPTY;
 

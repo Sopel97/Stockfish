@@ -304,6 +304,7 @@ namespace Stockfish::Eval::NNUE {
               Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
               "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
         if (   dp.piece[0] == make_piece(c, KING)
+            || ((st->pc <= 20) != (st->previous->pc <= 20))
             || (gain -= dp.dirty_num + 1) < 0)
           break;
         next = st;
@@ -324,10 +325,10 @@ namespace Stockfish::Eval::NNUE {
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
         Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
-            next->dirtyPiece, c, &removed[0], &added[0]);
+            next->pc, next->dirtyPiece, c, &removed[0], &added[0]);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
-              st2->dirtyPiece, c, &removed[1], &added[1]);
+              st2->pc, st2->dirtyPiece, c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
         next->accumulator.state[c] = COMPUTED;

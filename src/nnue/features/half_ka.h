@@ -33,13 +33,13 @@ namespace Stockfish::Eval::NNUE::Features {
 
    public:
     // Feature name
-    static constexpr const char* kName = "HalfKA(Friend)";
+    static constexpr const char* kName = "HalfKA_PC20(Friend)";
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t kHashValue =
         0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
-        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
+        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 2;
     // Maximum number of simultaneously active features
     static constexpr IndexType kMaxActiveDimensions = 32;
     // Trigger for full calculation instead of difference calculation
@@ -50,7 +50,7 @@ namespace Stockfish::Eval::NNUE::Features {
                                     IndexList* active);
 
     // Get a list of indices for recently changed features
-    static void AppendChangedIndices(const Position& pos, const DirtyPiece& dp, Color perspective,
+    static void AppendChangedIndices(const Position& pos, int count, const DirtyPiece& dp, Color perspective,
                                      IndexList* removed, IndexList* added);
   };
 
