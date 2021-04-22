@@ -30,8 +30,18 @@ namespace Stockfish::Eval::NNUE::Features {
   // and the position of pieces other than kings
   template <Side AssociatedKing>
   class HalfKA {
-
    public:
+    static constexpr int KingBuckets[SQUARE_NB] = {
+      9, 10, 11, 12, 12, 13, 14, 15,
+      9, 10, 11, 12, 12, 13, 14, 15,
+      7, 7, 7, 7, 8, 8, 8, 8,
+      4, 4, 4, 5, 5, 6, 6, 6,
+      4, 4, 4, 5, 5, 6, 6, 6,
+      1, 1, 1, 2, 2, 3, 3, 3,
+      1, 1, 1, 2, 2, 3, 3, 3,
+      0, 0, 0, 0, 0, 0, 0, 0
+    };
+
     // Feature name
     static constexpr const char* kName = "HalfKA(Friend)";
     // Hash value embedded in the evaluation file
@@ -39,7 +49,7 @@ namespace Stockfish::Eval::NNUE::Features {
         0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
-        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
+        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) / 4;
     // Maximum number of simultaneously active features
     static constexpr IndexType kMaxActiveDimensions = 32;
     // Trigger for full calculation instead of difference calculation
