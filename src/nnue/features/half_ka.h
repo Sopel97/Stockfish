@@ -32,14 +32,14 @@ namespace Stockfish::Eval::NNUE::Features {
   class HalfKA {
    public:
     static constexpr int KingBuckets[SQUARE_NB] = {
-      9, 10, 11, 12, 12, 13, 14, 15,
-      9, 10, 11, 12, 12, 13, 14, 15,
-      7, 7, 7, 7, 8, 8, 8, 8,
-      4, 4, 4, 5, 5, 6, 6, 6,
-      4, 4, 4, 5, 5, 6, 6, 6,
-      1, 1, 1, 2, 2, 3, 3, 3,
-      1, 1, 1, 2, 2, 3, 3, 3,
-      0, 0, 0, 0, 0, 0, 0, 0
+      24, 25, 26, 27, 28, 29, 30, 31,
+      16, 17, 18, 19, 20, 21, 22, 23,
+      12, 12, 13, 13, 14, 14, 15, 15,
+       8,  8,  9,  9, 10, 10, 11, 11,
+       4,  4,  5,  5,  6,  6,  7,  7,
+       4,  4,  5,  5,  6,  6,  7,  7,
+       0,  0,  1,  1,  2,  2,  3,  3,
+       0,  0,  1,  1,  2,  2,  3,  3
     };
 
     // Feature name
@@ -49,7 +49,7 @@ namespace Stockfish::Eval::NNUE::Features {
         0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
-        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) / 4;
+        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) / 2;
     // Maximum number of simultaneously active features
     static constexpr IndexType kMaxActiveDimensions = 32;
     // Trigger for full calculation instead of difference calculation
