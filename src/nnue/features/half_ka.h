@@ -32,14 +32,21 @@ namespace Stockfish::Eval::NNUE::Features {
   class HalfKA {
 
    public:
+    static constexpr int BucketId[33] = {
+      0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0,
+      1, 1, 1, 1, 1, 1, 1, 1,
+      2, 2, 2, 2, 2, 2, 2, 2
+    };
     // Feature name
-    static constexpr const char* kName = "HalfKA_PC20(Friend)";
+    static constexpr const char* kName = "HalfKA_PC_24_16(Friend)";
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t kHashValue =
         0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
-        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 2;
+        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) * 3;
     // Maximum number of simultaneously active features
     static constexpr IndexType kMaxActiveDimensions = 32;
     // Trigger for full calculation instead of difference calculation

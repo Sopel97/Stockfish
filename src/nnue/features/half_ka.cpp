@@ -30,7 +30,7 @@ namespace Stockfish::Eval::NNUE::Features {
 
   // Index of a feature for a given king position and another piece on some square
   inline IndexType make_index(Color perspective, Square s, Piece pc, Square ksq, int count) {
-    IndexType offset = (count <= 20) * (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2));
+    IndexType offset = HalfKA<Side::kFriend>::BucketId[count] * (static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2));
     return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END2 * ksq) + offset;
   }
 
