@@ -36,12 +36,12 @@ namespace Stockfish::Eval::NNUE::Features {
     static constexpr const char* kName = "HalfKA(Friend)";
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t kHashValue =
-        0x5f134cb9u ^ (AssociatedKing == Side::kFriend);
+        0x4f134cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
         static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
     // Maximum number of simultaneously active features
-    static constexpr IndexType kMaxActiveDimensions = 32;
+    static constexpr IndexType kMaxActiveDimensions = 16;
     // Trigger for full calculation instead of difference calculation
     static constexpr TriggerEvent kRefreshTrigger = TriggerEvent::kFriendKingMoved;
 

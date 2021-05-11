@@ -39,7 +39,7 @@ namespace Stockfish::Eval::NNUE::Features {
       const Position& pos, Color perspective, IndexList* active) {
 
     Square ksq = orient(perspective, pos.square<KING>(perspective));
-    Bitboard bb = pos.pieces();
+    Bitboard bb = pos.pieces(~perspective);
     while (bb) {
       Square s = pop_lsb(&bb);
       active->push_back(make_index(perspective, s, pos.piece_on(s), ksq));
@@ -55,6 +55,8 @@ namespace Stockfish::Eval::NNUE::Features {
     Square ksq = orient(perspective, pos.square<KING>(perspective));
     for (int i = 0; i < dp.dirty_num; ++i) {
       Piece pc = dp.piece[i];
+      if (color_of(pc) == perspective)
+        continue;
       if (dp.from[i] != SQ_NONE)
         removed->push_back(make_index(perspective, dp.from[i], pc, ksq));
       if (dp.to[i] != SQ_NONE)
