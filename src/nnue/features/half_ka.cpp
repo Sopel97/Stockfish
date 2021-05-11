@@ -38,7 +38,7 @@ namespace Stockfish::Eval::NNUE::Features {
   void HalfKA<AssociatedKing>::AppendActiveIndices(
       const Position& pos, Color perspective, IndexList* active) {
 
-    Square ksq = orient(perspective, pos.square<KING>(perspective));
+    Square ksq = pos.square<KING>(perspective);
     Bitboard bb = pos.pieces();
     while (bb) {
       Square s = pop_lsb(&bb);
@@ -52,7 +52,7 @@ namespace Stockfish::Eval::NNUE::Features {
       const Position& pos, const DirtyPiece& dp, Color perspective,
       IndexList* removed, IndexList* added) {
 
-    Square ksq = orient(perspective, pos.square<KING>(perspective));
+    Square ksq = pos.square<KING>(perspective);
     for (int i = 0; i < dp.dirty_num; ++i) {
       Piece pc = dp.piece[i];
       if (dp.from[i] != SQ_NONE)

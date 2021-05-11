@@ -36,7 +36,7 @@ namespace Stockfish::Eval::NNUE::Features {
     static constexpr const char* kName = "HalfKAv2(Friend)";
     // Hash value embedded in the evaluation file
     static constexpr std::uint32_t kHashValue =
-        0x5f234cb9u ^ (AssociatedKing == Side::kFriend);
+        0x1f234cb9u ^ (AssociatedKing == Side::kFriend);
     // Number of feature dimensions
     static constexpr IndexType kDimensions =
         static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2);
