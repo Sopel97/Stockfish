@@ -1099,6 +1099,12 @@ moves_loop: // When in check, search starts from here
           }
       }
 
+      // Check extension (~2 Elo)
+      else if (    givesCheck
+               && pos.non_pawn_material() <= 2 * QueenValueEg
+               && (pos.is_discovered_check_on_king(~us, move) || pos.see_ge(move)))
+          extension = 1;
+
       // Add extension to new depth
       newDepth += extension;
 
