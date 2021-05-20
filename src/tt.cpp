@@ -28,14 +28,14 @@
 
 namespace Stockfish {
 
-TranspositionTable TT; // Our global transposition table
+TranspositionTable TT[2]; // Our global transposition table
 
 bool TranspositionTable::enable_transposition_table = true;
 
 /// TTEntry::save() populates the TTEntry with a new node's data, possibly
 /// overwriting an old position. Update is not atomic and can be racy.
 
-void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) {
+void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, int ttid) {
 
   if (!TranspositionTable::enable_transposition_table) {
       return;
@@ -54,7 +54,7 @@ void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) 
 
       key16     = (uint16_t)k;
       depth8    = (uint8_t)(d - DEPTH_OFFSET);
-      genBound8 = (uint8_t)(TT.generation8 | uint8_t(pv) << 2 | b);
+      genBound8 = (uint8_t)(TT[ttid].generation8 | uint8_t(pv) << 2 | b);
       value16   = (int16_t)v;
       eval16    = (int16_t)ev;
   }

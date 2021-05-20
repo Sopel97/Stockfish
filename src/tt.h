@@ -43,7 +43,7 @@ struct TTEntry {
   Depth depth() const { return (Depth)depth8 + DEPTH_OFFSET; }
   bool is_pv()  const { return (bool)(genBound8 & 0x4); }
   Bound bound() const { return (Bound)(genBound8 & 0x3); }
-  void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev);
+  void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, int net_id);
 
 private:
   friend class TranspositionTable;
@@ -102,7 +102,7 @@ private:
   uint8_t generation8; // Size must be not bigger than TTEntry::genBound8
 };
 
-extern TranspositionTable TT;
+extern TranspositionTable TT[2];
 
 } // namespace Stockfish
 
