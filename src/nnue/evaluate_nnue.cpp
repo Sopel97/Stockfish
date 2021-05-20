@@ -26,20 +26,21 @@
 #include "../misc.h"
 #include "../uci.h"
 #include "../types.h"
+#include "../thread.h"
 
 #include "evaluate_nnue.h"
 
 namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
-  LargePagePtr<FeatureTransformer> featureTransformer;
+  LargePagePtr<FeatureTransformer> featureTransformer[2];
 
   // Evaluation function
-  AlignedPtr<Network> network;
+  AlignedPtr<Network> network[2];
 
   // Evaluation function file name
-  std::string fileName;
-  std::string netDescription;
+  std::string fileName[2];
+  std::string netDescription[2];
 
   namespace Detail {
 
@@ -80,10 +81,10 @@ namespace Stockfish::Eval::NNUE {
   }  // namespace Detail
 
   // Initialize the evaluation function parameters
-  void initialize() {
+  void initialize(int net_id) {
 
-    Detail::initialize(featureTransformer);
-    Detail::initialize(network);
+    Detail::initialize(featureTransformer[net_id]);
+    Detail::initialize(network[net_id]);
   }
 
   // Read network header
@@ -111,27 +112,28 @@ namespace Stockfish::Eval::NNUE {
   }
 
   // Read network parameters
-  bool read_parameters(std::istream& stream) {
+  bool read_parameters(std::istream& stream, int net_id) {
 
     std::uint32_t hashValue;
-    if (!read_header(stream, &hashValue, &netDescription)) return false;
+    if (!read_header(stream, &hashValue, &netDescription[net_id])) return false;
     if (hashValue != HashValue) return false;
-    if (!Detail::read_parameters(stream, *featureTransformer)) return false;
-    if (!Detail::read_parameters(stream, *network)) return false;
+    if (!Detail::read_parameters(stream, *featureTransformer[net_id])) return false;
+    if (!Detail::read_parameters(stream, *network[net_id])) return false;
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
   // Write network parameters
-  bool write_parameters(std::ostream& stream) {
+  bool write_parameters(std::ostream& stream, int net_id) {
 
-    if (!write_header(stream, HashValue, netDescription)) return false;
-    if (!Detail::write_parameters(stream, *featureTransformer)) return false;
-    if (!Detail::write_parameters(stream, *network)) return false;
+    if (!write_header(stream, HashValue, netDescription[net_id])) return false;
+    if (!Detail::write_parameters(stream, *featureTransformer[net_id])) return false;
+    if (!Detail::write_parameters(stream, *network[net_id])) return false;
     return (bool)stream;
   }
 
   // Evaluation function. Perform differential calculation.
   Value evaluate(const Position& pos) {
+    int net_id = pos.this_thread()->netId;
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -154,27 +156,27 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformedFeatures, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    featureTransformer->transform(pos, transformedFeatures);
-    const auto output = network->propagate(transformedFeatures, buffer);
+    featureTransformer[net_id]->transform(pos, transformedFeatures);
+    const auto output = network[net_id]->propagate(transformedFeatures, buffer);
 
     return static_cast<Value>(output[0] / OutputScale);
   }
 
   // Load eval, from a file stream or a memory stream
-  bool load_eval(std::string name, std::istream& stream) {
+  bool load_eval(std::string name, std::istream& stream, int net_id) {
 
-    initialize();
-    fileName = name;
-    return read_parameters(stream);
+    initialize(net_id);
+    fileName[net_id] = name;
+    return read_parameters(stream, net_id);
   }
 
   // Save eval, to a file stream or a memory stream
-  bool save_eval(std::ostream& stream) {
+  bool save_eval(std::ostream& stream, int net_id) {
 
-    if (fileName.empty())
+    if (fileName[net_id].empty())
       return false;
 
-    return write_parameters(stream);
+    return write_parameters(stream, net_id);
   }
 
 } // namespace Stockfish::Eval::NNUE

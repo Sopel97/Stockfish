@@ -47,13 +47,15 @@ namespace Eval {
     };
 
     extern UseNNUEMode useNNUE;
-    extern std::string eval_file_loaded;
+    extern std::string eval_file_loaded[2];
 
     Value evaluate(const Position& pos);
-    bool load_eval(std::string name, std::istream& stream);
-    bool save_eval(std::ostream& stream);
+    bool load_eval(std::string name, std::istream& stream, int net_id);
+    bool save_eval(std::ostream& stream, int net_id);
+    void init(int net_id);
     void init();
     void export_net(const std::optional<std::string>& filename);
+    void verify(int net_id);
     void verify();
   }
 

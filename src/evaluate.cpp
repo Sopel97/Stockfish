@@ -61,7 +61,7 @@ namespace Stockfish {
 namespace Eval {
 
   namespace NNUE {
-    string eval_file_loaded = "None";
+    string eval_file_loaded[2] = { "None", "None" };
     UseNNUEMode useNNUE;
 
     /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
@@ -85,12 +85,17 @@ namespace Eval {
     }
 
     void init() {
+      init(0);
+      init(1);
+    }
+
+    void init(int net_id) {
 
       useNNUE = nnue_mode_from_option(Options["Use NNUE"]);
       if (useNNUE == UseNNUEMode::False)
           return;
 
-      string eval_file = string(Options["EvalFile"]);
+      string eval_file = net_id == 0 ? string(Options["EvalFile"]) : string(Options["EvalFile2"]);
 
       #if defined(DEFAULT_NNUE_DIRECTORY)
       #define stringify2(x) #x
@@ -101,13 +106,13 @@ namespace Eval {
       #endif
 
       for (string directory : dirs)
-          if (eval_file_loaded != eval_file)
+          if (eval_file_loaded[net_id] != eval_file)
           {
               if (directory != "<internal>")
               {
                   ifstream stream(directory + eval_file, ios::binary);
-                  if (load_eval(eval_file, stream))
-                      eval_file_loaded = eval_file;
+                  if (load_eval(eval_file, stream, net_id))
+                      eval_file_loaded[net_id] = eval_file;
               }
 
               if (directory == "<internal>" && eval_file == EvalFileDefaultName)
@@ -121,18 +126,19 @@ namespace Eval {
                                       size_t(gEmbeddedNNUESize));
 
                   istream stream(&buffer);
-                  if (load_eval(eval_file, stream))
-                      eval_file_loaded = eval_file;
+                  if (load_eval(eval_file, stream, net_id))
+                      eval_file_loaded[net_id] = eval_file;
               }
           }
     }
 
     void export_net(const std::optional<std::string>& filename) {
+      int net_id = 0;
       std::string actualFilename;
       if (filename.has_value()) {
         actualFilename = filename.value();
       } else {
-        if (eval_file_loaded != EvalFileDefaultName) {
+        if (eval_file_loaded[net_id] != EvalFileDefaultName) {
           sync_cout << "Failed to export a net. A non-embedded net can only be saved if the filename is specified." << sync_endl;
           return;
         }
@@ -140,19 +146,24 @@ namespace Eval {
       }
 
       ofstream stream(actualFilename, std::ios_base::binary);
-      if (save_eval(stream)) {
+      if (save_eval(stream, 0)) {
           sync_cout << "Network saved successfully to " << actualFilename << "." << sync_endl;
       } else {
           sync_cout << "Failed to export a net." << sync_endl;
       }
     }
 
-    /// NNUE::verify() verifies that the last net used was loaded successfully
     void verify() {
+      verify(0);
+      verify(1);
+    }
 
-      string eval_file = string(Options["EvalFile"]);
+    /// NNUE::verify() verifies that the last net used was loaded successfully
+    void verify(int net_id) {
 
-      if (useNNUE != UseNNUEMode::False && eval_file_loaded != eval_file)
+      string eval_file = net_id == 0 ? string(Options["EvalFile"]) : string(Options["EvalFile2"]);
+
+      if (useNNUE != UseNNUEMode::False && eval_file_loaded[net_id] != eval_file)
       {
           UCI::OptionsMap defaults;
           UCI::init(defaults);
