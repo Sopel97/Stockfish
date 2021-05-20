@@ -1976,7 +1976,7 @@ namespace Search
 
   // Initialization for learning.
   // Called from Tools::search(),Tools::qsearch().
-  static bool init_for_search(Position& pos, Stack* ss)
+  static bool init_for_search(Position& pos, Stack* ss, int net_id)
   {
 
     // RootNode requires ss->ply == 0.
@@ -1994,6 +1994,7 @@ namespace Search
       th->rootDepth = 0;
       th->nmpMinPly = th->bestMoveChanges = th->failedHighCnt = 0;
       th->ttHitAverage = TtHitAverageWindow * TtHitAverageResolution / 2;
+      th->netId = net_id;
 
       // Zero initialization of the number of search nodes
       th->nodes = 0;
@@ -2049,12 +2050,12 @@ namespace Search
   //Although it was possible to specify alpha and beta with arguments, this will show the result when searching in that window
   // Because it writes to the substitution table, the value that can be pruned is written to that window when learning
   // As it has a bad effect, I decided to stop allowing the window range to be specified.
-  ValueAndPV qsearch(Position& pos)
+  ValueAndPV qsearch(Position& pos, int net_id /* = 0 */)
   {
     Stack stack[MAX_PLY+10], *ss = stack+7;
     Move  pv[MAX_PLY+1];
 
-    if (!init_for_search(pos, ss))
+    if (!init_for_search(pos, ss, net_id))
       return {};
 
     ss->pv = pv; // For the time being, it must be a dummy and somewhere with a buffer.
@@ -2097,7 +2098,7 @@ namespace Search
   // After returning from search(), if Threads.stop == true, do not use the search result.
   // Also, note that before calling, if you do not call it with Threads.stop == false, the search will be interrupted and it will return.
 
-  ValueAndPV search(Position& pos, int depth_, size_t multiPV /* = 1 */, uint64_t nodesLimit /* = 0 */)
+  ValueAndPV search(Position& pos, int depth_, size_t multiPV /* = 1 */, uint64_t nodesLimit /* = 0 */, int net_id /* = 0 */)
   {
     std::vector<Move> pvs;
 
@@ -2111,7 +2112,7 @@ namespace Search
     Stack stack[MAX_PLY + 10], * ss = stack + 7;
     Move pv[MAX_PLY + 1];
 
-    if (!init_for_search(pos, ss))
+    if (!init_for_search(pos, ss, net_id))
       return {};
 
 	ss->pv = pv; // For the time being, it must be a dummy and somewhere with a buffer.

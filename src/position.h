@@ -169,6 +169,8 @@ public:
   Value non_pawn_material(Color c) const;
   Value non_pawn_material() const;
 
+  void set_thread(Thread& th) { thisThread = &th; }
+
   // Position consistency check, for debugging
   bool pos_is_ok() const;
   void flip();

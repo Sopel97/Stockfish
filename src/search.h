@@ -115,8 +115,8 @@ void clear();
 // A pair of reader and evaluation value. Returned by Tools::search(),Tools::qsearch().
 using ValueAndPV = std::pair<Value, std::vector<Move>>;
 
-ValueAndPV qsearch(Position& pos);
-ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1, uint64_t nodesLimit = 0);
+ValueAndPV qsearch(Position& pos, int net_id = 0);
+ValueAndPV search(Position& pos, int depth_, size_t multiPV = 1, uint64_t nodesLimit = 0, int net_id = 0);
 
 }
 

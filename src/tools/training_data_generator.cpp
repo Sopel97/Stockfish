@@ -251,6 +251,9 @@ namespace Stockfish::Tools
         std::atomic<uint64_t>& counter,
         uint64_t limit)
     {
+        // The thread to hold histories for the other side
+        std::unique_ptr<Thread> aux_th = std::make_unique<Thread>(th.thread_idx());
+
         // For the time being, it will be treated as a draw
         // at the maximum number of steps to write.
         // Maximum StateInfo + Search PV to advance to leaf buffer
@@ -267,6 +270,23 @@ namespace Stockfish::Tools
         // repeat until the specified number of times
         while (!quit)
         {
+            int nets_by_color[COLOR_NB];
+            Thread* threads_by_color[COLOR_NB];
+            if (prng.rand(2) == 0)
+            {
+                nets_by_color[WHITE] = 0;
+                nets_by_color[BLACK] = 1;
+                threads_by_color[0] = &th;
+                threads_by_color[1] = aux_th.get();
+            }
+            else
+            {
+                nets_by_color[WHITE] = 1;
+                nets_by_color[BLACK] = 0;
+                threads_by_color[0] = aux_th.get();
+                threads_by_color[1] = &th;
+            }
+
             // It is necessary to set a dependent thread for Position.
             // When parallelizing, Threads (since this is a vector<Thread*>,
             // Do the same for up to Threads[0]...Threads[thread_num-1].
@@ -280,6 +300,8 @@ namespace Stockfish::Tools
             {
                 pos.set(StartFEN, false, &si, &th);
             }
+            Thread& actual_th = *threads_by_color[pos.side_to_move()];
+            pos.set_thread(actual_th);
 
             int resign_counter = 0;
             bool should_resign = prng.rand(10) > 1;
@@ -300,7 +322,7 @@ namespace Stockfish::Tools
             vector<int> move_hist_scores;
 
             auto flush_psv = [&](int8_t result) {
-                quit = commit_psv(th, packed_sfens, result, counter, limit, pos.side_to_move());
+                quit = commit_psv(actual_th, packed_sfens, result, counter, limit, pos.side_to_move());
             };
 
             for (int ply = 0; ; ++ply)
@@ -309,7 +331,7 @@ namespace Stockfish::Tools
                 const int depth = params.search_depth_min + (int)prng.rand(params.search_depth_max - params.search_depth_min + 1);
 
                 // Starting search calls init_for_search
-                auto [search_value, search_pv] = Search::search(pos, depth, 1, params.nodes);
+                auto [search_value, search_pv] = Search::search(pos, depth, 1, params.nodes, nets_by_color[pos.side_to_move()]);
 
                 // This has to be performed after search because it needs to know
                 // rootMoves which are filled in init_for_search.
@@ -357,7 +379,7 @@ namespace Stockfish::Tools
 
                     if (params.ensure_quiet)
                     {
-                        auto [qsearch_value, qsearch_pv] = Search::qsearch(pos);
+                        auto [qsearch_value, qsearch_pv] = Search::qsearch(pos, nets_by_color[pos.side_to_move()]);
                         if (qsearch_pv.empty())
                         {
                             // Here we only write the position data.
@@ -386,7 +408,7 @@ namespace Stockfish::Tools
                             else
                             {
                                 // Reevaluate
-                                auto [quiet_search_value, quiet_search_pv] = Search::search(pos, depth, 1, params.nodes);
+                                auto [quiet_search_value, quiet_search_pv] = Search::search(pos, depth, 1, params.nodes, nets_by_color[pos.side_to_move()]);
                                 if (quiet_search_pv.empty())
                                 {
                                     // Just skip the move.
