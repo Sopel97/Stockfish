@@ -22,6 +22,7 @@
 #include <cstring>   // For std::memset
 #include <iostream>
 #include <sstream>
+#include <fstream>
 
 #include "evaluate.h"
 #include "misc.h"
@@ -57,6 +58,22 @@ using Eval::evaluate;
 using namespace Search;
 
 namespace {
+
+  enum struct EvalDepthStatsType
+  {
+    AbortedSearchEval = 0,
+    AbortedSearchDraw = 1,
+    StaticEvalInCheck = 2,
+    StaticEvalTTHitValueNone = 3,
+    StaticEvalNoTTHit = 4,
+    StaticEvalNoTTHitNullMove = 5
+  };
+
+  static void writeEvalDepthStats(EvalDepthStatsType type, Depth depth)
+  {
+    static std::ofstream file("eval_depth_stats.txt");
+    file << static_cast<int>(type) << ' ' << static_cast<int>(depth) << '\n';
+  }
 
   // Different node types, used as a template parameter
   enum NodeType { NonPV, PV };
@@ -590,8 +607,18 @@ namespace {
         if (   Threads.stop.load(std::memory_order_relaxed)
             || pos.is_draw(ss->ply)
             || ss->ply >= MAX_PLY)
-            return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
-                                                        : value_draw(pos.this_thread());
+        {
+            if (ss->ply >= MAX_PLY && !ss->inCheck)
+            {
+              writeEvalDepthStats(EvalDepthStatsType::AbortedSearchEval, depth);
+              return evaluate(pos);
+            }
+            else
+            {
+              writeEvalDepthStats(EvalDepthStatsType::AbortedSearchDraw, depth);
+              return value_draw(pos.this_thread());
+            }
+        }
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
         // would be at best mate_in(ss->ply+1), but if alpha is already bigger because
@@ -739,6 +766,7 @@ namespace {
     // Step 6. Static evaluation of the position
     if (ss->inCheck)
     {
+        writeEvalDepthStats(EvalDepthStatsType::StaticEvalInCheck, depth);
         // Skip early pruning when in check
         ss->staticEval = eval = VALUE_NONE;
         improving = false;
@@ -749,7 +777,10 @@ namespace {
         // Never assume anything about values stored in TT
         ss->staticEval = eval = tte->eval();
         if (eval == VALUE_NONE)
+        {
+            writeEvalDepthStats(EvalDepthStatsType::StaticEvalTTHitValueNone, depth);
             ss->staticEval = eval = evaluate(pos);
+        }
 
         // Randomize draw evaluation
         if (eval == VALUE_DRAW)
@@ -765,9 +796,15 @@ namespace {
         // In case of null move search use previous static eval with a different sign
         // and addition of two tempos
         if ((ss-1)->currentMove != MOVE_NULL)
+        {
+            writeEvalDepthStats(EvalDepthStatsType::StaticEvalNoTTHit, depth);
             ss->staticEval = eval = evaluate(pos);
+        }
         else
+        {
+            writeEvalDepthStats(EvalDepthStatsType::StaticEvalNoTTHitNullMove, depth);
             ss->staticEval = eval = -(ss-1)->staticEval;
+        }
 
         // Save static evaluation into transposition table
         tte->save(posKey, VALUE_NONE, ss->ttPv, BOUND_NONE, DEPTH_NONE, MOVE_NONE, eval);
@@ -1387,7 +1424,18 @@ moves_loop: // When in check, search starts from here
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
         || ss->ply >= MAX_PLY)
-        return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+    {
+        if (ss->ply >= MAX_PLY && !ss->inCheck)
+        {
+          writeEvalDepthStats(EvalDepthStatsType::AbortedSearchEval, depth);
+          return evaluate(pos);
+        }
+        else
+        {
+          writeEvalDepthStats(EvalDepthStatsType::AbortedSearchDraw, depth);
+          return VALUE_DRAW;
+        }
+    }
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1414,6 +1462,7 @@ moves_loop: // When in check, search starts from here
     // Evaluate the position statically
     if (ss->inCheck)
     {
+        writeEvalDepthStats(EvalDepthStatsType::StaticEvalInCheck, depth);
         ss->staticEval = VALUE_NONE;
         bestValue = futilityBase = -VALUE_INFINITE;
     }
@@ -1423,7 +1472,10 @@ moves_loop: // When in check, search starts from here
         {
             // Never assume anything about values stored in TT
             if ((ss->staticEval = bestValue = tte->eval()) == VALUE_NONE)
+            {
+                writeEvalDepthStats(EvalDepthStatsType::StaticEvalTTHitValueNone, depth);
                 ss->staticEval = bestValue = evaluate(pos);
+            }
 
             // Can ttValue be used as a better position evaluation?
             if (    ttValue != VALUE_NONE
@@ -1433,9 +1485,19 @@ moves_loop: // When in check, search starts from here
         else
             // In case of null move search use previous static eval with a different sign
             // and addition of two tempos
+          {
+            if ((ss-1)->currentMove == MOVE_NULL)
+            {
+              writeEvalDepthStats(EvalDepthStatsType::StaticEvalNoTTHitNullMove, depth);
+            }
+            else
+            {
+              writeEvalDepthStats(EvalDepthStatsType::StaticEvalNoTTHit, depth);
+            }
             ss->staticEval = bestValue =
             (ss-1)->currentMove != MOVE_NULL ? evaluate(pos)
                                              : -(ss-1)->staticEval;
+          }
 
         // Stand pat. Return immediately if static value is at least beta
         if (bestValue >= beta)
