@@ -1130,10 +1130,10 @@ Value Eval::evaluate(const Position& pos, Depth depth) {
       Value psq = Value(abs(eg_value(pos.psq_score())));
       int   r50 = 16 + pos.rule50_count();
       bool  largePsq = psq * 16 > (NNUEThreshold1 + pos.non_pawn_material() / 64) * r50;
-      bool  depthLow = (0 <= depth && depth <= 3);
+      bool depthHigh = depth >= 2;
 
-      v = largePsq && !depthLow ? Evaluation<NO_TRACE>(pos).value()  // classical
-                                : adjusted_NNUE();                   // NNUE
+      v = largePsq && !depthHigh ? Evaluation<NO_TRACE>(pos).value()  // classical
+                                 : adjusted_NNUE();                   // NNUE
 
   }
 
