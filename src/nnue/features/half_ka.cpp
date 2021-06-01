@@ -30,7 +30,13 @@ namespace Stockfish::Eval::NNUE::Features {
 
   // Index of a feature for a given king position and another piece on some square
   inline IndexType make_index(Color perspective, Square s, Piece pc, Square ksq) {
-    return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END2 * ksq);
+    constexpr int W = 15;
+    constexpr int H = 15;
+    auto p_idx = kpp_board_index[perspective][pc];
+    s = orient(perspective, s);
+    int relative_file = file_of(s) - file_of(ksq) + (W / 2);
+    int relative_rank = rank_of(s) - rank_of(ksq) + (H / 2);
+    return p_idx + H * relative_file + relative_rank;
   }
 
   // Get a list of indices for active features

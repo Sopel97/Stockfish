@@ -75,27 +75,28 @@ namespace Stockfish::Eval::NNUE {
   enum {
     PS_NONE     =  0,
     PS_W_PAWN   =  0,
-    PS_B_PAWN   =  1 * SQUARE_NB,
-    PS_W_KNIGHT =  2 * SQUARE_NB,
-    PS_B_KNIGHT =  3 * SQUARE_NB,
-    PS_W_BISHOP =  4 * SQUARE_NB,
-    PS_B_BISHOP =  5 * SQUARE_NB,
-    PS_W_ROOK   =  6 * SQUARE_NB,
-    PS_B_ROOK   =  7 * SQUARE_NB,
-    PS_W_QUEEN  =  8 * SQUARE_NB,
-    PS_B_QUEEN  =  9 * SQUARE_NB,
-    PS_KING     = 10 * SQUARE_NB,
-    PS_END      = PS_KING, // pieces without kings (pawns included)
-    PS_END2     = 11 * SQUARE_NB
+    PS_B_PAWN   =  1 * 15 * 15,
+    PS_W_KNIGHT =  2 * 15 * 15,
+    PS_B_KNIGHT =  3 * 15 * 15,
+    PS_W_BISHOP =  4 * 15 * 15,
+    PS_B_BISHOP =  5 * 15 * 15,
+    PS_W_ROOK   =  6 * 15 * 15,
+    PS_B_ROOK   =  7 * 15 * 15,
+    PS_W_QUEEN  =  8 * 15 * 15,
+    PS_B_QUEEN  =  9 * 15 * 15,
+    PS_W_KING     = 10 * 15 * 15,
+    PS_END     = PS_W_KING,
+    PS_B_KING     = 11 * 15 * 15,
+    PS_END2     = 12 * 15 * 15
   };
 
   constexpr uint32_t kpp_board_index[COLOR_NB][PIECE_NB] = {
     // convention: W - us, B - them
     // viewed from other side, W and B are reversed
-    { PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE,
-      PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_KING, PS_NONE },
-    { PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_KING, PS_NONE,
-      PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE }
+    { PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_W_KING, PS_NONE,
+      PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_B_KING, PS_NONE },
+    { PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_B_KING, PS_NONE,
+      PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_W_KING, PS_NONE }
   };
 
   // Type of input feature after conversion
