@@ -22,7 +22,7 @@
 #define NNUE_HALFKA_256X2_32_32_H_INCLUDED
 
 #include "../features/feature_set.h"
-#include "../features/half_ka.h"
+#include "../features/half_ka_e3.h"
 
 #include "../layers/input_slice.h"
 #include "../layers/affine_transform.h"
@@ -32,7 +32,7 @@ namespace Stockfish::Eval::NNUE {
 
 // Input features used in evaluation function
 using RawFeatures = Features::FeatureSet<
-    Features::HalfKA<Features::Side::kFriend>>;
+    Features::HalfKA_E3<Features::Side::kFriend>>;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType kTransformedFeatureDimensions = 512;
