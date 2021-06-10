@@ -30,6 +30,11 @@
 
 namespace Stockfish::Eval::NNUE {
 
+  static inline constexpr int cmin(int a, int b)
+  {
+    if (a < b) return a;
+    return b;
+  }
   // If vector instructions are enabled, we update and refresh the
   // accumulator tile by tile such that each tile fits in the CPU's
   // vector registers.
@@ -49,7 +54,7 @@ namespace Stockfish::Eval::NNUE {
   #define vec_add_psqt_32(a,b) _mm256_add_epi32(a,b)
   #define vec_sub_psqt_32(a,b) _mm256_sub_epi32(a,b)
   #define vec_zero_psqt() _mm256_setzero_si256()
-  static constexpr IndexType NumRegs = 8; // only 8 are needed
+  static constexpr IndexType NumRegs = cmin(TransformedFeatureDimensions / 32, 16); // only 8 are needed
   static constexpr IndexType NumPsqtRegs = 1;
 
   #elif USE_AVX2
@@ -64,7 +69,7 @@ namespace Stockfish::Eval::NNUE {
   #define vec_add_psqt_32(a,b) _mm256_add_epi32(a,b)
   #define vec_sub_psqt_32(a,b) _mm256_sub_epi32(a,b)
   #define vec_zero_psqt() _mm256_setzero_si256()
-  static constexpr IndexType NumRegs = 16;
+  static constexpr IndexType NumRegs = cmin(TransformedFeatureDimensions / 16, 16);
   static constexpr IndexType NumPsqtRegs = 1;
 
   #elif USE_SSE2
@@ -79,7 +84,7 @@ namespace Stockfish::Eval::NNUE {
   #define vec_add_psqt_32(a,b) _mm_add_epi32(a,b)
   #define vec_sub_psqt_32(a,b) _mm_sub_epi32(a,b)
   #define vec_zero_psqt() _mm_setzero_si128()
-  static constexpr IndexType NumRegs = Is64Bit ? 16 : 8;
+  static constexpr IndexType NumRegs = Is64Bit ? cmin(TransformedFeatureDimensions / 8, 16) : cmin(TransformedFeatureDimensions / 8, 8);
   static constexpr IndexType NumPsqtRegs = 2;
 
   #elif USE_MMX
@@ -94,7 +99,7 @@ namespace Stockfish::Eval::NNUE {
   #define vec_add_psqt_32(a,b) _mm_add_pi32(a,b)
   #define vec_sub_psqt_32(a,b) _mm_sub_pi32(a,b)
   #define vec_zero_psqt() _mm_setzero_si64()
-  static constexpr IndexType NumRegs = 8;
+  static constexpr IndexType NumRegs = cmin(TransformedFeatureDimensions / 4, 8);
   static constexpr IndexType NumPsqtRegs = 4;
 
   #elif USE_NEON
@@ -109,7 +114,7 @@ namespace Stockfish::Eval::NNUE {
   #define vec_add_psqt_32(a,b) vaddq_s32(a,b)
   #define vec_sub_psqt_32(a,b) vsubq_s32(a,b)
   #define vec_zero_psqt() psqt_vec_t{0}
-  static constexpr IndexType NumRegs = 16;
+  static constexpr IndexType NumRegs = cmin(TransformedFeatureDimensions / 8, 16);
   static constexpr IndexType NumPsqtRegs = 2;
 
   #else
