@@ -26,12 +26,19 @@
 #include <vector>
 #include <cstdint>
 #include <fstream>
+#include <x86intrin.h>
 
 #include "types.h"
 
 namespace Stockfish {
 
 extern std::ofstream test_size_output_file;
+
+inline unsigned long long rdtsc() {
+    _mm_lfence();
+    return __rdtsc();
+    _mm_lfence();
+}
 
 std::string engine_info(bool to_uci = false);
 std::string compiler_info();

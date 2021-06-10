@@ -22,6 +22,7 @@
 #define NNUE_LAYERS_CLIPPED_RELU_H_INCLUDED
 
 #include "../nnue_common.h"
+#include "../../misc.h"
 
 namespace Stockfish::Eval::NNUE::Layers {
 
@@ -69,6 +70,7 @@ namespace Stockfish::Eval::NNUE::Layers {
         const TransformedFeatureType* transformedFeatures, char* buffer) const {
       const auto input = previousLayer.propagate(
           transformedFeatures, buffer + SelfBufferSize);
+      auto t0 = rdtsc();
       const auto output = reinterpret_cast<OutputType*>(buffer);
 
   #if defined(USE_AVX2)
@@ -179,6 +181,11 @@ namespace Stockfish::Eval::NNUE::Layers {
         output[i] = static_cast<OutputType>(
             std::max(0, std::min(127, input[i] >> WeightScaleBits)));
       }
+
+      auto t1 = rdtsc();
+      auto diff = t1 - t0;
+
+      test_size_output_file << TEST_ARCH << " 202 " << InputDimensions << ' ' << diff << '\n';
       return output;
     }
 

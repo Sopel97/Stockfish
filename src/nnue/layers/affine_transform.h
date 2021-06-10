@@ -23,6 +23,7 @@
 
 #include <iostream>
 #include "../nnue_common.h"
+#include "../../misc.h"
 
 namespace Stockfish::Eval::NNUE::Layers {
 
@@ -115,6 +116,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       const auto input = previousLayer.propagate(
           transformedFeatures, buffer + SelfBufferSize);
 
+      auto t0 = rdtsc();
 #if defined (USE_AVX512)
 
       [[maybe_unused]] const __m512i Ones512 = _mm512_set1_epi16(1);
@@ -416,6 +418,11 @@ namespace Stockfish::Eval::NNUE::Layers {
 #endif
 
 #endif
+
+      auto t1 = rdtsc();
+      auto diff = t1 - t0;
+
+      test_size_output_file << TEST_ARCH << " 201 " << InputDimensions << "x" << OutputDimensions << ' ' << diff << '\n';
 
       return output;
     }

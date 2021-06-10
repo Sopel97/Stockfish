@@ -184,6 +184,7 @@ namespace Stockfish::Eval::NNUE {
           - psqtAccumulation[perspectives[1]][bucket]
         ) / 2;
 
+      auto t0 = rdtsc();
 
   #if defined(USE_AVX512)
 
@@ -207,7 +208,6 @@ namespace Stockfish::Eval::NNUE {
                                  _mm512_max_epi8(_mm512_packs_epi16(sum0, sum1), Zero)));
           }
       }
-      return psqt;
 
   #elif defined(USE_AVX2)
 
@@ -230,7 +230,6 @@ namespace Stockfish::Eval::NNUE {
                                  _mm256_max_epi8(_mm256_packs_epi16(sum0, sum1), Zero), Control));
           }
       }
-      return psqt;
 
   #elif defined(USE_SSE2)
 
@@ -261,7 +260,6 @@ namespace Stockfish::Eval::NNUE {
               #endif
           }
       }
-      return psqt;
 
   #elif defined(USE_MMX)
 
@@ -281,7 +279,6 @@ namespace Stockfish::Eval::NNUE {
           }
       }
       _mm_empty();
-      return psqt;
 
   #elif defined(USE_NEON)
 
@@ -298,7 +295,6 @@ namespace Stockfish::Eval::NNUE {
               out[j] = vmax_s8(vqmovn_s16(sum), Zero);
           }
       }
-      return psqt;
 
   #else
 
@@ -311,9 +307,15 @@ namespace Stockfish::Eval::NNUE {
               output[offset + j] = static_cast<OutputType>(std::max<int>(0, std::min<int>(127, sum)));
           }
       }
-      return psqt;
 
   #endif
+
+      auto t1 = rdtsc();
+      auto diff = (t1 - t0);
+
+      test_size_output_file << TEST_ARCH << " 200 " << OutputDimensions << ' ' << diff << '\n';
+
+      return psqt;
 
    } // end of function transform()
 
@@ -352,6 +354,8 @@ namespace Stockfish::Eval::NNUE {
 
       if (st->accumulator.state[perspective] == COMPUTED)
       {
+        auto t0 = rdtsc();
+
         if (next == nullptr)
           return;
 
@@ -484,9 +488,20 @@ namespace Stockfish::Eval::NNUE {
           }
         }
   #endif
+        auto t1 = rdtsc();
+        auto diff = t1 - t0;
+        int num_updates = 0;
+        for (IndexType i = 0; states_to_update[i]; ++i)
+        {
+          num_updates += removed[i].size();
+          num_updates += added[i].size();
+        }
+
+        test_size_output_file << TEST_ARCH << ' ' << num_updates << ' ' << OutputDimensions << ' ' << diff << '\n';
       }
       else
       {
+        auto t0 = rdtsc();
         // Refresh the accumulator
         auto& accumulator = pos.state()->accumulator;
         accumulator.state[perspective] = COMPUTED;
@@ -554,6 +569,11 @@ namespace Stockfish::Eval::NNUE {
             accumulator.psqtAccumulation[perspective][k] += psqtWeights[index * PSQTBuckets + k];
         }
   #endif
+        auto t1 = rdtsc();
+        auto diff = t1 - t0;
+        int num_updates = active.size();
+
+        test_size_output_file << TEST_ARCH << ' ' << 100 + num_updates << ' ' << OutputDimensions << ' ' << diff << '\n';
       }
 
   #if defined(USE_MMX)
