@@ -25,10 +25,13 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <fstream>
 
 #include "types.h"
 
 namespace Stockfish {
+
+extern std::ofstream test_size_output_file;
 
 std::string engine_info(bool to_uci = false);
 std::string compiler_info();

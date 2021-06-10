@@ -63,6 +63,8 @@ using namespace std;
 
 namespace Stockfish {
 
+std::ofstream test_size_output_file("test_size_results.txt", std::ios_base::app);
+
 namespace {
 
 /// Version number. If Version is left empty, then compile date in the format
