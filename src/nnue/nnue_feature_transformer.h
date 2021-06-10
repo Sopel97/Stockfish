@@ -294,18 +294,8 @@ namespace Stockfish::Eval::NNUE {
       // Look for a usable accumulator of an earlier position. We keep track
       // of the estimated gain in terms of features to be added/subtracted.
       StateInfo *st = pos.state(), *next = nullptr;
-      int gain = pos.count<ALL_PIECES>() - 2;
-      while (st->accumulator.state[c] == EMPTY)
+      if (st->accumulator.state[c] == EMPTY && st->dirtyPiece.piece[0] != make_piece(c, KING))
       {
-        auto& dp = st->dirtyPiece;
-        // The first condition tests whether an incremental update is
-        // possible at all: if this side's king has moved, it is not possible.
-        static_assert(std::is_same_v<RawFeatures::SortedTriggerSet,
-              Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
-              "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
-        if (   dp.piece[0] == make_piece(c, KING)
-            || (gain -= dp.dirty_num + 1) < 0)
-          break;
         next = st;
         st = st->previous;
       }
@@ -324,18 +314,18 @@ namespace Stockfish::Eval::NNUE {
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
         Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
-            next->dirtyPiece, c, &removed[0], &added[0]);
+            c, &removed[0], &added[0]);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
-              st2->dirtyPiece, c, &removed[1], &added[1]);
+              c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
         next->accumulator.state[c] = COMPUTED;
         pos.state()->accumulator.state[c] = COMPUTED;
 
         // Now update the accumulators listed in info[], where the last element is a sentinel.
-        StateInfo *info[3] =
-          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
+        StateInfo *info[2] =
+          { next, nullptr };
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
         {
