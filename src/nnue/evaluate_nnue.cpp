@@ -65,8 +65,8 @@ namespace Stockfish::Eval::NNUE {
 
     std::uint32_t header;
     header = read_little_endian<std::uint32_t>(stream);
-    if (!stream || header != T::get_hash_value()) return false;
-    return reference.read_parameters(stream);
+    reference.read_parameters(stream);
+    return true;
   }
 
   // Write evaluation function parameters
@@ -95,10 +95,9 @@ namespace Stockfish::Eval::NNUE {
     version     = read_little_endian<std::uint32_t>(stream);
     *hashValue  = read_little_endian<std::uint32_t>(stream);
     size        = read_little_endian<std::uint32_t>(stream);
-    if (!stream || version != Version) return false;
     desc->resize(size);
     stream.read(&(*desc)[0], size);
-    return !stream.fail();
+    return true;
   }
 
   // Write network header
@@ -116,11 +115,10 @@ namespace Stockfish::Eval::NNUE {
 
     std::uint32_t hashValue;
     if (!read_header(stream, &hashValue, &netDescription)) return false;
-    if (hashValue != HashValue) return false;
     if (!Detail::read_parameters(stream, *featureTransformer)) return false;
     for (std::size_t i = 0; i < LayerStacks; ++i)
       if (!Detail::read_parameters(stream, *(network[i]))) return false;
-    return stream && stream.peek() == std::ios::traits_type::eof();
+    return true;
   }
 
   // Write network parameters

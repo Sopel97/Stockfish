@@ -68,19 +68,19 @@ namespace Stockfish::Eval::NNUE::Layers {
     bool read_parameters(std::istream& stream) {
       if (!previousLayer.read_parameters(stream)) return false;
       for (std::size_t i = 0; i < OutputDimensions; ++i)
-        biases[i] = read_little_endian<BiasType>(stream);
+        biases[i] = rand() % 9 - 4;
       for (std::size_t i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
 #if !defined (USE_SSSE3)
-        weights[i] = read_little_endian<WeightType>(stream);
+        weights[i] = rand() % 9 - 4;
 #else
         weights[
           (i / 4) % (PaddedInputDimensions / 4) * OutputDimensions * 4 +
           i / PaddedInputDimensions * 4 +
           i % 4
-        ] = read_little_endian<WeightType>(stream);
+        ] = rand() % 9 - 4;
 #endif
 
-      return !stream.fail();
+      return true;
     }
 
     // Write network parameters
