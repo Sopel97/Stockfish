@@ -294,7 +294,25 @@ namespace Stockfish::Eval::NNUE {
       // Look for a usable accumulator of an earlier position. We keep track
       // of the estimated gain in terms of features to be added/subtracted.
       StateInfo *st = pos.state(), *next = nullptr;
-      if (st->accumulator.state[c] == EMPTY && st->dirtyPiece.piece[0] != make_piece(c, KING))
+      bool same_bucket = true;
+      auto& dp = st->dirtyPiece;
+      if (dp.piece[0] == make_piece(c, KING)) {
+        if (c == WHITE)
+        {
+          const int from_bucket = Features::HalfKA_E3<Features::Side::kFriend>::KingBuckets[dp.from[0]];
+          const int to_bucket = Features::HalfKA_E3<Features::Side::kFriend>::KingBuckets[dp.to[0]];
+          if (from_bucket != to_bucket)
+            same_bucket = false;
+        }
+        else
+        {
+          const int from_bucket = Features::HalfKA_E3<Features::Side::kFriend>::KingBuckets[(int)(dp.from[0]) ^ (int)SQ_A8];
+          const int to_bucket = Features::HalfKA_E3<Features::Side::kFriend>::KingBuckets[(int)(dp.to[0]) ^ (int)SQ_A8];
+          if (from_bucket != to_bucket)
+            same_bucket = false;
+        }
+      }
+      if (st->accumulator.state[c] == EMPTY && same_bucket)
       {
         next = st;
         st = st->previous;
@@ -308,15 +326,15 @@ namespace Stockfish::Eval::NNUE {
         // Update incrementally in two steps. First, we update the "next"
         // accumulator. Then, we update the current accumulator (pos.state()).
 
-        // Gather all features to be updated. This code assumes HalfKA features
+        // Gather all features to be updated. This code assumes HalfKA_E3 features
         // only and doesn't support refresh triggers.
-        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKA<Features::Side::kFriend>>,
+        static_assert(std::is_same_v<Features::FeatureSet<Features::HalfKA_E3<Features::Side::kFriend>>,
                                      RawFeatures>);
         Features::IndexList removed[2], added[2];
-        Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
+        Features::HalfKA_E3<Features::Side::kFriend>::AppendChangedIndices(pos,
             c, &removed[0], &added[0]);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
-          Features::HalfKA<Features::Side::kFriend>::AppendChangedIndices(pos,
+          Features::HalfKA_E3<Features::Side::kFriend>::AppendChangedIndices(pos,
               c, &removed[1], &added[1]);
 
         // Mark the accumulators as computed.
@@ -443,7 +461,7 @@ namespace Stockfish::Eval::NNUE {
         auto& accumulator = pos.state()->accumulator;
         accumulator.state[c] = COMPUTED;
         Features::IndexList active;
-        Features::HalfKA<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
+        Features::HalfKA_E3<Features::Side::kFriend>::AppendActiveIndices(pos, c, &active);
 
   #ifdef VECTOR
         for (IndexType j = 0; j < kHalfDimensions / kTileHeight; ++j)
