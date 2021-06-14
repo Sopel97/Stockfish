@@ -1044,9 +1044,9 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos) {
+Value Eval::evaluate(const Position& pos, bool isCaptureLikely) {
 
-  Value v = NNUE::evaluate(pos);
+  Value v = NNUE::evaluate(pos, isCaptureLikely);
 
   // Damp down the evaluation linearly when shuffling
   v = v * (100 - pos.rule50_count()) / 100;
@@ -1104,7 +1104,7 @@ std::string Eval::trace(const Position& pos) {
 
   if (Eval::useNNUE)
   {
-      v = NNUE::evaluate(pos);
+      v = NNUE::evaluate(pos, false);
       v = pos.side_to_move() == WHITE ? v : -v;
       ss << "\nNNUE evaluation:      " << to_cp(v) << " (white side)\n";
   }

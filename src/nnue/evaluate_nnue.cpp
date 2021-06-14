@@ -129,7 +129,7 @@ namespace Stockfish::Eval::NNUE {
   }
 
   // Evaluation function. Perform differential calculation.
-  Value evaluate(const Position& pos) {
+  Value evaluate(const Position& pos, bool isCaptureLikely) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -152,7 +152,7 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformed_features, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    const std::size_t bucket = (popcount(pos.pieces()) - 1) / 4;
+    const std::size_t bucket = (popcount(pos.pieces()) - 1) / 8 + isCaptureLikely * 4;
     std::int32_t psqt = 0;
     feature_transformer->Transform(pos, transformed_features, psqt, bucket);
     const auto output = network[bucket]->Propagate(transformed_features, buffer);
