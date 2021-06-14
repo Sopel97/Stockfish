@@ -1079,7 +1079,7 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos) {
+Value Eval::evaluate(const Position& pos, bool isCaptureLikely) {
 
   Value v;
 
@@ -1094,7 +1094,7 @@ Value Eval::evaluate(const Position& pos) {
                      + 32 * pos.count<PAWN>()
                      + 32 * pos.non_pawn_material() / 1024;
 
-         Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
+         Value nnue = NNUE::evaluate(pos, isCaptureLikely, true) * scale / 1024;
 
          if (pos.is_chess960())
              nnue += fix_FRC(pos);

@@ -31,7 +31,7 @@ class Position;
 namespace Eval {
 
   std::string trace(Position& pos);
-  Value evaluate(const Position& pos);
+  Value evaluate(const Position& pos, bool isCaptureLikely);
 
   extern bool useNNUE;
   extern std::string eval_file_loaded;
@@ -44,8 +44,9 @@ namespace Eval {
   namespace NNUE {
 
     std::string trace(Position& pos);
-    Value evaluate(const Position& pos, bool adjusted = false);
+    Value evaluate(const Position& pos, bool isCaptureLikely, bool adjusted = false);
 
+    bool load_eval(std::string name, std::istream& stream);
     void init();
     void verify();
 

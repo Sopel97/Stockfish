@@ -137,7 +137,7 @@ namespace Stockfish::Eval::NNUE {
   }
 
   // Evaluation function. Perform differential calculation.
-  Value evaluate(const Position& pos, bool adjusted) {
+  Value evaluate(const Position& pos, bool isCaptureLikely, bool adjusted) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -160,7 +160,7 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformedFeatures, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 8 + isCaptureLikely * 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
     const auto output = network[bucket]->propagate(transformedFeatures, buffer);
 
@@ -323,7 +323,7 @@ namespace Stockfish::Eval::NNUE {
 
     // We estimate the value of each piece by doing a differential evaluation from
     // the current base eval, simulating the removal of the piece from its square.
-    Value base = evaluate(pos);
+    Value base = evaluate(pos, false);
     base = pos.side_to_move() == WHITE ? base : -base;
 
     for (File f = FILE_A; f <= FILE_H; ++f)
@@ -341,7 +341,7 @@ namespace Stockfish::Eval::NNUE {
           st->accumulator.computed[WHITE] = false;
           st->accumulator.computed[BLACK] = false;
 
-          Value eval = evaluate(pos);
+          Value eval = evaluate(pos, false);
           eval = pos.side_to_move() == WHITE ? eval : -eval;
           v = base - eval;
 
