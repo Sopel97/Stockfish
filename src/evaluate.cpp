@@ -1179,7 +1179,7 @@ std::string Eval::trace(Position& pos) {
       ss << "NNUE evaluation        " << to_cp(v) << " (white side)\n";
   }
 
-  v = evaluate(pos);
+  v = evaluate(pos, false);
   v = pos.side_to_move() == WHITE ? v : -v;
   ss << "Final evaluation       " << to_cp(v) << " (white side)";
   if (Eval::useNNUE)

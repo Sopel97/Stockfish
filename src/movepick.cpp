@@ -59,18 +59,19 @@ namespace {
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh, const LowPlyHistory* lp,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Move cm, const Move* killers, int pl)
            : pos(p), mainHistory(mh), lowPlyHistory(lp), captureHistory(cph), continuationHistory(ch),
-             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d), ply(pl) {
+             ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d), ply(pl), anyGoodCapture(false) {
 
   assert(d > 0);
 
   stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
+  justForGoodCapture = false;
 }
 
 /// MovePicker constructor for quiescence search
 MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHistory* mh,
                        const CapturePieceToHistory* cph, const PieceToHistory** ch, Square rs)
-           : pos(p), mainHistory(mh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), recaptureSquare(rs), depth(d) {
+           : pos(p), mainHistory(mh), captureHistory(cph), continuationHistory(ch), ttMove(ttm), recaptureSquare(rs), depth(d), anyGoodCapture(false) {
 
   assert(d <= 0);
 
@@ -78,6 +79,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
           !(   ttm
             && (pos.checkers() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
             && pos.pseudo_legal(ttm));
+  justForGoodCapture = false;
 }
 
 /// MovePicker constructor for ProbCut: we generate captures with SEE greater
@@ -87,9 +89,25 @@ MovePicker::MovePicker(const Position& p, Move ttm, Value th, const CapturePiece
 
   assert(!pos.checkers());
 
-  stage = PROBCUT_TT + !(ttm && pos.capture(ttm)
+  anyGoodCapture = ttm && pos.capture(ttm)
                              && pos.pseudo_legal(ttm)
-                             && pos.see_ge(ttm, threshold));
+                             && pos.see_ge(ttm, threshold);
+  stage = PROBCUT_TT + !anyGoodCapture;
+  justForGoodCapture = false;
+}
+
+/// MovePicker constructor for ProbCut: we generate captures with SEE greater
+/// than or equal to the given threshold.
+MovePicker::MovePicker(const Position& p, Move ttm, const CapturePieceToHistory* cph)
+           : pos(p), captureHistory(cph), ttMove(ttm) {
+
+  assert(!pos.checkers());
+
+  anyGoodCapture = ttm && pos.capture(ttm)
+                             && pos.pseudo_legal(ttm)
+                             && pos.see_ge(ttm, threshold);
+  stage = MAIN_TT + !anyGoodCapture;
+  justForGoodCapture = true;
 }
 
 /// MovePicker::score() assigns a numerical value to each move in a list, used
@@ -173,7 +191,12 @@ top:
                        return pos.see_ge(*cur, Value(-69 * cur->value / 1024)) ?
                               // Move losing capture to endBadCaptures to be tried later
                               true : (*endBadCaptures++ = *cur, false); }))
+      {
+          anyGoodCapture = true;
           return *(cur - 1);
+      }
+      if (justForGoodCapture)
+        return MOVE_NONE;
 
       // Prepare the pointers to loop over the refutations array
       cur = std::begin(refutations);

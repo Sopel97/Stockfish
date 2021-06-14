@@ -124,6 +124,7 @@ public:
   MovePicker(const MovePicker&) = delete;
   MovePicker& operator=(const MovePicker&) = delete;
   MovePicker(const Position&, Move, Value, const CapturePieceToHistory*);
+  MovePicker(const Position&, Move, const CapturePieceToHistory*);
   MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
                                            const CapturePieceToHistory*,
                                            const PieceToHistory**,
@@ -136,6 +137,8 @@ public:
                                            const Move*,
                                            int);
   Move next_move(bool skipQuiets = false);
+
+  bool any_good_capture() const { return anyGoodCapture; }
 
 private:
   template<PickType T, typename Pred> Move select(Pred);
@@ -156,6 +159,8 @@ private:
   Depth depth;
   int ply;
   ExtMove moves[MAX_MOVES];
+  bool anyGoodCapture;
+  bool justForGoodCapture;
 };
 
 } // namespace Stockfish
