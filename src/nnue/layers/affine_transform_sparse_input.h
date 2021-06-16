@@ -137,7 +137,7 @@ static inline IndexType msb_(std::uint64_t b) {
 #endif
 
     static constexpr const IndexType MaxInputSimdWidth = 64;
-    static constexpr const IndexType MaxOutputSimdWidth = 16;
+    static constexpr const IndexType MaxOutputSimdWidth = 64;
     static constexpr IndexType PaddedOutputDimensions =
       ceil_to_multiple<IndexType>(OutputDimensions, MaxOutputSimdWidth);
 
@@ -320,6 +320,7 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_unpackhi_16(a, b) _mm512_unpackhi_epi16(a, b)
       #define vec_add_32(a, b) _mm512_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm512_madd_epi16(a, b)
+      #define vec_maddubs_16(a, b) _mm512_maddubs_epi16(a, b)
       #define vec_cmpgt_16(a, b) _mm512_cmpgt_epi16_mask(a, b)
       auto& vec_add_dpbusd_32 = m512_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m512_add_dpbusd_epi32x4;
@@ -338,6 +339,7 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_unpackhi_16(a, b) _mm256_unpackhi_epi16(a, b)
       #define vec_add_32(a, b) _mm256_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm256_madd_epi16(a, b)
+      #define vec_maddubs_16(a, b) _mm256_maddubs_epi16(a, b)
       #define vec_cmpgt_16(a, b) _mm256_cmpgt_epi16(a, b)
       auto& vec_add_dpbusd_32 = m256_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m256_add_dpbusd_epi32x4;
@@ -379,88 +381,96 @@ static inline IndexType msb_(std::uint64_t b) {
         }
       }
 
-#if defined(USE_AVX2)
+#if defined (USE_AVX2)
+#error
 
 #elif defined (USE_SSSE3)
 
       auto outputVector = reinterpret_cast<vec_t*>(output);
+      auto biasesVector = reinterpret_cast<const vec_t*>(biases);
 
       constexpr IndexType NumPasses = OutputDimensions / (OutputSimdWidth * 8);
 
       for (IndexType pass = 0; pass < NumPasses; ++pass) {
-        IndexType outputOffset = pass * OutputSimdWidth * 8;
-        auto out0 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+0]);
-        auto out1 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+1]);
-        auto out2 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+2]);
-        auto out3 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+3]);
-        auto out4 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+4]);
-        auto out5 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+5]);
-        auto out6 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+6]);
-        auto out7 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+7]);
+        IndexType outputOffset = pass * 8;
+        auto out0 = biasesVector[outputOffset + 0];
+        auto out1 = biasesVector[outputOffset + 1];
+        auto out2 = biasesVector[outputOffset + 2];
+        auto out3 = biasesVector[outputOffset + 3];
+        auto out4 = biasesVector[outputOffset + 4];
+        auto out5 = biasesVector[outputOffset + 5];
+        auto out6 = biasesVector[outputOffset + 6];
+        auto out7 = biasesVector[outputOffset + 7];
 
         IndexType i = 0;
         for (; i + 1 < numNnzInputIndices; i += 2) {
           const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 8));
-          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions + outputOffset]);
-          const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions + outputOffset]);
+          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions + outputOffset * OutputSimdWidth]);
+          const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions + outputOffset * OutputSimdWidth]);
 
-          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], col1[0]));
-          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], col1[0]));
-          auto prod4 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], col1[1]));
-          auto prod6 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], col1[1]));
-
-          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
-          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
-          auto signs4 = vec_cmpgt_16(vec_setzero, prod4);
-          auto signs6 = vec_cmpgt_16(vec_setzero, prod6);
-
-          out0 = vec_add_32(out0, vec_unpacklo_16(prod0, signs0));
-          out1 = vec_add_32(out1, vec_unpackhi_16(prod0, signs0));
-
-          out2 = vec_add_32(out2, vec_unpacklo_16(prod2, signs2));
-          out3 = vec_add_32(out3, vec_unpackhi_16(prod2, signs2));
-
-          out4 = vec_add_32(out4, vec_unpacklo_16(prod4, signs4));
-          out5 = vec_add_32(out5, vec_unpackhi_16(prod4, signs4));
-
-          out6 = vec_add_32(out6, vec_unpacklo_16(prod6, signs6));
-          out7 = vec_add_32(out7, vec_unpackhi_16(prod6, signs6));
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], col1[0]));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out0 = vec_add_32(out0, vec_unpacklo_16(prod, signs));
+            out1 = vec_add_32(out1, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], col1[0]));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out2 = vec_add_32(out2, vec_unpacklo_16(prod, signs));
+            out3 = vec_add_32(out3, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], col1[1]));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out4 = vec_add_32(out4, vec_unpacklo_16(prod, signs));
+            out5 = vec_add_32(out5, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], col1[1]));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out6 = vec_add_32(out6, vec_unpacklo_16(prod, signs));
+            out7 = vec_add_32(out7, vec_unpackhi_16(prod, signs));
+          }
         }
         for (; i < numNnzInputIndices; ++i) {
           const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i]]);
-          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions + outputOffset]);
+          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions + outputOffset * OutputSimdWidth]);
 
-          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], vec_setzero));
-          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], vec_setzero));
-          auto prod4 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], vec_setzero));
-          auto prod6 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], vec_setzero));
-
-          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
-          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
-          auto signs4 = vec_cmpgt_16(vec_setzero, prod4);
-          auto signs6 = vec_cmpgt_16(vec_setzero, prod6);
-
-          out0 = vec_add_32(out0, vec_unpacklo_16(prod0, signs0));
-          out1 = vec_add_32(out1, vec_unpackhi_16(prod0, signs0));
-
-          out2 = vec_add_32(out2, vec_unpacklo_16(prod2, signs2));
-          out3 = vec_add_32(out3, vec_unpackhi_16(prod2, signs2));
-
-          out4 = vec_add_32(out4, vec_unpacklo_16(prod4, signs4));
-          out5 = vec_add_32(out5, vec_unpackhi_16(prod4, signs4));
-
-          out6 = vec_add_32(out6, vec_unpacklo_16(prod6, signs6));
-          out7 = vec_add_32(out7, vec_unpackhi_16(prod6, signs6));
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], vec_setzero));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out0 = vec_add_32(out0, vec_unpacklo_16(prod, signs));
+            out1 = vec_add_32(out1, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], vec_setzero));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out2 = vec_add_32(out2, vec_unpacklo_16(prod, signs));
+            out3 = vec_add_32(out3, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], vec_setzero));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out4 = vec_add_32(out4, vec_unpacklo_16(prod, signs));
+            out5 = vec_add_32(out5, vec_unpackhi_16(prod, signs));
+          }
+          {
+            auto prod = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], vec_setzero));
+            auto signs = vec_cmpgt_16(vec_setzero, prod);
+            out6 = vec_add_32(out6, vec_unpacklo_16(prod, signs));
+            out7 = vec_add_32(out7, vec_unpackhi_16(prod, signs));
+          }
         }
 
-        outputVector[outputOffset+0] = out0;
-        outputVector[outputOffset+1] = out1;
-        outputVector[outputOffset+2] = out2;
-        outputVector[outputOffset+3] = out3;
-        outputVector[outputOffset+4] = out4;
-        outputVector[outputOffset+5] = out5;
-        outputVector[outputOffset+6] = out6;
-        outputVector[outputOffset+7] = out7;
+        outputVector[outputOffset + 0] = out0;
+        outputVector[outputOffset + 1] = out1;
+        outputVector[outputOffset + 2] = out2;
+        outputVector[outputOffset + 3] = out3;
+        outputVector[outputOffset + 4] = out4;
+        outputVector[outputOffset + 5] = out5;
+        outputVector[outputOffset + 6] = out6;
+        outputVector[outputOffset + 7] = out7;
       }
 
 #elif defined (USE_SSE2)
