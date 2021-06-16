@@ -176,8 +176,8 @@ static inline IndexType msb_(std::uint64_t b) {
         for (std::size_t j = 0; j < PaddedOutputDimensions; ++j)
         {
           int simdlane = j % 16;
-          int simdlane64 = simdlane64 % 4;
-          if (simdlane == 1)
+          int simdlane64 = simdlane / 4;
+          if (simdlane64 == 1)
             std::swap(weights[i*PaddedOutputDimensions + j], weights[i*PaddedOutputDimensions + j + 4]);
         }
 
