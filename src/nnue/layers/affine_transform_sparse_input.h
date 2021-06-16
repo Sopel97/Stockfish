@@ -180,7 +180,6 @@ static inline IndexType msb_(std::uint64_t b) {
           if (simdlane64 == 1)
             std::swap(weights[i*PaddedOutputDimensions + j], weights[i*PaddedOutputDimensions + j + 4]);
         }
-
 #endif
 
       return !stream.fail();
