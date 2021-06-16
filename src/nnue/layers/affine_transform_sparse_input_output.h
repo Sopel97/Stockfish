@@ -85,6 +85,17 @@ namespace Stockfish::Eval::NNUE::Layers {
         for (std::size_t j = 0; j < 4; ++j)
           blocks[i*4+j] = j;
 
+#if defined (USE_AVX2)
+      for (std::size_t i = 0; i < InputDimensions; ++i)
+        for (std::size_t j = 0; j < PaddedOutputDimensions; ++j)
+        {
+          int simdlane = j % 16;
+          int simdlane64 = simdlane / 4;
+          if (simdlane64 == 1)
+            std::swap(weights[i*PaddedOutputDimensions + j], weights[i*PaddedOutputDimensions + j + 4]);
+        }
+#endif
+
       return !stream.fail();
     }
 
@@ -296,7 +307,30 @@ namespace Stockfish::Eval::NNUE::Layers {
       }
 
 #if defined (USE_AVX2)
-#error
+
+      for (IndexType i = 0; i < OutputDimensions; ++i)
+        output[i] = biases[i];
+
+      auto outputVector = reinterpret_cast<vec_t*>(output);
+
+      constexpr IndexType NumChunks = 4;
+
+      IndexType i = 0;
+      for (; i < numNnzInputIndices; ++i) {
+        const auto mul0 = vec_broadcast_32(input[nnzInputIndices[i]]);
+        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions]);
+        for (IndexType k = 0; k < NumChunks; ++k) {
+          auto j = blocks[nnzInputIndices[i]*NumChunks+k];
+          auto sum0 = outputVector[j*2+0];
+          auto sum1 = outputVector[j*2+1];
+
+          sum0 = vec_add_32(sum0, vec_madd_16(mul0, vec_unpacklo_16(col0[j+0], vec_setzero)));
+          sum1 = vec_add_32(sum1, vec_madd_16(mul0, vec_unpackhi_16(col0[j+0], vec_setzero)));
+
+          outputVector[j*2+0] = sum0;
+          outputVector[j*2+1] = sum1;
+        }
+      }
 
 #elif defined (USE_SSE2)
 
