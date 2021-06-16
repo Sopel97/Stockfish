@@ -394,6 +394,35 @@ static inline IndexType msb_(std::uint64_t b) {
       constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 4);
 
       IndexType i = 0;
+      for (; i + 3 < numNnzInputIndices; i += 4) {
+        const auto mul0 = vec_broadcast_32(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 16));
+        const auto mul2 = vec_broadcast_32(input[nnzInputIndices[i+2]] | (input[nnzInputIndices[i+3]] << 16));
+        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions]);
+        const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions]);
+        const auto col2 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+2] * PaddedOutputDimensions]);
+        const auto col3 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+3] * PaddedOutputDimensions]);
+        for (IndexType j = 0; j < NumChunks; ++j) {
+          auto sum0 = outputVector[j*4+0];
+          auto sum1 = outputVector[j*4+1];
+          auto sum2 = outputVector[j*4+2];
+          auto sum3 = outputVector[j*4+3];
+
+          sum0 = vec_add_32(sum0, vec_madd_16(mul0, vec_unpacklo_16(col0[j*2+0], col1[j*2+0])));
+          sum1 = vec_add_32(sum1, vec_madd_16(mul0, vec_unpackhi_16(col0[j*2+0], col1[j*2+0])));
+          sum0 = vec_add_32(sum0, vec_madd_16(mul2, vec_unpacklo_16(col2[j*2+0], col3[j*2+0])));
+          sum1 = vec_add_32(sum1, vec_madd_16(mul2, vec_unpackhi_16(col2[j*2+0], col3[j*2+0])));
+
+          sum2 = vec_add_32(sum2, vec_madd_16(mul0, vec_unpacklo_16(col0[j*2+1], col1[j*2+1])));
+          sum3 = vec_add_32(sum3, vec_madd_16(mul0, vec_unpackhi_16(col0[j*2+1], col1[j*2+1])));
+          sum2 = vec_add_32(sum2, vec_madd_16(mul2, vec_unpacklo_16(col2[j*2+1], col3[j*2+1])));
+          sum3 = vec_add_32(sum3, vec_madd_16(mul2, vec_unpackhi_16(col2[j*2+1], col3[j*2+1])));
+
+          outputVector[j*4+0] = sum0;
+          outputVector[j*4+1] = sum1;
+          outputVector[j*4+2] = sum2;
+          outputVector[j*4+3] = sum3;
+        }
+      }
       for (; i < numNnzInputIndices; ++i) {
         const auto mul0 = vec_broadcast_32(input[nnzInputIndices[i]]);
         const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions]);
