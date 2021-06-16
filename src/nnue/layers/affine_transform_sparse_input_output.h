@@ -18,106 +18,17 @@
 
 // Definition of layer AffineTransform of NNUE evaluation function
 
-#ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED
-#define NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED
+#ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_OUTPUT_H_INCLUDED
+#define NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_OUTPUT_H_INCLUDED
 
 #include <iostream>
 #include "../nnue_common.h"
 
 namespace Stockfish::Eval::NNUE::Layers {
 
-/// popcount() counts the number of non-zero bits in a bitboard
-
-inline int popcount(Bitboard b) {
-
-#ifndef USE_POPCNT
-
-  union { Bitboard bb; uint16_t u[4]; } v = { b };
-  return PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]];
-
-#elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
-
-  return (int)_mm_popcnt_u64(b);
-
-#else // Assumed gcc or compatible compiler
-
-  return __builtin_popcountll(b);
-
-#endif
-}
-
-
-/// lsb() and msb() return the least/most significant bit in a non-zero bitboard
-
-#if defined(__GNUC__)  // GCC, Clang, ICC
-
-static inline IndexType lsb_(std::uint64_t b) {
-  assert(b);
-  return IndexType(__builtin_ctzll(b));
-}
-
-static inline IndexType msb_(std::uint64_t b) {
-  assert(b);
-  return IndexType(63 ^ __builtin_clzll(b));
-}
-
-#elif defined(_MSC_VER)  // MSVC
-
-#ifdef _WIN64  // MSVC, WIN64
-
-static inline IndexType lsb_(std::uint64_t b) {
-  assert(b);
-  unsigned long idx;
-  _BitScanForward64(&idx, b);
-  return (IndexType) idx;
-}
-
-static inline IndexType msb_(std::uint64_t b) {
-  assert(b);
-  unsigned long idx;
-  _BitScanReverse64(&idx, b);
-  return (IndexType) idx;
-}
-
-#else  // MSVC, WIN32
-
-static inline IndexType lsb_(std::uint64_t b) {
-  assert(b);
-  unsigned long idx;
-
-  if (b & 0xffffffff) {
-      _BitScanForward(&idx, int32_t(b));
-      return IndexType(idx);
-  } else {
-      _BitScanForward(&idx, int32_t(b >> 32));
-      return IndexType(idx + 32);
-  }
-}
-
-static inline IndexType msb_(std::uint64_t b) {
-  assert(b);
-  unsigned long idx;
-
-  if (b >> 32) {
-      _BitScanReverse(&idx, int32_t(b >> 32));
-      return IndexType(idx + 32);
-  } else {
-      _BitScanReverse(&idx, int32_t(b));
-      return IndexType(idx);
-  }
-}
-
-#endif
-
-#else  // Compiler is neither GCC nor MSVC compatible
-
-#error "Compiler not supported."
-
-#endif
-
   // Affine transformation layer
   template <typename PreviousLayer, IndexType OutDims>
-  class AffineTransformSparseInput {
+  class AffineTransformSparseInputOutput {
    public:
     // Input/output type
     using InputType = typename PreviousLayer::OutputType;
@@ -170,6 +81,9 @@ static inline IndexType msb_(std::uint64_t b) {
       for (std::size_t i = 0; i < PaddedOutputDimensions; ++i)
         for (std::size_t j = 0; j < InputDimensions; ++j)
           weights[j*PaddedOutputDimensions + i] = read_little_endian<WeightType>(stream);
+      for (std::size_t i = 0; i < InputDimensions; ++i)
+        for (std::size_t j = 0; j < 4; ++j)
+          blocks[i*4+j] = j;
 
       return !stream.fail();
     }
@@ -391,13 +305,14 @@ static inline IndexType msb_(std::uint64_t b) {
 
       auto outputVector = reinterpret_cast<vec_t*>(output);
 
-      constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 4);
+      constexpr IndexType NumChunks = 4;
 
       IndexType i = 0;
       for (; i < numNnzInputIndices; ++i) {
         const auto mul0 = vec_broadcast_32(input[nnzInputIndices[i]]);
         const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions]);
-        for (IndexType j = 0; j < NumChunks; ++j) {
+        for (IndexType k = 0; k < NumChunks; ++k) {
+          auto j = blocks[nnzInputIndices[i]*NumChunks+k];
           auto sum0 = outputVector[j*4+0];
           auto sum1 = outputVector[j*4+1];
           auto sum2 = outputVector[j*4+2];
@@ -431,13 +346,15 @@ static inline IndexType msb_(std::uint64_t b) {
     using BiasType = OutputType;
     using WeightType = std::int8_t;
     using LoadedWeightType = std::int16_t;
+    using BlockIndexType = std::uint16_t;
 
     PreviousLayer previousLayer;
 
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) LoadedWeightType weights[InputDimensions * PaddedOutputDimensions];
+    alignas(CacheLineSize) BlockIndexType blocks[InputDimensions * 4];
   };
 
 }  // namespace Stockfish::Eval::NNUE::Layers
 
-#endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED
+#endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_OUTPUT_H_INCLUDED
