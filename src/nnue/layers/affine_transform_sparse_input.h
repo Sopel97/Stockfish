@@ -386,6 +386,9 @@ static inline IndexType msb_(std::uint64_t b) {
 
 #elif defined (USE_SSSE3)
 
+      /* NOTE: appears much worse than the SSE2 version... */
+      /*       Try using int16 weights also here, but keep the passes */
+
       auto outputVector = reinterpret_cast<vec_t*>(output);
       auto biasesVector = reinterpret_cast<const vec_t*>(biases);
 
@@ -480,7 +483,6 @@ static inline IndexType msb_(std::uint64_t b) {
 
       auto outputVector = reinterpret_cast<vec_t*>(output);
 
-      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
       constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 2);
 
       IndexType i = 0;
