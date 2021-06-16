@@ -171,6 +171,18 @@ static inline IndexType msb_(std::uint64_t b) {
         for (std::size_t j = 0; j < InputDimensions; ++j)
           weights[j*PaddedOutputDimensions + i] = read_little_endian<WeightType>(stream);
 
+#if defined (USE_AVX2)
+      for (std::size_t i = 0; i < InputDimensions; ++i)
+        for (std::size_t j = 0; j < PaddedOutputDimensions; ++j)
+        {
+          int simdlane = j % 16;
+          int simdlane64 = simdlane64 % 4;
+          if (simdlane == 1)
+            std::swap(weights[i*PaddedOutputDimensions + j], weights[i*PaddedOutputDimensions + j + 4]);
+        }
+
+#endif
+
       return !stream.fail();
     }
 
@@ -381,10 +393,7 @@ static inline IndexType msb_(std::uint64_t b) {
         }
       }
 
-#if defined (USE_AVX2)
-#error
-
-#elif defined (USE_SSE2)
+#if defined (USE_AVX2) || defined (USE_SSE2)
 
       for (IndexType i = 0; i < OutputDimensions; ++i)
         output[i] = biases[i];
