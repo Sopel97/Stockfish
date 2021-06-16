@@ -306,66 +306,58 @@ static inline IndexType msb_(std::uint64_t b) {
 
 #endif
 
-      #undef vec_setzero
-      #undef vec_set_32
-      #undef vec_set_8
-      #undef vec_nnz
-      #undef vec_setzero
-      #undef vec_broadcast_8
-      #undef vec_broadcast_16
-      #undef vec_broadcast_32
-      #undef vec_unpacklo_16
-      #undef vec_unpackhi_16
-      #undef vec_add_32
-      #undef vec_madd_16
 #if defined (USE_AVX512)
       using vec_t = __m512i;
       #define vec_setzero _mm512_setzero_si512
-      #define vec_set_32 _mm512_set1_epi32
-      #define vec_set_8 _mm512_set1_epi8
       #define vec_nnz(a) _cvtmask64_u64(_mm512_cmpgt_epi8_mask(a, _mm512_setzero_si512()))
       #define vec_setzero _mm512_setzero_si512()
       #define vec_broadcast_8(a) _mm512_set1_epi8(a)
       #define vec_broadcast_16(a) _mm512_set1_epi16(a)
       #define vec_broadcast_32(a) _mm512_set1_epi32(a)
+      #define vec_unpacklo_8(a, b) _mm512_unpacklo_epi8(a, b)
+      #define vec_unpackhi_8(a, b) _mm512_unpackhi_epi8(a, b)
       #define vec_unpacklo_16(a, b) _mm512_unpacklo_epi16(a, b)
       #define vec_unpackhi_16(a, b) _mm512_unpackhi_epi16(a, b)
       #define vec_add_32(a, b) _mm512_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm512_madd_epi16(a, b)
+      #define vec_cmpgt_16(a, b) _mm512_cmpgt_epi16_mask(a, b)
       auto& vec_add_dpbusd_32 = m512_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m512_add_dpbusd_epi32x4;
       auto& vec_hadd = m512_hadd;
 #elif defined (USE_AVX2)
       using vec_t = __m256i;
       #define vec_setzero _mm256_setzero_si256
-      #define vec_set_32 _mm256_set1_epi32
-      #define vec_set_8 _mm256_set1_epi8
       #define vec_nnz(a) _mm256_movemask_epi8(_mm256_cmpgt_epi8(a, _mm256_setzero_si256()))
       #define vec_setzero _mm256_setzero_si256()
       #define vec_broadcast_8(a) _mm256_set1_epi8(a)
       #define vec_broadcast_16(a) _mm256_set1_epi16(a)
       #define vec_broadcast_32(a) _mm256_set1_epi32(a)
+      #define vec_unpacklo_8(a, b) _mm256_unpacklo_epi8(a, b)
+      #define vec_unpackhi_8(a, b) _mm256_unpackhi_epi8(a, b)
       #define vec_unpacklo_16(a, b) _mm256_unpacklo_epi16(a, b)
       #define vec_unpackhi_16(a, b) _mm256_unpackhi_epi16(a, b)
       #define vec_add_32(a, b) _mm256_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm256_madd_epi16(a, b)
+      #define vec_cmpgt_16(a, b) _mm256_cmpgt_epi16(a, b)
       auto& vec_add_dpbusd_32 = m256_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m256_add_dpbusd_epi32x4;
       auto& vec_hadd = m256_hadd;
-#elif defined (USE_SSSE3)
+#elif defined (USE_SSE2)
       using vec_t = __m128i;
       #define vec_setzero _mm_setzero_si128
-      #define vec_set_32 _mm_set1_epi32
-      #define vec_set_8 _mm_set1_epi8
       #define vec_nnz(a) _mm_movemask_epi8(_mm_cmpgt_epi8(a, _mm_setzero_si128()))
       #define vec_setzero _mm_setzero_si128()
       #define vec_broadcast_8(a) _mm_set1_epi8(a)
       #define vec_broadcast_16(a) _mm_set1_epi16(a)
       #define vec_broadcast_32(a) _mm_set1_epi32(a)
+      #define vec_unpacklo_8(a, b) _mm_unpacklo_epi8(a, b)
+      #define vec_unpackhi_8(a, b) _mm_unpackhi_epi8(a, b)
       #define vec_unpacklo_16(a, b) _mm_unpacklo_epi16(a, b)
       #define vec_unpackhi_16(a, b) _mm_unpackhi_epi16(a, b)
       #define vec_add_32(a, b) _mm_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm_madd_epi16(a, b)
+      #define vec_maddubs_16(a, b) _mm_maddubs_epi16(a, b)
+      #define vec_cmpgt_16(a, b) _mm_cmpgt_epi16(a, b)
       auto& vec_add_dpbusd_32 = m128_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m128_add_dpbusd_epi32x4;
       auto& vec_hadd = m128_hadd;
@@ -375,16 +367,11 @@ static inline IndexType msb_(std::uint64_t b) {
       for (IndexType i = 0; i < OutputDimensions; ++i)
         output[i] = biases[i];
 
-#if defined(USE_SSSE3)
-      const auto inputVector = reinterpret_cast<const vec_t*>(input);
-      auto outputVector = reinterpret_cast<vec_t*>(output);
-
-      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
-      constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 2);
-
       std::uint16_t nnzInputIndices[InputDimensions];
       IndexType numNnzInputIndices = 0;
 
+      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
+      const auto inputVector = reinterpret_cast<const vec_t*>(input);
       for (IndexType i = 0; i < NumNnzCountChunks; ++i) {
         const auto inputChunk = inputVector[i];
         auto nnz = vec_nnz(inputChunk);
@@ -394,6 +381,93 @@ static inline IndexType msb_(std::uint64_t b) {
           nnzInputIndices[numNnzInputIndices++] = i*InputSimdWidth + lsbIndex;
         }
       }
+
+#if defined(USE_AVX2)
+
+#elif defined (USE_SSSE3)
+
+      auto outputVector = reinterpret_cast<vec_t*>(output);
+
+      constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 4);
+
+      IndexType i = 0;
+      for (; i + 3 < numNnzInputIndices; i += 4) {
+        const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 8));
+        const auto mul2 = vec_broadcast_16(input[nnzInputIndices[i+2]] | (input[nnzInputIndices[i+3]] << 8));
+        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions]);
+        const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions]);
+        const auto col2 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+2] * PaddedOutputDimensions]);
+        const auto col3 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+3] * PaddedOutputDimensions]);
+        for (IndexType j = 0; j < NumChunks; ++j) {
+          auto sum0 = outputVector[j*4+0];
+          auto sum1 = outputVector[j*4+1];
+          auto sum2 = outputVector[j*4+2];
+          auto sum3 = outputVector[j*4+3];
+
+          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[j], col1[j]));
+          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[j], col1[j]));
+
+          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
+          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
+
+          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
+          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
+
+          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
+          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
+
+          prod0 = vec_maddubs_16(mul2, vec_unpacklo_8(col2[j], col3[j]));
+          prod2 = vec_maddubs_16(mul2, vec_unpackhi_8(col2[j], col3[j]));
+
+          signs0 = vec_cmpgt_16(vec_setzero, prod0);
+          signs2 = vec_cmpgt_16(vec_setzero, prod2);
+
+          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
+          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
+
+          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
+          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
+
+          outputVector[j*4+0] = sum0;
+          outputVector[j*4+1] = sum1;
+          outputVector[j*4+2] = sum2;
+          outputVector[j*4+3] = sum3;
+        }
+      }
+      for (; i < numNnzInputIndices; ++i) {
+        const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i]]);
+        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions]);
+        for (IndexType j = 0; j < NumChunks; ++j) {
+          auto sum0 = outputVector[j*4+0];
+          auto sum1 = outputVector[j*4+1];
+          auto sum2 = outputVector[j*4+2];
+          auto sum3 = outputVector[j*4+3];
+
+          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[j], vec_setzero));
+          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[j], vec_setzero));
+
+          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
+          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
+
+          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
+          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
+
+          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
+          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
+
+          outputVector[j*4+0] = sum0;
+          outputVector[j*4+1] = sum1;
+          outputVector[j*4+2] = sum2;
+          outputVector[j*4+3] = sum3;
+        }
+      }
+
+#elif defined (USE_SSE2)
+      auto outputVector = reinterpret_cast<vec_t*>(output);
+
+      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
+      constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 2);
+
       IndexType i = 0;
       for (; i + 3 < numNnzInputIndices; i += 4) {
         const auto mul0 = vec_broadcast_32(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 16));
@@ -442,7 +516,11 @@ static inline IndexType msb_(std::uint64_t b) {
    private:
     using BiasType = OutputType;
     using WeightType = std::int8_t;
+#if defined(USE_SSSE3)
+    using LoadedWeightType = std::int8_t;
+#else
     using LoadedWeightType = std::int16_t;
+#endif
 
     PreviousLayer previousLayer;
 
