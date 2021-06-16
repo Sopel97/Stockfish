@@ -137,7 +137,7 @@ static inline IndexType msb_(std::uint64_t b) {
 #endif
 
     static constexpr const IndexType MaxInputSimdWidth = 64;
-    static constexpr const IndexType MaxOutputSimdWidth = 64;
+    static constexpr const IndexType MaxOutputSimdWidth = 16;
     static constexpr IndexType PaddedOutputDimensions =
       ceil_to_multiple<IndexType>(OutputDimensions, MaxOutputSimdWidth);
 
@@ -363,15 +363,12 @@ static inline IndexType msb_(std::uint64_t b) {
       auto& vec_hadd = m128_hadd;
 #endif
 
-      const auto output = reinterpret_cast<OutputType*>(buffer);
-      for (IndexType i = 0; i < OutputDimensions; ++i)
-        output[i] = biases[i];
-
       std::uint16_t nnzInputIndices[InputDimensions];
       IndexType numNnzInputIndices = 0;
 
       constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
       const auto inputVector = reinterpret_cast<const vec_t*>(input);
+      const auto output = reinterpret_cast<OutputType*>(buffer);
       for (IndexType i = 0; i < NumNnzCountChunks; ++i) {
         const auto inputChunk = inputVector[i];
         auto nnz = vec_nnz(inputChunk);
@@ -388,81 +385,89 @@ static inline IndexType msb_(std::uint64_t b) {
 
       auto outputVector = reinterpret_cast<vec_t*>(output);
 
-      constexpr IndexType NumChunks = OutputDimensions / (OutputSimdWidth * 4);
+      constexpr IndexType NumPasses = OutputDimensions / (OutputSimdWidth * 8);
 
-      IndexType i = 0;
-      for (; i + 3 < numNnzInputIndices; i += 4) {
-        const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 8));
-        const auto mul2 = vec_broadcast_16(input[nnzInputIndices[i+2]] | (input[nnzInputIndices[i+3]] << 8));
-        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions]);
-        const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions]);
-        const auto col2 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+2] * PaddedOutputDimensions]);
-        const auto col3 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+3] * PaddedOutputDimensions]);
-        for (IndexType j = 0; j < NumChunks; ++j) {
-          auto sum0 = outputVector[j*4+0];
-          auto sum1 = outputVector[j*4+1];
-          auto sum2 = outputVector[j*4+2];
-          auto sum3 = outputVector[j*4+3];
+      for (IndexType pass = 0; pass < NumPasses; ++pass) {
+        IndexType outputOffset = pass * OutputSimdWidth * 8;
+        auto out0 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+0]);
+        auto out1 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+1]);
+        auto out2 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+2]);
+        auto out3 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+3]);
+        auto out4 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+4]);
+        auto out5 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+5]);
+        auto out6 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+6]);
+        auto out7 = *reinterpret_cast<const vec_t*>(&biases[outputOffset+7]);
 
-          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[j], col1[j]));
-          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[j], col1[j]));
+        IndexType i = 0;
+        for (; i + 1 < numNnzInputIndices; i += 2) {
+          const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i+0]] | (input[nnzInputIndices[i+1]] << 8));
+          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+0] * PaddedOutputDimensions + outputOffset]);
+          const auto col1 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i+1] * PaddedOutputDimensions + outputOffset]);
 
-          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
-          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
-
-          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
-          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
-
-          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
-          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
-
-          prod0 = vec_maddubs_16(mul2, vec_unpacklo_8(col2[j], col3[j]));
-          prod2 = vec_maddubs_16(mul2, vec_unpackhi_8(col2[j], col3[j]));
-
-          signs0 = vec_cmpgt_16(vec_setzero, prod0);
-          signs2 = vec_cmpgt_16(vec_setzero, prod2);
-
-          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
-          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
-
-          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
-          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
-
-          outputVector[j*4+0] = sum0;
-          outputVector[j*4+1] = sum1;
-          outputVector[j*4+2] = sum2;
-          outputVector[j*4+3] = sum3;
-        }
-      }
-      for (; i < numNnzInputIndices; ++i) {
-        const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i]]);
-        const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions]);
-        for (IndexType j = 0; j < NumChunks; ++j) {
-          auto sum0 = outputVector[j*4+0];
-          auto sum1 = outputVector[j*4+1];
-          auto sum2 = outputVector[j*4+2];
-          auto sum3 = outputVector[j*4+3];
-
-          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[j], vec_setzero));
-          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[j], vec_setzero));
+          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], col1[0]));
+          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], col1[0]));
+          auto prod4 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], col1[1]));
+          auto prod6 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], col1[1]));
 
           auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
           auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
+          auto signs4 = vec_cmpgt_16(vec_setzero, prod4);
+          auto signs6 = vec_cmpgt_16(vec_setzero, prod6);
 
-          sum0 = vec_add_32(sum0, vec_unpacklo_16(prod0, signs0));
-          sum1 = vec_add_32(sum1, vec_unpackhi_16(prod0, signs0));
+          out0 = vec_add_32(out0, vec_unpacklo_16(prod0, signs0));
+          out1 = vec_add_32(out1, vec_unpackhi_16(prod0, signs0));
 
-          sum2 = vec_add_32(sum2, vec_unpacklo_16(prod2, signs2));
-          sum3 = vec_add_32(sum3, vec_unpackhi_16(prod2, signs2));
+          out2 = vec_add_32(out2, vec_unpacklo_16(prod2, signs2));
+          out3 = vec_add_32(out3, vec_unpackhi_16(prod2, signs2));
 
-          outputVector[j*4+0] = sum0;
-          outputVector[j*4+1] = sum1;
-          outputVector[j*4+2] = sum2;
-          outputVector[j*4+3] = sum3;
+          out4 = vec_add_32(out4, vec_unpacklo_16(prod4, signs4));
+          out5 = vec_add_32(out5, vec_unpackhi_16(prod4, signs4));
+
+          out6 = vec_add_32(out6, vec_unpacklo_16(prod6, signs6));
+          out7 = vec_add_32(out7, vec_unpackhi_16(prod6, signs6));
         }
+        for (; i < numNnzInputIndices; ++i) {
+          const auto mul0 = vec_broadcast_16(input[nnzInputIndices[i]]);
+          const auto col0 = reinterpret_cast<const vec_t*>(&weights[nnzInputIndices[i] * PaddedOutputDimensions + outputOffset]);
+
+          auto prod0 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[0], vec_setzero));
+          auto prod2 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[0], vec_setzero));
+          auto prod4 = vec_maddubs_16(mul0, vec_unpacklo_8(col0[1], vec_setzero));
+          auto prod6 = vec_maddubs_16(mul0, vec_unpackhi_8(col0[1], vec_setzero));
+
+          auto signs0 = vec_cmpgt_16(vec_setzero, prod0);
+          auto signs2 = vec_cmpgt_16(vec_setzero, prod2);
+          auto signs4 = vec_cmpgt_16(vec_setzero, prod4);
+          auto signs6 = vec_cmpgt_16(vec_setzero, prod6);
+
+          out0 = vec_add_32(out0, vec_unpacklo_16(prod0, signs0));
+          out1 = vec_add_32(out1, vec_unpackhi_16(prod0, signs0));
+
+          out2 = vec_add_32(out2, vec_unpacklo_16(prod2, signs2));
+          out3 = vec_add_32(out3, vec_unpackhi_16(prod2, signs2));
+
+          out4 = vec_add_32(out4, vec_unpacklo_16(prod4, signs4));
+          out5 = vec_add_32(out5, vec_unpackhi_16(prod4, signs4));
+
+          out6 = vec_add_32(out6, vec_unpacklo_16(prod6, signs6));
+          out7 = vec_add_32(out7, vec_unpackhi_16(prod6, signs6));
+        }
+
+        outputVector[outputOffset+0] = out0;
+        outputVector[outputOffset+1] = out1;
+        outputVector[outputOffset+2] = out2;
+        outputVector[outputOffset+3] = out3;
+        outputVector[outputOffset+4] = out4;
+        outputVector[outputOffset+5] = out5;
+        outputVector[outputOffset+6] = out6;
+        outputVector[outputOffset+7] = out7;
       }
 
 #elif defined (USE_SSE2)
+
+      for (IndexType i = 0; i < OutputDimensions; ++i)
+        output[i] = biases[i];
+
       auto outputVector = reinterpret_cast<vec_t*>(output);
 
       constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
