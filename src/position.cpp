@@ -718,6 +718,9 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   assert(captured == NO_PIECE || color_of(captured) == (type_of(m) != CASTLING ? them : us));
   assert(type_of(captured) != KING);
 
+  if (type_of(pc) == KING)
+    st->refresh[us] = true;
+
   if (type_of(m) == CASTLING)
   {
       assert(pc == make_piece(us, KING));
@@ -793,6 +796,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       k ^= Zobrist::castling[st->castlingRights];
       st->castlingRights &= ~(castlingRightsMask[from] | castlingRightsMask[to]);
       k ^= Zobrist::castling[st->castlingRights];
+
+      st->refresh[us] = true;
   }
 
   // Move the piece. The tricky Chess960 castling is handled earlier
