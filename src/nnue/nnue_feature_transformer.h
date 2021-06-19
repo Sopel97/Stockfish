@@ -272,10 +272,7 @@ namespace Stockfish::Eval::NNUE {
   #endif
       }
 
-      psqt = 0;
-      psqt += psqt_accumulation[static_cast<int>(perspectives[0])][0][bucket];
-      psqt -= psqt_accumulation[static_cast<int>(perspectives[1])][0][bucket];
-      psqt /= 2;
+      psqt = psqt_accumulation[static_cast<int>(perspectives[0])][0][bucket];
 
   #if defined(USE_MMX)
       _mm_empty();
