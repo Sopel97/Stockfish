@@ -269,18 +269,12 @@ namespace Stockfish::Eval::NNUE::Layers {
           vec_t* outptr = reinterpret_cast<vec_t*>(output);
           std::memcpy(output, biases, OutputDimensions * sizeof(OutputType));
 
-          for (int i = 0; i < (int)NumChunks - 3; i += 4)
+          for (int i = 0; i < (int)NumChunks; i += 1)
           {
               const vec_t in0 = vec_set_32(input32[i + 0]);
-              const vec_t in1 = vec_set_32(input32[i + 1]);
-              const vec_t in2 = vec_set_32(input32[i + 2]);
-              const vec_t in3 = vec_set_32(input32[i + 3]);
               const auto col0 = reinterpret_cast<const vec_t*>(&weights[(i + 0) * OutputDimensions * 4]);
-              const auto col1 = reinterpret_cast<const vec_t*>(&weights[(i + 1) * OutputDimensions * 4]);
-              const auto col2 = reinterpret_cast<const vec_t*>(&weights[(i + 2) * OutputDimensions * 4]);
-              const auto col3 = reinterpret_cast<const vec_t*>(&weights[(i + 3) * OutputDimensions * 4]);
               for (int j = 0; j * OutputSimdWidth < OutputDimensions; ++j)
-                  vec_add_dpbusd_32x4(outptr[j], in0, col0[j], in1, col1[j], in2, col2[j], in3, col3[j]);
+                  vec_add_dpbusd_32(outptr[j], in0, col0[j]);
           }
       }
       else if constexpr (OutputDimensions == 1)

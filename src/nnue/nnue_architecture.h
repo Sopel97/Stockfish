@@ -45,7 +45,7 @@ namespace Stockfish::Eval::NNUE {
 
     // Define network structure
     using InputLayer = InputSlice<TransformedFeatureDimensions * 2>;
-    using HiddenLayer1 = ClippedReLU<AffineTransformSparseInputOutput<InputLayer, 64>>;
+    using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 64>>;
     using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
     using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 
