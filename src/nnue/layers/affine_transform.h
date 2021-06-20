@@ -266,11 +266,13 @@ namespace Stockfish::Eval::NNUE::Layers {
           constexpr IndexType NumChunks = InputDimensions / 4;
 
           const auto input32 = reinterpret_cast<const std::int32_t*>(input);
-          vec_t* outptr = reinterpret_cast<vec_t*>(output);
+          vec_t* __restrict__ outptr = reinterpret_cast<vec_t*>(output);
           std::memcpy(output, biases, OutputDimensions * sizeof(OutputType));
 
           for (int i = 0; i < (int)NumChunks; i += 1)
           {
+              if (!input32[i + 0])
+                  continue;
               const vec_t in0 = vec_set_32(input32[i + 0]);
               const auto col0 = reinterpret_cast<const vec_t*>(&weights[(i + 0) * OutputDimensions * 4]);
               for (int j = 0; j * OutputSimdWidth < OutputDimensions; ++j)
