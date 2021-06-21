@@ -166,7 +166,7 @@ namespace Stockfish::Eval::NNUE {
   // Input feature converter
   class FeatureTransformer {
 
-   private:
+   public:
     // Number of output dimensions for one side
     static constexpr IndexType HalfDimensions = TransformedFeatureDimensions;
 
@@ -177,7 +177,6 @@ namespace Stockfish::Eval::NNUE {
     static_assert(PSQTBuckets % PsqtTileHeight == 0, "PsqtTileHeight must divide PSQTBuckets");
     #endif
 
-   public:
     // Output type
     using OutputType = TransformedFeatureType;
 
@@ -363,7 +362,6 @@ namespace Stockfish::Eval::NNUE {
 
 
 
-   private:
     void update_accumulator(const Position& pos, const Color perspective) const {
 
       // The size must be enough to contain the largest possible update.

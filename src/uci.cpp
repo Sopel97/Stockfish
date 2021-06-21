@@ -21,6 +21,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <cstdlib>
+#include <iomanip>
 
 #include "evaluate.h"
 #include "movegen.h"
@@ -31,6 +33,9 @@
 #include "tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
+#include "misc.h"
+
+#include "nnue/evaluate_nnue.h"
 
 using namespace std;
 
@@ -197,6 +202,84 @@ namespace {
          << "\nNodes/second    : " << 1000 * nodes / elapsed << endl;
   }
 
+  uint64_t bench_2(Position& pos, Depth depth, StateListPtr& states) {
+
+    string token;
+    uint64_t num, nodes = 0;
+
+    std::string sss = "16 1 " + std::to_string((int)depth) + " default depth NNUE";
+    istringstream ss(sss);
+    vector<string> list = setup_bench(pos, ss);
+    num = count_if(list.begin(), list.end(), [](string s) { return s.find("go ") == 0 || s.find("eval") == 0; });
+
+    for (const auto& cmd : list)
+    {
+        istringstream is(cmd);
+        is >> skipws >> token;
+
+        if (token == "go" || token == "eval")
+        {
+            if (token == "go")
+            {
+               go(pos, is, states);
+               Threads.main()->wait_for_search_finished();
+               nodes += Threads.nodes_searched();
+            }
+            else
+               trace_eval(pos);
+        }
+        else if (token == "setoption")  setoption(is);
+        else if (token == "position")   position(pos, is, states);
+        else if (token == "ucinewgame") { Search::clear(); } // Search::clear() may take some while
+    }
+
+    return nodes;
+  }
+
+  void opt_bench(Position& pos, StateListPtr& states) {
+    Depth depth = 13;
+    int16_t* weights = Eval::NNUE::featureTransformer->weights;
+    int numDims = std::size(Eval::NNUE::featureTransformer->weights);
+    uint64_t prevBench = bench_2(pos, depth, states);
+
+    std::cout << "Initial bench: " << prevBench << '\n';
+    for (uint64_t iter = 0;; ++iter) {
+      if (iter % 1000 == 0)
+          Eval::NNUE::save_eval(std::string("bench_optimized.nnue"));
+
+      constexpr int maxChanges = 64;
+      uint64_t indices[maxChanges + 1];
+      int changes[maxChanges + 1];
+      float r = (float)rand() / RAND_MAX;
+      int changesCount = int(r * r * maxChanges + 1);
+      if (changesCount < 0) changesCount = 0;
+      if (changesCount > maxChanges) changesCount = maxChanges;
+      for (int i = 0; i < changesCount; ++i) {
+        int change = 0;
+        while(change == 0) change = rand() % 9 - 5;
+        uint64_t idx = (((uint64_t)rand() & 0xffff) + (((uint64_t)rand() & 0xffff) << 16)) % numDims;
+        weights[idx] += change;
+
+        changes[i] = change;
+        indices[i] = idx;
+      }
+
+      uint64_t newBench = bench_2(pos, depth, states);
+
+      int64_t diff = (int64_t)newBench - (int64_t)prevBench;
+      auto a = diff == 0 ? " " : diff > 0 ? "+" : "";
+      std::cout << "Iteration " << iter << ": (" << setw(3) << changesCount << " changes) " << prevBench << " --> " << newBench << " (" << a << diff << ")\n";
+      if (newBench < prevBench)
+        prevBench = newBench;
+      else
+      {
+        for (int i = 0; i < changesCount; ++i) {
+          weights[indices[i]] -= changes[i];
+        }
+      }
+    }
+  }
+
   // The win rate model returns the probability (per mille) of winning given an eval
   // and a game-ply. The model fits rather accurately the LTC fishtest statistics.
   int win_rate_model(Value v, int ply) {
@@ -277,6 +360,7 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "d")        sync_cout << pos << sync_endl;
       else if (token == "eval")     trace_eval(pos);
       else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
+      else if (token == "opt_bench") opt_bench(pos, states);
       else if (token == "export_net")
       {
           std::optional<std::string> filename;

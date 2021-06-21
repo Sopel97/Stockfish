@@ -139,10 +139,6 @@ namespace Eval {
         exit(EXIT_FAILURE);
     }
 
-    if (useNNUE)
-        sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
-    else
-        sync_cout << "info string classical evaluation enabled" << sync_endl;
   }
 }
 
