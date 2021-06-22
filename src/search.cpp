@@ -747,7 +747,7 @@ namespace {
         // Never assume anything about values stored in TT
         ss->staticEval = eval = tte->eval();
         if (eval == VALUE_NONE)
-            ss->staticEval = eval = evaluate(pos, hasGoodCapture(pos, ttMove, captureHistory));
+            ss->staticEval = eval = evaluate(pos, depth > 4 && hasGoodCapture(pos, ttMove, captureHistory));
 
         // Randomize draw evaluation
         if (eval == VALUE_DRAW)
@@ -763,7 +763,7 @@ namespace {
         // In case of null move search use previous static eval with a different sign
         // and addition of two tempos
         if ((ss-1)->currentMove != MOVE_NULL)
-            ss->staticEval = eval = evaluate(pos, hasGoodCapture(pos, ttMove, captureHistory));
+            ss->staticEval = eval = evaluate(pos, depth > 4 && hasGoodCapture(pos, ttMove, captureHistory));
         else
             ss->staticEval = eval = -(ss-1)->staticEval;
 
