@@ -1432,7 +1432,7 @@ moves_loop: // When in check, search starts from here
         {
             // Never assume anything about values stored in TT
             if ((ss->staticEval = bestValue = tte->eval()) == VALUE_NONE)
-                ss->staticEval = bestValue = evaluate(pos, hasGoodCapture(pos, ttMove, thisThread->captureHistory));
+                ss->staticEval = bestValue = evaluate(pos, false);
 
             // Can ttValue be used as a better position evaluation?
             if (    ttValue != VALUE_NONE
@@ -1443,7 +1443,7 @@ moves_loop: // When in check, search starts from here
             // In case of null move search use previous static eval with a different sign
             // and addition of two tempos
             ss->staticEval = bestValue =
-            (ss-1)->currentMove != MOVE_NULL ? evaluate(pos, hasGoodCapture(pos, ttMove, thisThread->captureHistory))
+            (ss-1)->currentMove != MOVE_NULL ? evaluate(pos, false)
                                              : -(ss-1)->staticEval;
 
         // Stand pat. Return immediately if static value is at least beta
