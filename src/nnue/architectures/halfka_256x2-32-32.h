@@ -37,7 +37,7 @@ using RawFeatures = Features::FeatureSet<
 // Number of input feature dimensions after conversion
 constexpr IndexType kTransformedFeatureDimensions = 512;
 constexpr IndexType kPSQTBuckets = 8;
-constexpr IndexType kLayerStacks = 8;
+constexpr IndexType kLayerStacks = 10;
 
 namespace Layers {
 
