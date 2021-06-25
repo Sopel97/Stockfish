@@ -162,7 +162,8 @@ namespace Stockfish::Eval::NNUE {
 
     const bool doApprox =
       captureOrPromotion
-      && pos.state()->accumulator.has_prev;
+      && pos.state()->previous
+      && pos.state()->previous->accumulator.has_evals;
 
     const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
@@ -173,12 +174,12 @@ namespace Stockfish::Eval::NNUE {
 
     if (doApprox)
     {
-      dbg_mean_of(std::abs(-pos.state()->accumulator.prev_positional - positional));
+      dbg_mean_of(std::abs(-pos.state()->previous->accumulator.positional - positional));
     }
 
-    pos.state()->accumulator.prev_material = materialist;
-    pos.state()->accumulator.prev_positional = positional;
-    pos.state()->accumulator.has_prev = true;
+    pos.state()->accumulator.material = materialist;
+    pos.state()->accumulator.positional = positional;
+    pos.state()->accumulator.has_evals = true;
 
     int delta_npm = abs(pos.non_pawn_material(WHITE) - pos.non_pawn_material(BLACK));
     int entertainment = (adjusted && delta_npm <= BishopValueMg - KnightValueMg ? 7 : 0);

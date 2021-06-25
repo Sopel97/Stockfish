@@ -30,9 +30,9 @@ namespace Stockfish::Eval::NNUE {
     std::int16_t accumulation[2][TransformedFeatureDimensions];
     std::int32_t psqtAccumulation[2][PSQTBuckets];
     bool computed[2];
-    int prev_material;
-    int prev_positional;
-    bool has_prev;
+    int material;
+    int positional;
+    bool has_evals;
   };
 
 }  // namespace Stockfish::Eval::NNUE
