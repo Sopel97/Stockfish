@@ -32,7 +32,7 @@ namespace Stockfish::Eval::NNUE {
     bool computed[2];
     int material;
     int positional;
-    bool has_evals;
+    bool hasEvals;
   };
 
 }  // namespace Stockfish::Eval::NNUE

@@ -704,6 +704,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Used by NNUE
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
+  st->accumulator.hasEvals = false;
   auto& dp = st->dirtyPiece;
   dp.dirty_num = 1;
 
@@ -1007,6 +1008,7 @@ void Position::do_null_move(StateInfo& newSt) {
   st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
+  st->accumulator.hasEvals = false;
 
   if (st->epSquare != SQ_NONE)
   {
