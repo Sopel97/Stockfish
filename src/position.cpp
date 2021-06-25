@@ -339,6 +339,7 @@ void Position::set_state(StateInfo* si) const {
   si->pawnKey = Zobrist::noPawns;
   si->nonPawnMaterial[WHITE] = si->nonPawnMaterial[BLACK] = VALUE_ZERO;
   si->checkersBB = attackers_to(square<KING>(sideToMove)) & pieces(~sideToMove);
+  st->wasCaptureOrPromotion = false;
 
   set_check_info(si);
 
@@ -705,6 +706,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
   st->accumulator.hasEvals = false;
+  st->wasCaptureOrPromotion = false;
   auto& dp = st->dirtyPiece;
   dp.dirty_num = 1;
 
@@ -1009,6 +1011,7 @@ void Position::do_null_move(StateInfo& newSt) {
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
   st->accumulator.hasEvals = false;
+  st->wasCaptureOrPromotion = false;
 
   if (st->epSquare != SQ_NONE)
   {
