@@ -167,14 +167,18 @@ namespace Stockfish::Eval::NNUE {
 
     const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
-    const auto output = network[bucket]->propagate(transformedFeatures, buffer);
 
     int materialist = psqt;
-    int positional  = output[0];
+    int positional  = 0;
 
     if (doApprox)
     {
-      dbg_mean_of(std::abs(-pos.state()->previous->accumulator.positional - positional) / OutputScale);
+      positional = pos.state()->previous->accumulator.positional;
+    }
+    else
+    {
+      const auto output = network[bucket]->propagate(transformedFeatures, buffer);
+      positional = output[0];
     }
 
     pos.state()->accumulator.material = materialist;
