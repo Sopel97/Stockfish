@@ -32,6 +32,7 @@ namespace Stockfish::Eval::NNUE {
     bool computed[2];
     int prev_material;
     int prev_positional;
+    bool has_prev;
   };
 
 }  // namespace Stockfish::Eval::NNUE
