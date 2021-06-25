@@ -1079,7 +1079,7 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos) {
+Value Eval::evaluate(const Position& pos, bool captureOrPromotion) {
 
   Value v;
 
@@ -1094,7 +1094,7 @@ Value Eval::evaluate(const Position& pos) {
                      + 32 * pos.count<PAWN>()
                      + 32 * pos.non_pawn_material() / 1024;
 
-         Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
+         Value nnue = NNUE::evaluate(pos, captureOrPromotion, true) * scale / 1024;
 
          if (pos.is_chess960())
              nnue += fix_FRC(pos);
@@ -1174,12 +1174,12 @@ std::string Eval::trace(Position& pos) {
   ss << "\nClassical evaluation   " << to_cp(v) << " (white side)\n";
   if (Eval::useNNUE)
   {
-      v = NNUE::evaluate(pos, false);
+      v = NNUE::evaluate(pos, false, false);
       v = pos.side_to_move() == WHITE ? v : -v;
       ss << "NNUE evaluation        " << to_cp(v) << " (white side)\n";
   }
 
-  v = evaluate(pos);
+  v = evaluate(pos, false);
   v = pos.side_to_move() == WHITE ? v : -v;
   ss << "Final evaluation       " << to_cp(v) << " (white side)";
   if (Eval::useNNUE)

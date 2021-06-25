@@ -57,6 +57,7 @@ struct StateInfo {
   Bitboard   checkSquares[PIECE_TYPE_NB];
   Piece      capturedPiece;
   int        repetition;
+  bool       wasCaptureOrPromotion;
 
   // Used by NNUE
   Eval::NNUE::Accumulator accumulator;
@@ -89,6 +90,8 @@ public:
   Position& set(const std::string& fenStr, bool isChess960, StateInfo* si, Thread* th);
   Position& set(const std::string& code, Color c, StateInfo* si);
   std::string fen() const;
+
+  bool was_capture_or_promotion() const { return state()->wasCaptureOrPromotion; }
 
   // Position representation
   Bitboard pieces(PieceType pt) const;

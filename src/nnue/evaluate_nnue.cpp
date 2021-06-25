@@ -137,7 +137,7 @@ namespace Stockfish::Eval::NNUE {
   }
 
   // Evaluation function. Perform differential calculation.
-  Value evaluate(const Position& pos, bool adjusted) {
+  Value evaluate(const Position& pos, bool captureOrPromotion, bool adjusted) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -160,12 +160,26 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformedFeatures, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
+    const bool doApprox =
+      captureOrPromotion
+      && pos.state()->previous
+      && pos.state()->previous->accumulator.computed[WHITE]
+      && pos.state()->previous->accumulator.computed[BLACK];
+
     const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
     const auto output = network[bucket]->propagate(transformedFeatures, buffer);
 
     int materialist = psqt;
     int positional  = output[0];
+
+    if (doApprox)
+    {
+      dbg_mean_of(std::abs(-pos.state()->accumulator.prev_positional - positional));
+    }
+
+    pos.state()->accumulator.prev_material = materialist;
+    pos.state()->accumulator.prev_positional = positional;
 
     int delta_npm = abs(pos.non_pawn_material(WHITE) - pos.non_pawn_material(BLACK));
     int entertainment = (adjusted && delta_npm <= BishopValueMg - KnightValueMg ? 7 : 0);
@@ -323,7 +337,7 @@ namespace Stockfish::Eval::NNUE {
 
     // We estimate the value of each piece by doing a differential evaluation from
     // the current base eval, simulating the removal of the piece from its square.
-    Value base = evaluate(pos);
+    Value base = evaluate(pos, false);
     base = pos.side_to_move() == WHITE ? base : -base;
 
     for (File f = FILE_A; f <= FILE_H; ++f)
@@ -341,7 +355,7 @@ namespace Stockfish::Eval::NNUE {
           st->accumulator.computed[WHITE] = false;
           st->accumulator.computed[BLACK] = false;
 
-          Value eval = evaluate(pos);
+          Value eval = evaluate(pos, false);
           eval = pos.side_to_move() == WHITE ? eval : -eval;
           v = base - eval;
 

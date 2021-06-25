@@ -732,6 +732,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
 
   if (captured)
   {
+      st->wasCaptureOrPromotion = true;
+
       Square capsq = to;
 
       // If the captured piece is a pawn, update pawn hash key, otherwise
