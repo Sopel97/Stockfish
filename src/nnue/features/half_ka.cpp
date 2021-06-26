@@ -29,8 +29,8 @@ namespace Stockfish::Eval::NNUE::Features {
   }
 
   // Index of a feature for a given king position and another piece on some square
-  inline IndexType make_index(Color perspective, Square s, Piece pc, Square ksq) {
-    return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END2 * ksq);
+  inline IndexType make_index(Color perspective, Square s, Piece pc, int bucket) {
+    return IndexType(orient(perspective, s) + kpp_board_index[perspective][pc] + PS_END2 * bucket);
   }
 
   // Get a list of indices for active features
@@ -39,10 +39,11 @@ namespace Stockfish::Eval::NNUE::Features {
       const Position& pos, Color perspective, IndexList* active) {
 
     Square ksq = orient(perspective, pos.square<KING>(perspective));
+    const int bucket = KingBuckets[ksq];
     Bitboard bb = pos.pieces();
     while (bb) {
       Square s = pop_lsb(&bb);
-      active->push_back(make_index(perspective, s, pos.piece_on(s), ksq));
+      active->push_back(make_index(perspective, s, pos.piece_on(s), bucket));
     }
   }
 
@@ -53,12 +54,13 @@ namespace Stockfish::Eval::NNUE::Features {
       IndexList* removed, IndexList* added) {
 
     Square ksq = orient(perspective, pos.square<KING>(perspective));
+    const int bucket = KingBuckets[ksq];
     for (int i = 0; i < dp.dirty_num; ++i) {
       Piece pc = dp.piece[i];
       if (dp.from[i] != SQ_NONE)
-        removed->push_back(make_index(perspective, dp.from[i], pc, ksq));
+        removed->push_back(make_index(perspective, dp.from[i], pc, bucket));
       if (dp.to[i] != SQ_NONE)
-        added->push_back(make_index(perspective, dp.to[i], pc, ksq));
+        added->push_back(make_index(perspective, dp.to[i], pc, bucket));
     }
   }
 
