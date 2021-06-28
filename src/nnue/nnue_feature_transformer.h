@@ -303,8 +303,23 @@ namespace Stockfish::Eval::NNUE {
         static_assert(std::is_same_v<RawFeatures::SortedTriggerSet,
               Features::CompileTimeList<Features::TriggerEvent, Features::TriggerEvent::kFriendKingMoved>>,
               "Current code assumes that only kFriendlyKingMoved refresh trigger is being used.");
-        if (   dp.piece[0] == make_piece(c, KING)
-            || (gain -= dp.dirty_num + 1) < 0)
+        if (dp.piece[0] == make_piece(c, KING)) {
+          if (c == WHITE)
+          {
+            const int from_bucket = Features::HalfKA<Features::Side::kFriend>::KingBuckets[dp.from[0]];
+            const int to_bucket = Features::HalfKA<Features::Side::kFriend>::KingBuckets[dp.to[0]];
+            if (from_bucket != to_bucket)
+              break;
+          }
+          else
+          {
+            const int from_bucket = Features::HalfKA<Features::Side::kFriend>::KingBuckets[(int)(dp.from[0]) ^ (int)SQ_A8];
+            const int to_bucket = Features::HalfKA<Features::Side::kFriend>::KingBuckets[(int)(dp.to[0]) ^ (int)SQ_A8];
+            if (from_bucket != to_bucket)
+              break;
+          }
+        }
+        if ((gain -= dp.dirty_num + 1) < 0)
           break;
         next = st;
         st = st->previous;
