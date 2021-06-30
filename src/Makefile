@@ -31,17 +31,13 @@ PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
 
 ### Built-in benchmark for pgo-builds
-ifeq ($(SDE_PATH),)
-	PGOBENCH = ./$(EXE) bench
-else
-	PGOBENCH = $(SDE_PATH) -- ./$(EXE) bench
-endif
+PGOBENCH = ./$(EXE) bench
 
 ### Source and object files
 SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp \
 	material.cpp misc.cpp movegen.cpp movepick.cpp pawns.cpp position.cpp psqt.cpp \
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
-	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2.cpp
+	nnue/evaluate_nnue.cpp nnue/features/half_kp.cpp
 
 OBJS = $(notdir $(SRCS:.cpp=.o))
 
@@ -61,11 +57,9 @@ endif
 # ----------------------------------------------------------------------------
 #
 # debug = yes/no      --- -DNDEBUG         --- Enable/Disable debug mode
-# sanitize = none/<sanitizer> ... (-fsanitize )
+# sanitize = undefined/thread/no (-fsanitize )
 #                     --- ( undefined )    --- enable undefined behavior checks
-#                     --- ( thread    )    --- enable threading error checks
-#                     --- ( address   )    --- enable memory access checks
-#                     --- ...etc...        --- see compiler documentation for supported sanitizers
+#                     --- ( thread    )    --- enable threading error  checks
 # optimize = yes/no   --- (-O3/-fast etc.) --- Enable/Disable optimizations
 # arch = (name)       --- (-arch)          --- Target architecture
 # bits = 64/32        --- -DIS_64BIT       --- 64-/32-bit operating system
@@ -86,10 +80,6 @@ endif
 # Note that Makefile is space sensitive, so when adding new architectures
 # or modifying existing flags, you have to make sure there are no extra spaces
 # at the end of the line for flag values.
-#
-# Example of use for these flags:
-# make build ARCH=x86-64-avx512 debug=on sanitize="address undefined"
-
 
 ### 2.1. General and architecture defaults
 
@@ -102,7 +92,7 @@ endif
 ifeq ($(ARCH), $(filter $(ARCH), \
                  x86-64-vnni512 x86-64-vnni256 x86-64-avx512 x86-64-bmi2 x86-64-avx2 \
                  x86-64-sse41-popcnt x86-64-modern x86-64-ssse3 x86-64-sse3-popcnt \
-                 x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-32 e2k \
+                 x86-64 x86-32-sse41-popcnt x86-32-sse2 x86-32 ppc-64 ppc-32 \
                  armv7 armv7-neon armv8 apple-silicon general-64 general-32))
    SUPPORTED_ARCH=true
 else
@@ -111,7 +101,7 @@ endif
 
 optimize = yes
 debug = no
-sanitize = none
+sanitize = no
 bits = 64
 prefetch = no
 popcnt = no
@@ -297,17 +287,6 @@ ifeq ($(ARCH),ppc-64)
 	prefetch = yes
 endif
 
-ifeq ($(findstring e2k,$(ARCH)),e2k)
-	arch = e2k
-	mmx = yes
-	bits = 64
-	sse = yes
-	sse2 = yes
-	ssse3 = yes
-	sse41 = yes
-	popcnt = yes
-endif
-
 endif
 
 ### ==========================================================================
@@ -479,9 +458,9 @@ else
 endif
 
 ### 3.2.2 Debugging with undefined behavior sanitizers
-ifneq ($(sanitize),none)
-        CXXFLAGS += -g3 $(addprefix -fsanitize=,$(sanitize))
-        LDFLAGS += $(addprefix -fsanitize=,$(sanitize))
+ifneq ($(sanitize),no)
+        CXXFLAGS += -g3 -fsanitize=$(sanitize)
+        LDFLAGS += -fsanitize=$(sanitize)
 endif
 
 ### 3.3 Optimization
@@ -530,6 +509,7 @@ ifeq ($(popcnt),yes)
 		CXXFLAGS += -msse3 -mpopcnt -DUSE_POPCNT
 	endif
 endif
+
 
 ifeq ($(avx2),yes)
 	CXXFLAGS += -DUSE_AVX2
@@ -698,7 +678,6 @@ help:
 	@echo "armv7                   > ARMv7 32-bit"
 	@echo "armv7-neon              > ARMv7 32-bit with popcnt and neon"
 	@echo "armv8                   > ARMv8 64-bit with popcnt and neon"
-	@echo "e2k                     > Elbrus 2000"
 	@echo "apple-silicon           > Apple silicon ARM64"
 	@echo "general-64              > unspecified 64-bit"
 	@echo "general-32              > unspecified 32-bit"
@@ -740,6 +719,21 @@ build: net config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
 profile-build: net config-sanity objclean profileclean
+	@echo ""
+	@echo "Step 1/4. Building instrumented executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
+	@echo ""
+	@echo "Step 2/4. Running benchmark for pgo-build ..."
+	$(PGOBENCH) > /dev/null
+	@echo ""
+	@echo "Step 3/4. Building optimized executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_use)
+	@echo ""
+	@echo "Step 4/4. Deleting profile data ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
+
+profile-build-2: net config-sanity objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
@@ -799,9 +793,6 @@ profileclean:
 	@rm -rf profdir
 	@rm -f bench.txt *.gcda *.gcno ./syzygy/*.gcda ./nnue/*.gcda ./nnue/features/*.gcda *.s
 	@rm -f stockfish.profdata *.profraw
-	@rm -f stockfish.exe.lto_wrapper_args
-	@rm -f stockfish.exe.ltrans.out
-	@rm -f ./-lstdc++.res
 
 default:
 	help
@@ -844,10 +835,11 @@ config-sanity: net
 	@echo "Testing config sanity. If this fails, try 'make help' ..."
 	@echo ""
 	@test "$(debug)" = "yes" || test "$(debug)" = "no"
+	@test "$(sanitize)" = "undefined" || test "$(sanitize)" = "thread" || test "$(sanitize)" = "address" || test "$(sanitize)" = "no"
 	@test "$(optimize)" = "yes" || test "$(optimize)" = "no"
 	@test "$(SUPPORTED_ARCH)" = "true"
 	@test "$(arch)" = "any" || test "$(arch)" = "x86_64" || test "$(arch)" = "i386" || \
-	 test "$(arch)" = "ppc64" || test "$(arch)" = "ppc" || test "$(arch)" = "e2k" || \
+	 test "$(arch)" = "ppc64" || test "$(arch)" = "ppc" || \
 	 test "$(arch)" = "armv7" || test "$(arch)" = "armv8" || test "$(arch)" = "arm64"
 	@test "$(bits)" = "32" || test "$(bits)" = "64"
 	@test "$(prefetch)" = "yes" || test "$(prefetch)" = "no"
@@ -883,15 +875,14 @@ clang-profile-use:
 	all
 
 gcc-profile-make:
-	@mkdir -p profdir
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-generate=profdir' \
+	EXTRACXXFLAGS='-fprofile-generate' \
 	EXTRALDFLAGS='-lgcov' \
 	all
 
 gcc-profile-use:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
-	EXTRACXXFLAGS='-fprofile-use=profdir -fno-peel-loops -fno-tracer' \
+	EXTRACXXFLAGS='-fprofile-use -fno-peel-loops -fno-tracer' \
 	EXTRALDFLAGS='-lgcov' \
 	all
 
