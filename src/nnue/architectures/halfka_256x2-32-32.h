@@ -43,7 +43,7 @@ namespace Layers {
 
 // Define network structure
 using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
-using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 16>>;
+using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 256>>;
 using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
 using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 
