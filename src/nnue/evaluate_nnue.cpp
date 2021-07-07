@@ -32,7 +32,7 @@
 namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
-  LargePagePtr<FeatureTransformer> feature_transformer;
+  LargePagePtr<FeatureTransformerSparse> feature_transformer;
 
   // Evaluation function
   AlignedPtr<Network> network[kLayerStacks];
@@ -138,14 +138,14 @@ namespace Stockfish::Eval::NNUE {
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     TransformedFeatureType transformed_features_unaligned[
-      FeatureTransformer::kBufferSize + alignment / sizeof(TransformedFeatureType)];
+      FeatureTransformerSparse::kBufferSize + alignment / sizeof(TransformedFeatureType)];
     char buffer_unaligned[Network::kBufferSize + alignment];
 
     auto* transformed_features = align_ptr_up<alignment>(&transformed_features_unaligned[0]);
     auto* buffer = align_ptr_up<alignment>(&buffer_unaligned[0]);
 #else
     alignas(alignment)
-      TransformedFeatureType transformed_features[FeatureTransformer::kBufferSize];
+      TransformedFeatureType transformed_features[FeatureTransformerSparse::kBufferSize];
     alignas(alignment) char buffer[Network::kBufferSize];
 #endif
 

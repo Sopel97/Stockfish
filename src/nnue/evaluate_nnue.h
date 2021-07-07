@@ -21,7 +21,7 @@
 #ifndef NNUE_EVALUATE_NNUE_H_INCLUDED
 #define NNUE_EVALUATE_NNUE_H_INCLUDED
 
-#include "nnue_feature_transformer.h"
+#include "nnue_feature_transformer_sparse.h"
 
 #include <memory>
 
@@ -29,7 +29,7 @@ namespace Stockfish::Eval::NNUE {
 
   // Hash value of evaluation function structure
   constexpr std::uint32_t kHashValue =
-      FeatureTransformer::GetHashValue() ^ Network::GetHashValue();
+      FeatureTransformerSparse::GetHashValue() ^ Network::GetHashValue();
 
   // Deleter for automating release of memory area
   template <typename T>
