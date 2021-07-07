@@ -26,6 +26,7 @@
 #include "features/index_list.h"
 
 #include <cstring> // std::memset()
+#include <iostream>
 
 namespace Stockfish::Eval::NNUE {
 
@@ -158,10 +159,18 @@ namespace Stockfish::Eval::NNUE {
 
       for (std::size_t i = 0; i < kHalfDimensions; ++i)
         biases_[i] = read_little_endian<BiasType>(stream);
+      for (std::size_t i = 0; i < kInputDimensions * kBlocks; ++i)
+      {
+        std::uint32_t idx = read_little_endian<std::uint32_t>(stream);
+        if (idx / (kHalfDimensions / kBlockSize) != (i / kBlocks))
+        {
+          std::cout << idx << ' ' << idx / (kHalfDimensions / kBlockSize) << ' ' << i/kBlocks << '\n';
+          return false;
+        }
+        block_indices_[i] = idx % (kHalfDimensions / kBlockSize);
+      }
       for (std::size_t i = 0; i < kActualHalfDimensions * kInputDimensions; ++i)
         weights_[i] = read_little_endian<WeightType>(stream);
-      for (std::size_t i = 0; i < kInputDimensions * kBlocks; ++i)
-        block_indices_[i] = read_little_endian<std::uint16_t>(stream) % (kHalfDimensions / kBlockSize);
       for (std::size_t i = 0; i < kInputDimensions; ++i)
         for (std::size_t j = 0; j < kPSQTBuckets; ++j)
           psqt_weights_[i*kPSQTBuckets + j] = read_little_endian<PSQTWeightType>(stream);
@@ -342,7 +351,7 @@ namespace Stockfish::Eval::NNUE {
         for (IndexType i = 0; info[i]; ++i)
         {
           auto acc = reinterpret_cast<vec_t*>(
-            info[i]->accumulator.accumulation[c][0][0]);
+            &info[i]->accumulator.accumulation[c][0][0]);
           std::memcpy(info[i]->accumulator.accumulation[c][0],
               st->accumulator.accumulation[c][0],
               kHalfDimensions * sizeof(BiasType));
