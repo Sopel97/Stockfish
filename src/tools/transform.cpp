@@ -63,6 +63,20 @@ namespace Stockfish::Tools
         }
     };
 
+    struct FilterByPieceCountParams
+    {
+        std::string input_filename = "in.binpack";
+        std::string output_filename = "out.binpack";
+        int min_pieces = 2;
+        int max_pieces = 32;
+
+        void enforce_constraints()
+        {
+            min_pieces = std::clamp(min_pieces, 2, 32);
+            max_pieces = std::clamp(max_pieces, min_pieces, 32);
+        }
+    };
+
     [[nodiscard]] std::int16_t nudge(NudgedStaticParams& params, std::int16_t static_eval_i16, std::int16_t deep_eval_i16)
     {
         auto saturate_i32_to_i16 = [](int v) {
@@ -499,11 +513,125 @@ namespace Stockfish::Tools
         do_rescore(params);
     }
 
+    void do_filter_by_piece_count(RescoreParams& params)
+    {
+        // TODO: Use SfenReader once it works correctly in sequential mode. See issue #271
+        auto in = Tools::open_sfen_input_file(params.input_filename);
+        auto readsome = [&in, mutex = std::mutex{}](int n) mutable -> PSVector {
+
+            PSVector psv;
+            psv.reserve(n);
+
+            std::unique_lock lock(mutex);
+
+            for (int i = 0; i < n; ++i)
+            {
+                auto ps_opt = in->next();
+                if (ps_opt.has_value())
+                {
+                    psv.emplace_back(*ps_opt);
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return psv;
+        };
+
+        auto sfen_format = ends_with(params.output_filename, ".binpack") ? SfenOutputType::Binpack : SfenOutputType::Bin;
+
+        auto out = SfenWriter(
+            params.output_filename,
+            Threads.size(),
+            std::numeric_limits<std::uint64_t>::max(),
+            sfen_format);
+
+        std::atomic<std::uint64_t> num_processed = 0;
+        std::atomic<std::uint64_t> num_out = 0;
+
+        Threads.execute_with_workers([&](auto& th){
+            Position& pos = th.rootPos;
+            StateInfo si;
+
+            for (;;)
+            {
+                PSVector psv = readsome(10000);
+                if (psv.empty())
+                    break;
+
+                std::uint64_t approx_out = 0;
+
+                for(auto& ps : psv)
+                {
+                    pos.set_from_packed_sfen(ps.sfen, &si, &th);
+                    const int pc = pos.count<ALL_PIECES>();
+                    if (pc >= params.min_pieces && pc <= params.max_pieces)
+                    {
+                        out.write(th.id(), ps);
+                        approx_out = num_out.fetch_add(1) + 1;
+                    }
+
+                    auto p = num_processed.fetch_add(1) + 1;
+                    if (p % 10000 == 0)
+                    {
+                        const int pct = static_cast<int>(approx_out * 100.0 / p);
+                        std::cout << "Processed " << p << " positions. " << approx_out << " (" << " %) positions passed the filter.\n";
+                    }
+                }
+            }
+        });
+        Threads.wait_for_workers_finished();
+
+        std::cout << "Finished.\n";
+    }
+
+    void filter_by_piece_count(std::istringstream& is)
+    {
+        FilterByPieceCountParams params{};
+
+        while(true)
+        {
+            std::string token;
+            is >> token;
+
+            if (token == "")
+                break;
+
+            if (token == "input_file")
+                is >> params.input_filename;
+            else if (token == "output_file")
+                is >> params.output_filename;
+            else if (token == "min_pieces")
+                is >> params.min_pieces;
+            else if (token == "max_pieces")
+                is >> params.max_pieces;
+            else
+            {
+                std::cout << "ERROR: Unknown option " << token << ". Exiting...\n";
+                return;
+            }
+        }
+
+        params.enforce_constraints();
+
+        std::cout << "Performing transform filter_by_piece_count with parameters:\n";
+        std::cout << "input_file          : " << params.input_filename << '\n';
+        std::cout << "output_file         : " << params.output_filename << '\n';
+        std::cout << "min_pieces          : " << params.min_pieces << '\n';
+        std::cout << "max_pieces          : " << params.max_pieces << '\n';
+        std::cout << '\n';
+
+        do_filter_by_piece_count(params);
+    }
+
     void transform(std::istringstream& is)
     {
         const std::map<std::string, CommandFunc> subcommands = {
             { "nudged_static", &nudged_static },
-            { "rescore", &rescore }
+            { "rescore", &rescore },
+            { "filter_by_piece_count", &filter_by_piece_count }
         };
 
         Eval::NNUE::init();
