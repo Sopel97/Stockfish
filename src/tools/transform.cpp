@@ -513,7 +513,7 @@ namespace Stockfish::Tools
         do_rescore(params);
     }
 
-    void do_filter_by_piece_count(RescoreParams& params)
+    void do_filter_by_piece_count(FilterByPieceCountParams& params)
     {
         // TODO: Use SfenReader once it works correctly in sequential mode. See issue #271
         auto in = Tools::open_sfen_input_file(params.input_filename);
@@ -577,7 +577,7 @@ namespace Stockfish::Tools
                     if (p % 10000 == 0)
                     {
                         const int pct = static_cast<int>(approx_out * 100.0 / p);
-                        std::cout << "Processed " << p << " positions. " << approx_out << " (" << " %) positions passed the filter.\n";
+                        std::cout << "Processed " << p << " positions. " << approx_out << " (" << pct << " %) positions passed the filter.\n";
                     }
                 }
             }
