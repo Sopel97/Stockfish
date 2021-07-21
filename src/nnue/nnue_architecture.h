@@ -28,7 +28,6 @@
 #include "layers/input_slice.h"
 #include "layers/affine_transform.h"
 #include "layers/affine_transform_sparse_input.h"
-#include "layers/affine_transform_sparse_input_output.h"
 #include "layers/clipped_relu.h"
 
 namespace Stockfish::Eval::NNUE {

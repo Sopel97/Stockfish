@@ -22,9 +22,55 @@
 #define NNUE_LAYERS_AFFINE_TRANSFORM_SPARSE_INPUT_H_INCLUDED
 
 #include <iostream>
+#include <array>
 #include "../nnue_common.h"
 
 namespace Stockfish::Eval::NNUE::Layers {
+
+static constexpr int lsb_constexpr(std::uint32_t v)
+{
+  int c = 0;
+  if (!v) return 32;
+  while (!(v & 1))
+  {
+    v >>= 1;
+    ++c;
+  }
+  return c;
+}
+
+alignas(CacheLineSize) static constexpr std::array<std::array<std::uint16_t, 8>, 256> LookupTableIndices = [](){
+  std::array<std::array<std::uint16_t, 8>, 256> v{};
+  for (int i = 0; i < 256; ++i)
+  {
+    int j = i;
+    int k = 0;
+    while(j)
+    {
+      const IndexType lsbIndex = lsb_constexpr(std::uint32_t(j));
+      j &= j - 1;
+      v[i][k] = lsbIndex;
+      ++k;
+    }
+  }
+  return v;
+}();
+
+static constexpr std::array<std::uint8_t, 256> LookupTableCounts = [](){
+  std::array<std::uint8_t, 256> v{};
+  for (int i = 0; i < 256; ++i)
+  {
+    int j = i;
+    int k = 0;
+    while(j)
+    {
+      j &= j - 1;
+      ++k;
+    }
+    v[i] = k;
+  }
+  return v;
+}();
 
 /// popcount() counts the number of non-zero bits in a bitboard
 
@@ -320,7 +366,6 @@ static inline IndexType msb_(std::uint64_t b) {
 #if defined (USE_AVX512)
       using vec_t = __m512i;
       #define vec_setzero _mm512_setzero_si512
-      #define vec_nnz(a) _cvtmask64_u64(_mm512_cmpgt_epi8_mask(a, _mm512_setzero_si512()))
       #define vec_setzero _mm512_setzero_si512()
       #define vec_broadcast_8(a) _mm512_set1_epi8(a)
       #define vec_broadcast_16(a) _mm512_set1_epi16(a)
@@ -332,14 +377,12 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_add_32(a, b) _mm512_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm512_madd_epi16(a, b)
       #define vec_maddubs_16(a, b) _mm512_maddubs_epi16(a, b)
-      #define vec_cmpgt_16(a, b) _mm512_cmpgt_epi16_mask(a, b)
       auto& vec_add_dpbusd_32 = m512_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m512_add_dpbusd_epi32x4;
       auto& vec_hadd = m512_hadd;
 #elif defined (USE_AVX2)
       using vec_t = __m256i;
       #define vec_setzero _mm256_setzero_si256
-      #define vec_nnz(a) _mm256_movemask_epi8(_mm256_cmpgt_epi8(a, _mm256_setzero_si256()))
       #define vec_setzero _mm256_setzero_si256()
       #define vec_broadcast_8(a) _mm256_set1_epi8(a)
       #define vec_broadcast_16(a) _mm256_set1_epi16(a)
@@ -351,14 +394,12 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_add_32(a, b) _mm256_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm256_madd_epi16(a, b)
       #define vec_maddubs_16(a, b) _mm256_maddubs_epi16(a, b)
-      #define vec_cmpgt_16(a, b) _mm256_cmpgt_epi16(a, b)
       auto& vec_add_dpbusd_32 = m256_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m256_add_dpbusd_epi32x4;
       auto& vec_hadd = m256_hadd;
 #elif defined (USE_SSE2)
       using vec_t = __m128i;
       #define vec_setzero _mm_setzero_si128
-      #define vec_nnz(a) _mm_movemask_epi8(_mm_cmpgt_epi8(a, _mm_setzero_si128()))
       #define vec_setzero _mm_setzero_si128()
       #define vec_broadcast_8(a) _mm_set1_epi8(a)
       #define vec_broadcast_16(a) _mm_set1_epi16(a)
@@ -370,27 +411,16 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_add_32(a, b) _mm_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm_madd_epi16(a, b)
       #define vec_maddubs_16(a, b) _mm_maddubs_epi16(a, b)
-      #define vec_cmpgt_16(a, b) _mm_cmpgt_epi16(a, b)
       auto& vec_add_dpbusd_32 = m128_add_dpbusd_epi32;
       auto& vec_add_dpbusd_32x4 = m128_add_dpbusd_epi32x4;
       auto& vec_hadd = m128_hadd;
 #endif
 
-      std::uint16_t nnzInputIndices[InputDimensions];
+      alignas(CacheLineSize) std::uint16_t nnzInputIndices[InputDimensions+16];
       IndexType numNnzInputIndices = 0;
+      non_zero_indices(input, nnzInputIndices, numNnzInputIndices);
 
-      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
-      const auto inputVector = reinterpret_cast<const vec_t*>(input);
       const auto output = reinterpret_cast<OutputType*>(buffer);
-      for (IndexType i = 0; i < NumNnzCountChunks; ++i) {
-        const auto inputChunk = inputVector[i];
-        auto nnz = vec_nnz(inputChunk);
-        while (nnz) {
-          const IndexType lsbIndex = lsb_(nnz);
-          nnz &= nnz - 1;
-          nnzInputIndices[numNnzInputIndices++] = i*InputSimdWidth + lsbIndex;
-        }
-      }
 
 #if defined (USE_AVX2) || defined (USE_SSE2)
 
@@ -473,6 +503,88 @@ static inline IndexType msb_(std::uint64_t b) {
 
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) LoadedWeightType weights[InputDimensions * PaddedOutputDimensions];
+
+
+#if defined (USE_AVX2)
+
+    static inline void non_zero_indices(const std::uint8_t* in, std::uint16_t* out, IndexType& count_out)
+    {
+        static constexpr unsigned NumChunks = InputDimensions / 32;
+
+        const auto inputVector = reinterpret_cast<const __m256i*>(in);
+        unsigned count = 0;
+        __m128i base = _mm_set1_epi16(0);
+        __m128i increment = _mm_set1_epi16(8);
+        for (int i = 0; i < NumChunks; ++i)
+        {
+            const __m256i inputChunk = inputVector[i];
+            unsigned nnz = _mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk, _mm256_setzero_si256()));
+            unsigned b3 = (nnz >> 24) & 0xFF;
+            unsigned b2 = (nnz >> 16) & 0xFF;
+            unsigned b1 = (nnz >> 8) & 0xFF;
+            unsigned b0 = (nnz) & 0xFF;
+            unsigned c0 = LookupTableCounts[b0];
+            unsigned c1 = LookupTableCounts[b1];
+            unsigned c2 = LookupTableCounts[b2];
+            unsigned c3 = LookupTableCounts[b3];
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b0])) + base);
+            count += c0;
+            base += increment;
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b1])) + base);
+            count += c1;
+            base += increment;
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b2])) + base);
+            count += c2;
+            base += increment;
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b3])) + base);
+            count += c3;
+            base += increment;
+        }
+        count_out = count;
+    }
+
+#elif defined (USE_SSE2)
+
+    static inline void non_zero_indices(const std::uint8_t* in, std::uint16_t* out, IndexType& count_out)
+    {
+        static constexpr unsigned NumChunks = InputDimensions / 16;
+
+        const auto inputVector = reinterpret_cast<const __m128i*>(in);
+        unsigned count = 0;
+        __m128i base = _mm_set1_epi16(0);
+        __m128i increment = _mm_set1_epi16(8);
+        for (int i = 0; i < NumChunks; ++i)
+        {
+            const __m128i inputChunk = inputVector[i];
+            unsigned nnz = _mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk, _mm_setzero_si128()));
+            unsigned b1 = (nnz >> 8) & 0xFF;
+            unsigned b0 = (nnz) & 0xFF;
+            unsigned c0 = LookupTableCounts[b0];
+            unsigned c1 = LookupTableCounts[b1];
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b0])) + base);
+            count += c0;
+            base += increment;
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b1])) + base);
+            count += c1;
+            base += increment;
+        }
+        count_out = count;
+    }
+
+#else
+
+    static inline void non_zero_indices(const std::uint8_t* in, std::uint16_t* out, IndexType& count_out)
+    {
+      unsigned count = 0;
+      for (int i = 0; i < InputDimensions; ++i)
+      {
+        if (in[i])
+          out[count++] = i;
+      }
+      count_out = count;
+    }
+
+#endif
   };
 
 }  // namespace Stockfish::Eval::NNUE::Layers
