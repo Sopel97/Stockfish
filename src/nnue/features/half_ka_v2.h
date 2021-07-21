@@ -77,7 +77,7 @@ namespace Stockfish::Eval::NNUE::Features {
 
     // Number of feature dimensions
     static constexpr IndexType Dimensions =
-        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_END2) / 2;
+        static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2;
 
     static constexpr int KingBuckets[64] = {
       -1, -1, -1, -1, 31, 30, 29, 28,
