@@ -32,7 +32,7 @@ namespace Stockfish::Eval::NNUE::Features {
   // Index of a feature for a given king position and another piece on some square
   inline IndexType HalfKAv2::make_index(Color perspective, Square s, Piece pc, Square ksq) {
     Square o_ksq = orient(perspective, ksq, ksq);
-    return IndexType(orient(perspective, s, ksq) + kpp_board_index[perspective][pc] + PS_NB * KingBuckets[o_ksq]);
+    return IndexType(orient(perspective, s, ksq) + PieceSquareIndex[perspective][pc] + PS_NB * KingBuckets[o_ksq]);
   }
 
   // Get a list of indices for active features
@@ -61,7 +61,6 @@ namespace Stockfish::Eval::NNUE::Features {
     ValueListInserter<IndexType> added
   ) {
     const auto& dp = st->dirtyPiece;
-    Square ksq = pos.square<KING>(perspective);
     for (int i = 0; i < dp.dirty_num; ++i) {
       Piece pc = dp.piece[i];
       if (dp.from[i] != SQ_NONE)
