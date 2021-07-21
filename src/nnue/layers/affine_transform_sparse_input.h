@@ -291,7 +291,54 @@ static inline IndexType msb_(std::uint64_t b) {
 
       const auto output = reinterpret_cast<OutputType*>(buffer);
 
-#if defined (USE_SSE2)
+#if defined (USE_SSSE3)
+
+      alignas(CacheLineSize) std::uint16_t nnzInputIndices[InputDimensions+16];
+      IndexType numNnzInputIndices = 0;
+      non_zero_indices(input, nnzInputIndices, numNnzInputIndices);
+
+      constexpr IndexType ChunkSize = 4;
+      constexpr IndexType NumChunks = 8;
+      constexpr IndexType TileSize = NumChunks * ChunkSize;
+      static_assert(PaddedOutputDimensions % TileSize == 0);
+      constexpr IndexType NumTiles = PaddedOutputDimensions / TileSize;
+
+      while (numNnzInputIndices % 2 != 0)
+        nnzInputIndices[numNnzInputIndices++] = InputDimensions;
+
+      __m128i acc[NumChunks];
+
+      for (IndexType i = 0; i < NumTiles; ++i)
+      {
+        auto biasesTile = reinterpret_cast<const __m128i*>(&biases[i * TileSize]);
+        auto outputTile = reinterpret_cast<      __m128i*>(&output[i * TileSize]);
+
+        for (IndexType k = 0; k < NumChunks; ++k)
+          acc[k] = biasesTile[k];
+
+        for (IndexType j = 0; j < numNnzInputIndices; j += 2)
+        {
+          const auto mul0 = _mm_set1_epi16(input[nnzInputIndices[j+0]] | (input[nnzInputIndices[j+1]] << 8));
+          const auto col0 = reinterpret_cast<const __m128i*>(&weights[nnzInputIndices[j+0] * PaddedOutputDimensions + i * TileSize]);
+          const auto col1 = reinterpret_cast<const __m128i*>(&weights[nnzInputIndices[j+1] * PaddedOutputDimensions + i * TileSize]);
+          for (IndexType k = 0; k < NumChunks / 4; ++k)
+          {
+            __m128i prod0 = _mm_maddubs_epi16(mul0, _mm_unpacklo_epi8(col0[k], col1[k]));
+            __m128i signs0 = _mm_cmpgt_epi16(_mm_setzero_si128(), prod0);
+            __m128i prod1 = _mm_maddubs_epi16(mul0, _mm_unpackhi_epi8(col0[k], col1[k]));
+            __m128i signs1 = _mm_cmpgt_epi16(_mm_setzero_si128(), prod1);
+            acc[k*4 + 0] = _mm_add_epi32(acc[k*4 + 0], _mm_unpacklo_epi16(prod0, signs0));
+            acc[k*4 + 1] = _mm_add_epi32(acc[k*4 + 1], _mm_unpackhi_epi16(prod0, signs0));
+            acc[k*4 + 2] = _mm_add_epi32(acc[k*4 + 2], _mm_unpacklo_epi16(prod1, signs1));
+            acc[k*4 + 3] = _mm_add_epi32(acc[k*4 + 3], _mm_unpackhi_epi16(prod1, signs1));
+          }
+        }
+
+        for (IndexType k = 0; k < NumChunks; ++k)
+          outputTile[k] = acc[k];
+      }
+
+#elif defined (USE_SSE2)
 
       alignas(CacheLineSize) std::uint16_t nnzInputIndices[InputDimensions+16];
       IndexType numNnzInputIndices = 0;
@@ -349,7 +396,7 @@ static inline IndexType msb_(std::uint64_t b) {
     using BiasType = OutputType;
     using WeightType = std::int8_t;
 
-#if defined(USE_SSE2)
+#if defined(USE_SSE2) && !defined(USE_SSSE3)
     using LoadedWeightType = std::int16_t;
 #else
     using LoadedWeightType = std::int8_t;
