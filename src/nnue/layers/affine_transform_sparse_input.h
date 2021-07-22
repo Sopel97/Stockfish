@@ -217,17 +217,6 @@ static inline IndexType msb_(std::uint64_t b) {
         for (std::size_t j = 0; j < InputDimensions; ++j)
           weights[j*PaddedOutputDimensions + i] = read_little_endian<WeightType>(stream);
 
-#if defined (USE_AVX2)
-      for (std::size_t i = 0; i < InputDimensions; ++i)
-        for (std::size_t j = 0; j < PaddedOutputDimensions; ++j)
-        {
-          int simdlane = j % 16;
-          int simdlane64 = simdlane / 4;
-          if (simdlane64 == 1)
-            std::swap(weights[i*PaddedOutputDimensions + j], weights[i*PaddedOutputDimensions + j + 4]);
-        }
-#endif
-
       for (std::size_t i = 0; i < PaddedOutputDimensions; ++i)
         weights[InputDimensions*PaddedOutputDimensions + i] = 0;
 
@@ -291,7 +280,73 @@ static inline IndexType msb_(std::uint64_t b) {
 
       const auto output = reinterpret_cast<OutputType*>(buffer);
 
-#if defined (USE_SSSE3)
+#if defined (USE_AVX2)
+
+      alignas(CacheLineSize) std::uint16_t nnzInputIndices[InputDimensions+16];
+      IndexType numNnzInputIndices = 0;
+      non_zero_indices(input, nnzInputIndices, numNnzInputIndices);
+
+      constexpr IndexType ChunkSize = 8;
+      constexpr IndexType NumChunks = 8;
+      constexpr IndexType TileSize = NumChunks * ChunkSize;
+      static_assert(PaddedOutputDimensions % TileSize == 0);
+      constexpr IndexType NumTiles = PaddedOutputDimensions / TileSize;
+
+      const __m256i ones = _mm256_set1_epi16(1);
+
+      while (numNnzInputIndices % 4 != 0)
+        nnzInputIndices[numNnzInputIndices++] = InputDimensions;
+
+      __m256i acc[NumChunks];
+
+      for (IndexType i = 0; i < NumTiles; ++i)
+      {
+        auto biasesTile = reinterpret_cast<const __m256i*>(&biases[i * TileSize]);
+        auto outputTile = reinterpret_cast<      __m256i*>(&output[i * TileSize]);
+
+        for (IndexType k = 0; k < NumChunks; ++k)
+          acc[k] = _mm256_setzero_si256();
+
+        for (IndexType j = 0; j < numNnzInputIndices; j += 4)
+        {
+          const auto mul0 = _mm256_set1_epi16(input[nnzInputIndices[j+0]] | (input[nnzInputIndices[j+1]] << 8));
+          const auto mul2 = _mm256_set1_epi16(input[nnzInputIndices[j+2]] | (input[nnzInputIndices[j+3]] << 8));
+          const auto col0 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+0] * PaddedOutputDimensions + i * TileSize]);
+          const auto col1 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+1] * PaddedOutputDimensions + i * TileSize]);
+          const auto col2 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+2] * PaddedOutputDimensions + i * TileSize]);
+          const auto col3 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+3] * PaddedOutputDimensions + i * TileSize]);
+          for (IndexType k = 0; k < NumChunks / 4; ++k)
+          {
+            __m256i prod0 = _mm256_maddubs_epi16(mul0, _mm256_unpacklo_epi8(col0[k], col1[k]));
+            __m256i prod1 = _mm256_maddubs_epi16(mul0, _mm256_unpackhi_epi8(col0[k], col1[k]));
+            __m256i prod2 = _mm256_maddubs_epi16(mul2, _mm256_unpacklo_epi8(col2[k], col3[k]));
+            __m256i prod3 = _mm256_maddubs_epi16(mul2, _mm256_unpackhi_epi8(col2[k], col3[k]));
+            acc[k*4 + 0] = _mm256_add_epi32(acc[k*4 + 0], _mm256_madd_epi16(ones, _mm256_unpacklo_epi16(prod0, prod2)));
+            acc[k*4 + 1] = _mm256_add_epi32(acc[k*4 + 1], _mm256_madd_epi16(ones, _mm256_unpackhi_epi16(prod0, prod2)));
+            acc[k*4 + 2] = _mm256_add_epi32(acc[k*4 + 2], _mm256_madd_epi16(ones, _mm256_unpacklo_epi16(prod1, prod3)));
+            acc[k*4 + 3] = _mm256_add_epi32(acc[k*4 + 3], _mm256_madd_epi16(ones, _mm256_unpackhi_epi16(prod1, prod3)));
+          }
+        }
+
+        for (IndexType k = 0; k < NumChunks / 4; ++k)
+        {
+          __m128i acc00 = _mm256_extracti128_si256(acc[k*4 + 0], 0);
+          __m128i acc01 = _mm256_extracti128_si256(acc[k*4 + 0], 1);
+          __m128i acc10 = _mm256_extracti128_si256(acc[k*4 + 1], 0);
+          __m128i acc11 = _mm256_extracti128_si256(acc[k*4 + 1], 1);
+          __m128i acc20 = _mm256_extracti128_si256(acc[k*4 + 2], 0);
+          __m128i acc21 = _mm256_extracti128_si256(acc[k*4 + 2], 1);
+          __m128i acc30 = _mm256_extracti128_si256(acc[k*4 + 3], 0);
+          __m128i acc31 = _mm256_extracti128_si256(acc[k*4 + 3], 1);
+
+          outputTile[k*4 + 0] = _mm256_add_epi32(_mm256_setr_m128i(acc00, acc10), biasesTile[k*4 + 0]);
+          outputTile[k*4 + 1] = _mm256_add_epi32(_mm256_setr_m128i(acc20, acc30), biasesTile[k*4 + 1]);
+          outputTile[k*4 + 2] = _mm256_add_epi32(_mm256_setr_m128i(acc01, acc11), biasesTile[k*4 + 2]);
+          outputTile[k*4 + 3] = _mm256_add_epi32(_mm256_setr_m128i(acc21, acc31), biasesTile[k*4 + 3]);
+        }
+      }
+
+#elif defined (USE_SSSE3)
 
       alignas(CacheLineSize) std::uint16_t nnzInputIndices[InputDimensions+16];
       IndexType numNnzInputIndices = 0;
