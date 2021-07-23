@@ -255,23 +255,26 @@ namespace Stockfish::Eval::NNUE {
 
   #elif defined(USE_AVX2)
 
-      constexpr IndexType NumChunks = HalfDimensions / SimdWidth;
-      constexpr int Control = 0b11011000;
+      constexpr IndexType NumChunks = HalfDimensions / 8;
       const __m256i Zero = _mm256_setzero_si256();
+      const __m128i One = _mm_set1_epi16(127);
 
       for (IndexType p = 0; p < 2; ++p)
       {
           const IndexType offset = HalfDimensions * p;
-          auto out = reinterpret_cast<__m256i*>(&output[offset]);
-          for (IndexType j = 0; j < NumChunks; ++j)
+          auto out = reinterpret_cast<__m256*>(&output[offset]);
+          for (IndexType j = 0; j < NumChunks; j += 2)
           {
-              __m256i sum0 = _mm256_load_si256(&reinterpret_cast<const __m256i*>
+              __m128i sum0 = _mm_load_si128(&reinterpret_cast<const __m128i*>
                                               (accumulation[perspectives[p]])[j * 2 + 0]);
-              __m256i sum1 = _mm256_load_si256(&reinterpret_cast<const __m256i*>
+              __m128i sum1 = _mm_load_si128(&reinterpret_cast<const __m128i*>
                                               (accumulation[perspectives[p]])[j * 2 + 1]);
 
-              _mm256_store_si256(&out[j], _mm256_permute4x64_epi64(
-                                 _mm256_max_epi8(_mm256_packs_epi16(sum0, sum1), Zero), Control));
+              sum0 = _mm_min_epi16(sum0, One);
+              sum1 = _mm_min_epi16(sum1, One);
+
+              _mm256_store_ps(reinterpret_cast<float*>(&out[j * 2 + 0]), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(sum0)));
+              _mm256_store_ps(reinterpret_cast<float*>(&out[j * 2 + 1]), _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(sum1)));
           }
       }
       return psqt;

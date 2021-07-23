@@ -168,7 +168,7 @@ static inline IndexType msb_(std::uint64_t b) {
     // Input/output type
     using InputType = typename PreviousLayer::OutputType;
     using OutputType = std::int32_t;
-    static_assert(std::is_same<InputType, std::uint8_t>::value, "");
+    static_assert(std::is_same<InputType, float>::value, "");
 
     // Number of input/output dimensions
     static constexpr IndexType InputDimensions = PreviousLayer::OutputDimensions;
@@ -294,10 +294,10 @@ static inline IndexType msb_(std::uint64_t b) {
 
       const __m256i ones = _mm256_set1_epi16(1);
 
-      while (numNnzInputIndices % 4 != 0)
+      while (numNnzInputIndices % 2 != 0)
         nnzInputIndices[numNnzInputIndices++] = InputDimensions;
 
-      __m256i acc[NumChunks];
+      __m256 acc[NumChunks];
 
       for (IndexType i = 0; i < NumTiles; ++i)
       {
@@ -305,44 +305,23 @@ static inline IndexType msb_(std::uint64_t b) {
         auto outputTile = reinterpret_cast<      __m256i*>(&output[i * TileSize]);
 
         for (IndexType k = 0; k < NumChunks; ++k)
-          acc[k] = _mm256_setzero_si256();
+          acc[k] = _mm256_setzero_ps();
 
-        for (IndexType j = 0; j < numNnzInputIndices; j += 4)
+        for (IndexType j = 0; j < numNnzInputIndices; j += 2)
         {
-          const auto mul0 = _mm256_set1_epi16(input[nnzInputIndices[j+0]] | (input[nnzInputIndices[j+1]] << 8));
-          const auto mul2 = _mm256_set1_epi16(input[nnzInputIndices[j+2]] | (input[nnzInputIndices[j+3]] << 8));
-          const auto col0 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+0] * PaddedOutputDimensions + i * TileSize]);
-          const auto col1 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+1] * PaddedOutputDimensions + i * TileSize]);
-          const auto col2 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+2] * PaddedOutputDimensions + i * TileSize]);
-          const auto col3 = reinterpret_cast<const __m256i*>(&weights[nnzInputIndices[j+3] * PaddedOutputDimensions + i * TileSize]);
-          for (IndexType k = 0; k < NumChunks / 4; ++k)
+          const auto mul0 = _mm256_set1_ps(input[nnzInputIndices[j+0]]);
+          const auto mul1 = _mm256_set1_ps(input[nnzInputIndices[j+1]]);
+          const auto col0 = reinterpret_cast<const __m256*>(&weights[nnzInputIndices[j+0] * PaddedOutputDimensions + i * TileSize]);
+          const auto col1 = reinterpret_cast<const __m256*>(&weights[nnzInputIndices[j+1] * PaddedOutputDimensions + i * TileSize]);
+          for (IndexType k = 0; k < NumChunks; ++k)
           {
-            __m256i prod0 = _mm256_maddubs_epi16(mul0, _mm256_unpacklo_epi8(col0[k], col1[k]));
-            __m256i prod1 = _mm256_maddubs_epi16(mul0, _mm256_unpackhi_epi8(col0[k], col1[k]));
-            __m256i prod2 = _mm256_maddubs_epi16(mul2, _mm256_unpacklo_epi8(col2[k], col3[k]));
-            __m256i prod3 = _mm256_maddubs_epi16(mul2, _mm256_unpackhi_epi8(col2[k], col3[k]));
-            acc[k*4 + 0] = _mm256_add_epi32(acc[k*4 + 0], _mm256_madd_epi16(ones, _mm256_unpacklo_epi16(prod0, prod2)));
-            acc[k*4 + 1] = _mm256_add_epi32(acc[k*4 + 1], _mm256_madd_epi16(ones, _mm256_unpackhi_epi16(prod0, prod2)));
-            acc[k*4 + 2] = _mm256_add_epi32(acc[k*4 + 2], _mm256_madd_epi16(ones, _mm256_unpacklo_epi16(prod1, prod3)));
-            acc[k*4 + 3] = _mm256_add_epi32(acc[k*4 + 3], _mm256_madd_epi16(ones, _mm256_unpackhi_epi16(prod1, prod3)));
+            acc[k] = _mm256_fmadd_ps(mul0, col0[k], _mm256_fmadd_ps(mul1, col1[k], acc[k]));
           }
         }
 
-        for (IndexType k = 0; k < NumChunks / 4; ++k)
+        for (IndexType k = 0; k < NumChunks; ++k)
         {
-          __m128i acc00 = _mm256_extracti128_si256(acc[k*4 + 0], 0);
-          __m128i acc01 = _mm256_extracti128_si256(acc[k*4 + 0], 1);
-          __m128i acc10 = _mm256_extracti128_si256(acc[k*4 + 1], 0);
-          __m128i acc11 = _mm256_extracti128_si256(acc[k*4 + 1], 1);
-          __m128i acc20 = _mm256_extracti128_si256(acc[k*4 + 2], 0);
-          __m128i acc21 = _mm256_extracti128_si256(acc[k*4 + 2], 1);
-          __m128i acc30 = _mm256_extracti128_si256(acc[k*4 + 3], 0);
-          __m128i acc31 = _mm256_extracti128_si256(acc[k*4 + 3], 1);
-
-          outputTile[k*4 + 0] = _mm256_add_epi32(_mm256_setr_m128i(acc00, acc10), biasesTile[k*4 + 0]);
-          outputTile[k*4 + 1] = _mm256_add_epi32(_mm256_setr_m128i(acc20, acc30), biasesTile[k*4 + 1]);
-          outputTile[k*4 + 2] = _mm256_add_epi32(_mm256_setr_m128i(acc01, acc11), biasesTile[k*4 + 2]);
-          outputTile[k*4 + 3] = _mm256_add_epi32(_mm256_setr_m128i(acc21, acc31), biasesTile[k*4 + 3]);
+          outputTile[k] = _mm256_add_epi32(_mm256_cvtps_epi32(acc[k]), biasesTile[k]);
         }
       }
 
@@ -456,11 +435,7 @@ static inline IndexType msb_(std::uint64_t b) {
     using BiasType = OutputType;
     using WeightType = std::int8_t;
 
-#if defined(USE_SSE2) && !defined(USE_SSSE3)
-    using LoadedWeightType = std::int16_t;
-#else
-    using LoadedWeightType = std::int8_t;
-#endif
+    using LoadedWeightType = float;
 
     PreviousLayer previousLayer;
 
@@ -470,37 +445,22 @@ static inline IndexType msb_(std::uint64_t b) {
 
 #if defined (USE_AVX2)
 
-    static inline void non_zero_indices(const std::uint8_t* in, std::uint16_t* out, IndexType& count_out)
+    static inline void non_zero_indices(const float* in, std::uint16_t* out, IndexType& count_out)
     {
-        static constexpr unsigned NumChunks = InputDimensions / 32;
+        static constexpr unsigned NumChunks = InputDimensions / 8;
 
-        const auto inputVector = reinterpret_cast<const __m256i*>(in);
+        const auto inputVector = reinterpret_cast<const __m256*>(in);
         unsigned count = 0;
         __m128i base = _mm_set1_epi16(0);
         __m128i increment = _mm_set1_epi16(8);
         for (unsigned i = 0; i < NumChunks; ++i)
         {
-            const __m256i inputChunk = inputVector[i];
-            unsigned nnz = _mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk, _mm256_setzero_si256()));
-            unsigned b3 = (nnz >> 24) & 0xFF;
-            unsigned b2 = (nnz >> 16) & 0xFF;
-            unsigned b1 = (nnz >> 8) & 0xFF;
-            unsigned b0 = (nnz) & 0xFF;
+            const __m256 inputChunk = inputVector[i];
+            unsigned nnz = _mm256_movemask_ps(_mm256_cmp_ps(inputChunk, _mm256_setzero_ps(), _CMP_GT_OS));
+            unsigned b0 = nnz;
             unsigned c0 = LookupTableCounts[b0];
-            unsigned c1 = LookupTableCounts[b1];
-            unsigned c2 = LookupTableCounts[b2];
-            unsigned c3 = LookupTableCounts[b3];
             _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b0])) + base);
             count += c0;
-            base += increment;
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b1])) + base);
-            count += c1;
-            base += increment;
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b2])) + base);
-            count += c2;
-            base += increment;
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(out + count), _mm_loadu_si128(reinterpret_cast<const __m128i*>(&LookupTableIndices[b3])) + base);
-            count += c3;
             base += increment;
         }
         count_out = count;
