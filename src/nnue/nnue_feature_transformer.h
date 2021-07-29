@@ -363,10 +363,11 @@ namespace Stockfish::Eval::NNUE {
       {
         auto& rng = tls_rng;
         std::bernoulli_distribution d(RandomEvalPerturb / 100.0);
+        std::uniform_int_distribution<int> d2(-3, 3);
         for (IndexType i = 0; i < OutputDimensions; ++i)
         {
           if (rng())
-            output[i] = 0;
+            output[i] = std::max<int>(0, std::min<int>(127, output + d2(rng)));
         }
       }
 
