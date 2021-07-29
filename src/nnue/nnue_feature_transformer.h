@@ -25,6 +25,8 @@
 #include "nnue_architecture.h"
 
 #include <cstring> // std::memset()
+#include <random>
+#include <ctime>
 
 namespace Stockfish::Eval::NNUE {
 
@@ -39,6 +41,10 @@ namespace Stockfish::Eval::NNUE {
 
   static_assert(PSQTBuckets % 8 == 0,
     "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
+
+  static thread_local std::mt19937_64 tls_rng = [](){
+    return std::mt19937_64(std::time(0));
+  }();
 
   #ifdef USE_AVX512
   typedef __m512i vec_t;
@@ -251,7 +257,6 @@ namespace Stockfish::Eval::NNUE {
                                  _mm512_max_epi8(_mm512_packs_epi16(sum0, sum1), Zero)));
           }
       }
-      return psqt;
 
   #elif defined(USE_AVX2)
 
@@ -274,7 +279,6 @@ namespace Stockfish::Eval::NNUE {
                                  _mm256_max_epi8(_mm256_packs_epi16(sum0, sum1), Zero), Control));
           }
       }
-      return psqt;
 
   #elif defined(USE_SSE2)
 
@@ -305,7 +309,6 @@ namespace Stockfish::Eval::NNUE {
               #endif
           }
       }
-      return psqt;
 
   #elif defined(USE_MMX)
 
@@ -325,7 +328,6 @@ namespace Stockfish::Eval::NNUE {
           }
       }
       _mm_empty();
-      return psqt;
 
   #elif defined(USE_NEON)
 
@@ -342,7 +344,6 @@ namespace Stockfish::Eval::NNUE {
               out[j] = vmax_s8(vqmovn_s16(sum), Zero);
           }
       }
-      return psqt;
 
   #else
 
@@ -355,9 +356,20 @@ namespace Stockfish::Eval::NNUE {
               output[offset + j] = static_cast<OutputType>(std::max<int>(0, std::min<int>(127, sum)));
           }
       }
-      return psqt;
 
   #endif
+
+      if (RandomEvalPerturb > 0)
+      {
+        auto& rng = tls_rng;
+        std::bernoulli_distribution d(1.0 - RandomEvalPerturb / 100.0);
+        for (IndexType i = 0; i < OutputDimensions; ++i)
+        {
+          output[i] *= rng();
+        }
+      }
+
+      return psqt;
 
    } // end of function transform()
 

@@ -63,6 +63,8 @@ namespace Eval {
   bool useNNUE;
   string eval_file_loaded = "None";
 
+  int NNUE::RandomEvalPerturb = 0;
+
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
   /// receives a UCI command "setoption name EvalFile value nn-[a-z0-9]{12}.nnue"
   /// The name of the NNUE network is always retrieved from the EvalFile option.
@@ -1107,6 +1109,7 @@ Value Eval::evaluate(const Position& pos) {
       int r50 = pos.rule50_count();
       Value psq = Value(abs(eg_value(pos.psq_score())));
       bool classical = psq * 5 > (850 + pos.non_pawn_material() / 64) * (5 + r50);
+      classical = classical && (NNUE::RandomEvalPerturb == 0);
 
       v = classical ? Evaluation<NO_TRACE>(pos).value()  // classical
                     : adjusted_NNUE();                   // NNUE
