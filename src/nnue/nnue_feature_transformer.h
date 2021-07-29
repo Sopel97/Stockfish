@@ -367,7 +367,7 @@ namespace Stockfish::Eval::NNUE {
         for (IndexType i = 0; i < OutputDimensions; ++i)
         {
           if (rng())
-            output[i] = std::max<int>(0, std::min<int>(127, output + d2(rng)));
+            output[i] = std::max<int>(0, std::min<int>(127, output[i] + d2(rng)));
         }
       }
 
