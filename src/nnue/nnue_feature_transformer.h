@@ -362,10 +362,11 @@ namespace Stockfish::Eval::NNUE {
       if (RandomEvalPerturb > 0)
       {
         auto& rng = tls_rng;
-        std::bernoulli_distribution d(1.0 - RandomEvalPerturb / 100.0);
+        std::bernoulli_distribution d(RandomEvalPerturb / 100.0);
         for (IndexType i = 0; i < OutputDimensions; ++i)
         {
-          output[i] *= rng();
+          if (rng())
+            output[i] = 0;
         }
       }
 
