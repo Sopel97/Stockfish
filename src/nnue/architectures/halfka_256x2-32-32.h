@@ -35,7 +35,7 @@ using RawFeatures = Features::FeatureSet<
     Features::HalfKA<Features::Side::kFriend>>;
 
 // Number of input feature dimensions after conversion
-constexpr IndexType kTransformedFeatureDimensions = 512;
+constexpr IndexType kTransformedFeatureDimensions = 1024;
 constexpr IndexType kPSQTBuckets = 8;
 constexpr IndexType kLayerStacks = 8;
 
@@ -43,7 +43,7 @@ namespace Layers {
 
 // Define network structure
 using InputLayer = InputSlice<kTransformedFeatureDimensions * 2>;
-using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 16>>;
+using HiddenLayer1 = ClippedReLU<AffineTransform<InputLayer, 8>>;
 using HiddenLayer2 = ClippedReLU<AffineTransform<HiddenLayer1, 32>>;
 using OutputLayer = AffineTransform<HiddenLayer2, 1>;
 

@@ -496,7 +496,7 @@ namespace Stockfish::Eval::NNUE {
             auto accTilePsqt = reinterpret_cast<psqt_vec_t*>(
               &accumulator.psqt_accumulation[c][0][j * kPsqtTileHeight]);
             for (std::size_t k = 0; k < kPsqtRegs; ++k)
-              vec_store(&accTilePsqt[k], psqt[k]);
+              vec_store_psqt(&accTilePsqt[k], psqt[k]);
           }
         }
   #else
