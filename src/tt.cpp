@@ -33,6 +33,17 @@ TranspositionTable TT; // Our global transposition table
 /// TTEntry::save() populates the TTEntry with a new node's data, possibly
 /// overwriting an old position. Update is not atomic and can be racy.
 
+int t0 = 2;
+int t1 = 1;
+int t2 = 1;
+int t3 = 4;
+int t4 = 0;
+TUNE(SetRange(-1, 8), t0);
+TUNE(SetRange(-1, 8), t1);
+TUNE(SetRange(-1, 8), t2);
+TUNE(SetRange(-1, 8), t3);
+TUNE(SetRange(-1, 8), t4);
+
 void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) {
 
   // Preserve any existing move for the same position
@@ -41,10 +52,11 @@ void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) 
 
   // Overwrite less valuable entries
   if (d - DEPTH_OFFSET >  depth8
-                        - 2 * ((uint16_t)k != key16)
-                        - 1 * ((int)(b == BOUND_EXACT) - (bound() == BOUND_EXACT))
-                        - 1 * ((int)pv - (int)is_pv())
-                        - 4 * ((genBound8 & TT.GENERATION_MASK) != TT.generation8))
+                        - t0 * ((uint16_t)k != key16)
+                        - t1 * ((int)(b == BOUND_EXACT) - (bound() == BOUND_EXACT))
+                        - t2 * ((int)pv - (int)is_pv())
+                        - t3 * ((genBound8 & TT.GENERATION_MASK) != TT.generation8)
+                        - t4)
   {
       assert(d > DEPTH_OFFSET);
       assert(d < 256 + DEPTH_OFFSET);
