@@ -41,10 +41,11 @@ void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) 
 
   // Overwrite less valuable entries
   if (d - DEPTH_OFFSET >  depth8
-                        - 1 * ((uint16_t)k != key16)
-                        - 2 * (b == BOUND_EXACT)
+                        - 4 * ((uint16_t)k != key16)
+                        - 4 * (b == BOUND_EXACT)
                         - 1 * ((int)pv - (int)is_pv())
-                        - 2 * ((genBound8 & TT.GENERATION_MASK) != TT.generation8))
+                        - 2 * ((genBound8 & TT.GENERATION_MASK) != TT.generation8)
+                        - 2)
   {
       assert(d > DEPTH_OFFSET);
       assert(d < 256 + DEPTH_OFFSET);
