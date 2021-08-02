@@ -84,7 +84,6 @@ T* align_ptr_up(T* ptr)
 static inline const union { uint32_t i; char c[4]; } Le = { 0x01020304 };
 static inline const bool IsLittleEndian = (Le.c[0] == 4);
 
-
 template <typename T>
 class ValueListInserter {
 public:
@@ -113,6 +112,7 @@ public:
   const T& operator[](std::size_t index) const { return values_[index]; }
   const T* begin() const { return values_; }
   const T* end() const { return values_ + size_; }
+  void clear() { size_ = 0; }
   operator ValueListInserter<T>() { return ValueListInserter(values_, size_); }
 
   void swap(ValueList& other) {
@@ -125,7 +125,7 @@ public:
 
 private:
   T values_[MaxSize];
-  std::size_t size_ = 0;
+  std::size_t size_;
 };
 
 /// xorshift64star Pseudo-Random Number Generator

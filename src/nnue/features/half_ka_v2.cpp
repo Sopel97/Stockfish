@@ -54,12 +54,11 @@ namespace Stockfish::Eval::NNUE::Features {
 
   void HalfKAv2::append_changed_indices(
     Square ksq,
-    StateInfo* st,
+    const DirtyPiece& dp,
     Color perspective,
     ValueListInserter<IndexType> removed,
     ValueListInserter<IndexType> added
   ) {
-    const auto& dp = st->dirtyPiece;
     Square oriented_ksq = orient(perspective, ksq);
     for (int i = 0; i < dp.dirty_num; ++i) {
       Piece pc = dp.piece[i];
@@ -70,16 +69,16 @@ namespace Stockfish::Eval::NNUE::Features {
     }
   }
 
-  int HalfKAv2::update_cost(StateInfo* st) {
-    return st->dirtyPiece.dirty_num;
+  int HalfKAv2::update_cost(StateInfo* st, Color perspective) {
+    return st->added[perspective].size() + st->removed[perspective].size();
   }
 
-  int HalfKAv2::refresh_cost(const Position& pos) {
+  int HalfKAv2::refresh_cost(const Position& pos, Color /* perspective */) {
     return pos.count<ALL_PIECES>();
   }
 
-  bool HalfKAv2::requires_refresh(StateInfo* st, Color perspective) {
-    return st->dirtyPiece.piece[0] == make_piece(perspective, KING);
+  bool HalfKAv2::requires_refresh(const DirtyPiece& dp, Color perspective) {
+    return dp.piece[0] == make_piece(perspective, KING);
   }
 
 }  // namespace Stockfish::Eval::NNUE::Features

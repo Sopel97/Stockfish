@@ -366,11 +366,6 @@ namespace Stockfish::Eval::NNUE {
    private:
     void update_accumulator(const Position& pos, const Color perspective) const {
 
-      // The size must be enough to contain the largest possible update.
-      // That might depend on the feature set and generally relies on the
-      // feature set's update cost calculation to be correct and never
-      // allow updates with more added/removed features than MaxActiveDimensions.
-      using IndexList = ValueList<IndexType, FeatureSet::MaxActiveDimensions>;
 
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
@@ -379,45 +374,49 @@ namespace Stockfish::Eval::NNUE {
       psqt_vec_t psqt[NumPsqtRegs];
   #endif
 
+      static constexpr IndexType MaxStatesToUpdate = 16;
+
       // Look for a usable accumulator of an earlier position. We keep track
       // of the estimated gain in terms of features to be added/subtracted.
-      StateInfo *st = pos.state(), *next = nullptr;
-      int gain = FeatureSet::refresh_cost(pos);
+      StateInfo *st = pos.state();
+      int gain = FeatureSet::refresh_cost(pos, perspective);
+      IndexType numStatesToUpdate = 1;
       while (st->previous && !st->accumulator.computed[perspective])
       {
         // This governs when a full feature refresh is needed and how many
         // updates are better than just one full refresh.
-        if (   FeatureSet::requires_refresh(st, perspective)
-            || (gain -= FeatureSet::update_cost(st) + 1) < 0)
+        if (   st->requiresRefresh[perspective]
+            || (gain -= FeatureSet::update_cost(st, perspective) + 1) < 0)
           break;
-        next = st;
         st = st->previous;
+
+        numStatesToUpdate += 1;
+        if (numStatesToUpdate >= MaxStatesToUpdate)
+          break;
       }
+
+      StateInfo* headState = pos.state();
 
       if (st->accumulator.computed[perspective])
       {
-        if (next == nullptr)
+        if (st == headState)
           return;
 
-        // Update incrementally in two steps. First, we update the "next"
-        // accumulator. Then, we update the current accumulator (pos.state()).
+        StateInfo* states[MaxStatesToUpdate];
 
-        // Gather all features to be updated.
-        const Square ksq = pos.square<KING>(perspective);
-        IndexList removed[2], added[2];
-        FeatureSet::append_changed_indices(
-          ksq, next, perspective, removed[0], added[0]);
-        for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
-          FeatureSet::append_changed_indices(
-            ksq, st2, perspective, removed[1], added[1]);
+        IndexType stateIdx = numStatesToUpdate;
+        for (StateInfo *st2 = headState;; st2 = st2->previous)
+        {
+          states[--stateIdx] = st2;
+          st2->accumulator.computed[perspective] = true;
 
-        // Mark the accumulators as computed.
-        next->accumulator.computed[perspective] = true;
-        pos.state()->accumulator.computed[perspective] = true;
+          if (st2 == st)
+            break;
+        }
+
+        assert(stateIdx == 0);
 
         // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
-        StateInfo *states_to_update[3] =
-          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
   #ifdef VECTOR
         for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
         {
@@ -427,10 +426,13 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType k = 0; k < NumRegs; ++k)
             acc[k] = vec_load(&accTile[k]);
 
-          for (IndexType i = 0; states_to_update[i]; ++i)
+          for (IndexType i = 1; i < numStatesToUpdate; ++i)
           {
+            const auto& removed = states[i]->removed[perspective];
+            const auto& added   = states[i]->added[perspective];
+
             // Difference calculation for the deactivated features
-            for (const auto index : removed[i])
+            for (const auto index : removed)
             {
               const IndexType offset = HalfDimensions * index + j * TileHeight;
               auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
@@ -439,7 +441,7 @@ namespace Stockfish::Eval::NNUE {
             }
 
             // Difference calculation for the activated features
-            for (const auto index : added[i])
+            for (const auto index : added)
             {
               const IndexType offset = HalfDimensions * index + j * TileHeight;
               auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
@@ -449,7 +451,7 @@ namespace Stockfish::Eval::NNUE {
 
             // Store accumulator
             accTile = reinterpret_cast<vec_t*>(
-              &states_to_update[i]->accumulator.accumulation[perspective][j * TileHeight]);
+              &states[i]->accumulator.accumulation[perspective][j * TileHeight]);
             for (IndexType k = 0; k < NumRegs; ++k)
               vec_store(&accTile[k], acc[k]);
           }
@@ -463,10 +465,13 @@ namespace Stockfish::Eval::NNUE {
           for (std::size_t k = 0; k < NumPsqtRegs; ++k)
             psqt[k] = vec_load_psqt(&accTilePsqt[k]);
 
-          for (IndexType i = 0; states_to_update[i]; ++i)
+          for (IndexType i = 1; i < numStatesToUpdate; ++i)
           {
+            const auto& removed = states[i]->removed[perspective];
+            const auto& added   = states[i]->added[perspective];
+
             // Difference calculation for the deactivated features
-            for (const auto index : removed[i])
+            for (const auto index : removed)
             {
               const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
               auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
@@ -475,7 +480,7 @@ namespace Stockfish::Eval::NNUE {
             }
 
             // Difference calculation for the activated features
-            for (const auto index : added[i])
+            for (const auto index : added)
             {
               const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
               auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
@@ -485,46 +490,47 @@ namespace Stockfish::Eval::NNUE {
 
             // Store accumulator
             accTilePsqt = reinterpret_cast<psqt_vec_t*>(
-              &states_to_update[i]->accumulator.psqtAccumulation[perspective][j * PsqtTileHeight]);
+              &states[i]->accumulator.psqtAccumulation[perspective][j * PsqtTileHeight]);
             for (std::size_t k = 0; k < NumPsqtRegs; ++k)
               vec_store_psqt(&accTilePsqt[k], psqt[k]);
           }
         }
 
   #else
-        for (IndexType i = 0; states_to_update[i]; ++i)
+        for (IndexType i = 1; i < numStatesToUpdate; ++i)
         {
-          std::memcpy(states_to_update[i]->accumulator.accumulation[perspective],
-              st->accumulator.accumulation[perspective],
+          std::memcpy(states[i]->accumulator.accumulation[perspective],
+              states[i-1]->accumulator.accumulation[perspective],
               HalfDimensions * sizeof(BiasType));
 
           for (std::size_t k = 0; k < PSQTBuckets; ++k)
-            states_to_update[i]->accumulator.psqtAccumulation[perspective][k] = st->accumulator.psqtAccumulation[perspective][k];
+            states[i]->accumulator.psqtAccumulation[perspective][k] = states[i-1]->accumulator.psqtAccumulation[perspective][k];
 
-          st = states_to_update[i];
+          const auto& removed = states[i]->removed[perspective];
+          const auto& added   = states[i]->added[perspective];
 
           // Difference calculation for the deactivated features
-          for (const auto index : removed[i])
+          for (const auto index : removed)
           {
             const IndexType offset = HalfDimensions * index;
 
             for (IndexType j = 0; j < HalfDimensions; ++j)
-              st->accumulator.accumulation[perspective][j] -= weights[offset + j];
+              states[i]->accumulator.accumulation[perspective][j] -= weights[offset + j];
 
             for (std::size_t k = 0; k < PSQTBuckets; ++k)
-              st->accumulator.psqtAccumulation[perspective][k] -= psqtWeights[index * PSQTBuckets + k];
+              states[i]->accumulator.psqtAccumulation[perspective][k] -= psqtWeights[index * PSQTBuckets + k];
           }
 
           // Difference calculation for the activated features
-          for (const auto index : added[i])
+          for (const auto index : added)
           {
             const IndexType offset = HalfDimensions * index;
 
             for (IndexType j = 0; j < HalfDimensions; ++j)
-              st->accumulator.accumulation[perspective][j] += weights[offset + j];
+              states[i]->accumulator.accumulation[perspective][j] += weights[offset + j];
 
             for (std::size_t k = 0; k < PSQTBuckets; ++k)
-              st->accumulator.psqtAccumulation[perspective][k] += psqtWeights[index * PSQTBuckets + k];
+              states[i]->accumulator.psqtAccumulation[perspective][k] += psqtWeights[index * PSQTBuckets + k];
           }
         }
   #endif
@@ -534,7 +540,13 @@ namespace Stockfish::Eval::NNUE {
         // Refresh the accumulator
         auto& accumulator = pos.state()->accumulator;
         accumulator.computed[perspective] = true;
+
+        // The size must be enough to contain the largest possible refresh.
+        using IndexList = ValueList<IndexType, FeatureSet::MaxActiveFeatures>;
         IndexList active;
+        active.clear(); // We need to do this because IndexList cannot be a non-trivial,
+                        // because we use it in StateInfo, which must be trivial,
+                        // because we zero it with memset and copy with memcpy.
         FeatureSet::append_active_indices(pos, perspective, active);
 
   #ifdef VECTOR

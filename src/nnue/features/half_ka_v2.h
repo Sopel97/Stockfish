@@ -80,7 +80,9 @@ namespace Stockfish::Eval::NNUE::Features {
         static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB);
 
     // Maximum number of simultaneously active features.
-    static constexpr IndexType MaxActiveDimensions = 32;
+    static constexpr IndexType MaxActiveFeatures = 32;
+    static constexpr IndexType MaxAddedFeatures = 2;
+    static constexpr IndexType MaxRemovedFeatures = 2;
 
     // Get a list of indices for active features
     static void append_active_indices(
@@ -91,19 +93,19 @@ namespace Stockfish::Eval::NNUE::Features {
     // Get a list of indices for recently changed features
     static void append_changed_indices(
       Square ksq,
-      StateInfo* st,
+      const DirtyPiece& dp,
       Color perspective,
       ValueListInserter<IndexType> removed,
       ValueListInserter<IndexType> added);
 
     // Returns the cost of updating one perspective, the most costly one.
     // Assumes no refresh needed.
-    static int update_cost(StateInfo* st);
-    static int refresh_cost(const Position& pos);
+    static int update_cost(StateInfo* st, Color perspective);
+    static int refresh_cost(const Position& pos, Color perspective);
 
     // Returns whether the change stored in this StateInfo means that
     // a full accumulator refresh is required.
-    static bool requires_refresh(StateInfo* st, Color perspective);
+    static bool requires_refresh(const DirtyPiece& dp, Color perspective);
   };
 
 }  // namespace Stockfish::Eval::NNUE::Features

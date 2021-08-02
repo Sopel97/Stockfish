@@ -198,7 +198,7 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si, Th
   std::istringstream ss(fenStr);
 
   std::memset(this, 0, sizeof(Position));
-  std::memset(si, 0, sizeof(StateInfo));
+  std::memset(si, 0, offsetof(StateInfo, accumulator));
   st = si;
 
   ss >> std::noskipws;
@@ -704,8 +704,12 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
   // Used by NNUE
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
-  auto& dp = st->dirtyPiece;
+  DirtyPiece dp;
   dp.dirty_num = 1;
+  st->removed[WHITE].clear();
+  st->removed[BLACK].clear();
+  st->added[WHITE].clear();
+  st->added[BLACK].clear();
 
   Color us = sideToMove;
   Color them = ~us;
@@ -724,7 +728,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       assert(captured == make_piece(us, ROOK));
 
       Square rfrom, rto;
-      do_castling<true>(us, from, to, rfrom, rto);
+      do_castling<true>(us, from, to, rfrom, rto, &dp);
 
       k ^= Zobrist::psq[captured][rfrom] ^ Zobrist::psq[captured][rto];
       captured = NO_PIECE;
@@ -889,6 +893,15 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  if (Eval::useNNUE)
+  {
+      if (!(st->requiresRefresh[WHITE] = Eval::NNUE::FeatureSet::requires_refresh(dp, WHITE)))
+          Eval::NNUE::FeatureSet::append_changed_indices(square<KING>(WHITE), dp, WHITE, st->removed[WHITE], st->added[WHITE]);
+
+      if (!(st->requiresRefresh[BLACK] = Eval::NNUE::FeatureSet::requires_refresh(dp, BLACK)))
+          Eval::NNUE::FeatureSet::append_changed_indices(square<KING>(BLACK), dp, BLACK, st->removed[BLACK], st->added[BLACK]);
+  }
+
   assert(pos_is_ok());
 }
 
@@ -924,7 +937,7 @@ void Position::undo_move(Move m) {
   if (type_of(m) == CASTLING)
   {
       Square rfrom, rto;
-      do_castling<false>(us, from, to, rfrom, rto);
+      do_castling<false>(us, from, to, rfrom, rto, nullptr);
   }
   else
   {
@@ -960,7 +973,7 @@ void Position::undo_move(Move m) {
 /// Position::do_castling() is a helper used to do/undo a castling move. This
 /// is a bit tricky in Chess960 where from/to squares can overlap.
 template<bool Do>
-void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto) {
+void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto, DirtyPiece* dp) {
 
   bool kingSide = to > from;
   rfrom = to; // Castling is encoded as "king captures friendly rook"
@@ -969,14 +982,13 @@ void Position::do_castling(Color us, Square from, Square& to, Square& rfrom, Squ
 
   if (Do && Eval::useNNUE)
   {
-      auto& dp = st->dirtyPiece;
-      dp.piece[0] = make_piece(us, KING);
-      dp.from[0] = from;
-      dp.to[0] = to;
-      dp.piece[1] = make_piece(us, ROOK);
-      dp.from[1] = rfrom;
-      dp.to[1] = rto;
-      dp.dirty_num = 2;
+      dp->piece[0] = make_piece(us, KING);
+      dp->from[0] = from;
+      dp->to[0] = to;
+      dp->piece[1] = make_piece(us, ROOK);
+      dp->from[1] = rfrom;
+      dp->to[1] = rto;
+      dp->dirty_num = 2;
   }
 
   // Remove both pieces first since squares could overlap in Chess960
@@ -1001,10 +1013,12 @@ void Position::do_null_move(StateInfo& newSt) {
   newSt.previous = st;
   st = &newSt;
 
-  st->dirtyPiece.dirty_num = 0;
-  st->dirtyPiece.piece[0] = NO_PIECE; // Avoid checks in UpdateAccumulator()
   st->accumulator.computed[WHITE] = false;
   st->accumulator.computed[BLACK] = false;
+  st->removed[WHITE].clear();
+  st->removed[BLACK].clear();
+  st->added[WHITE].clear();
+  st->added[BLACK].clear();
 
   if (st->epSquare != SQ_NONE)
   {

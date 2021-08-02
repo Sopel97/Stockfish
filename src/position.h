@@ -28,8 +28,10 @@
 #include "evaluate.h"
 #include "psqt.h"
 #include "types.h"
+#include "misc.h"
 
 #include "nnue/nnue_accumulator.h"
+#include "nnue/nnue_architecture.h"
 
 namespace Stockfish {
 
@@ -60,7 +62,9 @@ struct StateInfo {
 
   // Used by NNUE
   Eval::NNUE::Accumulator accumulator;
-  DirtyPiece dirtyPiece;
+  ValueList<Eval::NNUE::IndexType, Eval::NNUE::FeatureSet::MaxRemovedFeatures> removed[COLOR_NB];
+  ValueList<Eval::NNUE::IndexType, Eval::NNUE::FeatureSet::MaxAddedFeatures> added[COLOR_NB];
+  bool requiresRefresh[2];
 };
 
 
@@ -183,7 +187,7 @@ private:
   // Other helpers
   void move_piece(Square from, Square to);
   template<bool Do>
-  void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto);
+  void do_castling(Color us, Square from, Square& to, Square& rfrom, Square& rto, DirtyPiece* dp);
 
   // Data members
   Piece board[SQUARE_NB];
