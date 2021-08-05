@@ -342,6 +342,62 @@ void Position::set_check_info(StateInfo* si) const {
   si->checkSquares[KING]   = 0;
 }
 
+template<PieceType Pt, Color Us>
+void add_piece_mobility(const Position& pos, Bitboard mobility[2]) {
+  if constexpr (Pt == PAWN) {
+    const Bitboard pawns = pos.pieces(Us, PAWN);
+    const Bitboard attacks0 = pawn_attacks_bb_a<Us>(pawns);
+    mobility[1] |= mobility[0] & attacks0;
+    mobility[0] |= attacks0;
+    const Bitboard attacks1 = pawn_attacks_bb_b<Us>(pawns);
+    mobility[1] |= mobility[0] & attacks1;
+    mobility[0] |= attacks1;
+  } else {
+    Bitboard attackers = pos.pieces(Us, Pt);
+    const Bitboard pieces =
+      Pt == BISHOP  ? pos.pieces() ^ pos.pieces(~Us, ROOK) ^ pos.pieces(~Us, QUEEN)
+      : Pt == ROOK  ? pos.pieces() ^ pos.pieces( Us, ROOK) ^ pos.pieces(~Us, QUEEN)
+      : Pt == QUEEN ? pos.pieces() ^ pos.pieces( Us, ROOK) ^ pos.pieces( Us, QUEEN)
+      : pos.pieces();
+    while (attackers) {
+      Square s = pop_lsb(&attackers);
+      const Bitboard attacks = attacks_bb<Pt>(s, pieces);
+      mobility[1] |= mobility[0] & attacks;
+      mobility[0] |= attacks;
+    }
+  }
+}
+
+template<PieceType Pt>
+void add_piece_mobility(const Position& pos, Bitboard mobility[COLOR_NB][2]) {
+  add_piece_mobility<Pt, WHITE>(pos, mobility[WHITE]);
+  add_piece_mobility<Pt, BLACK>(pos, mobility[BLACK]);
+}
+
+static inline void set_mobility(const Position& pos)
+{
+  auto si = pos.state();
+  for (int i = 0; i < 2; ++i)
+    si->mobility[WHITE][i] = si->mobility[BLACK][i] = 0;
+
+  add_piece_mobility<PAWN>(pos, si->mobility);
+  add_piece_mobility<KNIGHT>(pos, si->mobility);
+  add_piece_mobility<BISHOP>(pos, si->mobility);
+  add_piece_mobility<ROOK>(pos, si->mobility);
+  add_piece_mobility<QUEEN>(pos, si->mobility);
+  add_piece_mobility<KING>(pos, si->mobility);
+}
+
+static inline void set_mobility_on_null_move(const Position& pos)
+{
+  auto si = pos.state();
+
+  for (int i = 0; i < 2; ++i)
+  {
+    si->mobility[WHITE][i] = si->previous->mobility[WHITE][i];
+    si->mobility[BLACK][i] = si->previous->mobility[BLACK][i];
+  }
+}
 
 /// Position::set_state() computes the hash keys of the position, and other
 /// data that once computed is updated incrementally as moves are made.
@@ -381,6 +437,7 @@ void Position::set_state(StateInfo* si) const {
   for (Piece pc : Pieces)
       for (int cnt = 0; cnt < pieceCount[pc]; ++cnt)
           si->materialKey ^= Zobrist::psq[pc][cnt];
+  set_mobility(*this);
 }
 
 
@@ -888,6 +945,7 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
           }
       }
   }
+  set_mobility(*this);
 
   assert(pos_is_ok());
 }
@@ -1023,6 +1081,7 @@ void Position::do_null_move(StateInfo& newSt) {
   set_check_info(st);
 
   st->repetition = 0;
+  set_mobility_on_null_move(*this);
 
   assert(pos_is_ok());
 }
