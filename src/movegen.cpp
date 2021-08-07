@@ -196,13 +196,16 @@ namespace {
                                       : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        moveList = generate_moves<Us, KNIGHT, Checks>(pos, moveList, target);
-        moveList = generate_moves<Us, BISHOP, Checks>(pos, moveList, target);
-        moveList = generate_moves<Us,   ROOK, Checks>(pos, moveList, target);
-        moveList = generate_moves<Us,  QUEEN, Checks>(pos, moveList, target);
+        if (pos.ep_square() == SQ_NONE)
+        {
+            moveList = generate_moves<Us, KNIGHT, Checks>(pos, moveList, target);
+            moveList = generate_moves<Us, BISHOP, Checks>(pos, moveList, target);
+            moveList = generate_moves<Us,   ROOK, Checks>(pos, moveList, target);
+            moveList = generate_moves<Us,  QUEEN, Checks>(pos, moveList, target);
+        }
     }
 
-    if (!Checks || pos.blockers_for_king(~Us) & ksq)
+    if ((!Checks || pos.blockers_for_king(~Us) & ksq) && pos.ep_square() == SQ_NONE)
     {
         Bitboard b = attacks_bb<KING>(ksq) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
         if (Checks)
@@ -263,12 +266,16 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
   moveList = pos.checkers() ? generate<EVASIONS    >(pos, moveList)
                             : generate<NON_EVASIONS>(pos, moveList);
+
+  bool ep = pos.ep_square() != SQ_NONE;
   while (cur != moveList)
-      if (  ((pinned && pinned & from_sq(*cur)) || from_sq(*cur) == ksq || type_of(*cur) == EN_PASSANT)
-          && !pos.legal(*cur))
+      if (
+             (ep && type_of(*cur) != EN_PASSANT)
+          || (((pinned && pinned & from_sq(*cur)) || from_sq(*cur) == ksq || type_of(*cur) == EN_PASSANT)
+                && !pos.legal(*cur)))
           *cur = (--moveList)->move;
       else
-          ++cur;
+        ++cur;
 
   return moveList;
 }

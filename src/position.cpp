@@ -519,6 +519,10 @@ bool Position::legal(Move m) const {
       return   !(attacks_bb<  ROOK>(ksq, occupied) & pieces(~us, QUEEN, ROOK))
             && !(attacks_bb<BISHOP>(ksq, occupied) & pieces(~us, QUEEN, BISHOP));
   }
+  else if (ep_square() != SQ_NONE)
+  {
+    return false;
+  }
 
   // Castling moves generation does not check if the castling path is clear of
   // enemy attacks, it is delayed at a later time: now!
