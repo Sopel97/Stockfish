@@ -25,6 +25,14 @@
 #include "nnue_architecture.h"
 
 #include <cstring> // std::memset()
+#include <fstream>
+#include <utility>
+#include <algorithm>
+#include <vector>
+
+namespace Stockfish {
+  extern std::uint64_t feature_counts[Eval::NNUE::FeatureSet::Dimensions];
+}
 
 namespace Stockfish::Eval::NNUE {
 
@@ -160,7 +168,6 @@ namespace Stockfish::Eval::NNUE {
       #pragma GCC diagnostic pop
 
   #endif
-
 
 
   // Input feature converter
@@ -411,6 +418,15 @@ namespace Stockfish::Eval::NNUE {
           FeatureSet::append_changed_indices(
             ksq, st2, perspective, removed[1], added[1]);
 
+        for (auto index : added[0])
+          feature_counts[index] += 1;
+        for (auto index : added[1])
+          feature_counts[index] += 1;
+        for (auto index : removed[0])
+          feature_counts[index] += 1;
+        for (auto index : removed[1])
+          feature_counts[index] += 1;
+
         // Mark the accumulators as computed.
         next->accumulator.computed[perspective] = true;
         pos.state()->accumulator.computed[perspective] = true;
@@ -536,6 +552,8 @@ namespace Stockfish::Eval::NNUE {
         accumulator.computed[perspective] = true;
         IndexList active;
         FeatureSet::append_active_indices(pos, perspective, active);
+        for (auto index : active)
+          feature_counts[index] += 1;
 
   #ifdef VECTOR
         for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)

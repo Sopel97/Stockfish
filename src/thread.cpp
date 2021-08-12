@@ -25,11 +25,57 @@
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 #include "tt.h"
-
+#include <vector>
+#include <fstream>
+#include <utility>
 namespace Stockfish {
 
 ThreadPool Threads; // Global object
 
+std::uint64_t feature_counts[Eval::NNUE::FeatureSet::Dimensions] = {0};
+
+static void zero_feature_counts()
+{
+  for (int i = 0; i < Eval::NNUE::FeatureSet::Dimensions; ++i)
+    feature_counts[i] = 0;
+}
+
+static char pcsym[] = {'P', 'p', 'N', 'n', 'B', 'b', 'R', 'r', 'Q', 'q', 'K', 'k'};
+static std::string get_feature_name(int i)
+{
+  int bucket = i / 704;
+  int pc = (i % 704) / 64;
+  int pc_sq = i % 64;
+  if (pc == 10 && bucket != Eval::NNUE::FeatureSet::KingBuckets[pc_sq])
+    pc += 1;
+
+  return std::string("K") + std::to_string(bucket) + "_" + pcsym[pc] + std::to_string(pc_sq);
+}
+
+static void print_feature_counts(std::string filename)
+{
+  std::ofstream file(filename);
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> ff;
+  std::uint64_t total = 0;
+  for (int i = 0; i < Eval::NNUE::FeatureSet::Dimensions; ++i)
+  {
+    ff.emplace_back(i, feature_counts[i]);
+    total += feature_counts[i];
+  }
+  std::sort(ff.begin(), ff.end(), [](const auto& lhs, const auto& rhs){return lhs.second > rhs.second;});
+
+  std::uint64_t cum = 0;
+  for (int i = 0; i < Eval::NNUE::FeatureSet::Dimensions; ++i)
+  {
+    cum += ff[i].second;
+    file
+      << get_feature_name(ff[i].first) << '\t'
+      << ff[i].second << '\t'
+      << ((double)(ff[i].second) / total * 100.0) << "%\t"
+      << cum << '\t'
+      << ((double)(cum) / total * 100.0) << "%\n";
+  }
+}
 
 /// Thread constructor launches the thread and waits until it goes to sleep
 /// in idle_loop(). Note that 'searching' and 'exit' should be already set.
@@ -248,6 +294,8 @@ Thread* ThreadPool::get_best_thread() const {
 
 void ThreadPool::start_searching() {
 
+    zero_feature_counts();
+
     for (Thread* th : *this)
         if (th != front())
             th->start_searching();
@@ -261,6 +309,8 @@ void ThreadPool::wait_for_search_finished() const {
     for (Thread* th : *this)
         if (th != front())
             th->wait_for_search_finished();
+
+    print_feature_counts("feature_counts.txt");
 }
 
 } // namespace Stockfish
