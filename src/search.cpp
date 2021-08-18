@@ -100,6 +100,7 @@ namespace {
         if (d > b.depth)
         {
           b.depth = d;
+          b.owner = th;
           return false;
         }
         else
