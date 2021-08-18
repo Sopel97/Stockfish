@@ -22,6 +22,9 @@
 #include <cstring>   // For std::memset
 #include <iostream>
 #include <sstream>
+#include <atomic>
+#include <array>
+#include <mutex>
 
 #include "evaluate.h"
 #include "misc.h"
@@ -57,6 +60,56 @@ using Eval::evaluate;
 using namespace Search;
 
 namespace {
+
+  struct Breadcrumb
+  {
+    Thread* owner;
+    Key key;
+    Depth depth;
+  };
+  std::array<Breadcrumb, 1024*16> breadcrumbs;
+  std::array<std::mutex, 1024*16> mutexes;
+
+  struct ThreadSearchingNode
+  {
+    int idx;
+    bool used;
+
+    static bool held_by_other_threads(Thread* th, Key key, Depth d)
+    {
+      if (d < 6)
+        return false;
+
+      const int idx = key & (breadcrumbs.size() - 1);
+      std::unique_lock<std::mutex> lk(mutexes[idx]);
+      Breadcrumb b = breadcrumbs[idx];
+      const bool hit = (b.owner != nullptr && b.owner != th && b.key == key && b.depth >= d);
+      return hit;
+    }
+
+    ThreadSearchingNode(Thread* th, Key key, Depth d)
+    {
+      idx = key & (breadcrumbs.size() - 1);
+      used = d >= 6;
+
+      if (used)
+      {
+        std::unique_lock<std::mutex> lk(mutexes[idx]);
+        Breadcrumb b{th, key, d};
+        breadcrumbs[idx] = b;
+      }
+    }
+
+    ~ThreadSearchingNode()
+    {
+      if (used)
+      {
+        std::unique_lock<std::mutex> lk(mutexes[idx]);
+        Breadcrumb b{nullptr, 0, 0};
+        breadcrumbs[idx] = b;
+      }
+    }
+  };
 
   // Different node types, used as a template parameter
   enum NodeType { NonPV, PV, Root };
@@ -953,6 +1006,8 @@ moves_loop: // When in check, search starts here
                          && (tte->bound() & BOUND_UPPER)
                          && tte->depth() >= depth;
 
+    ThreadSearchingNode threadSearchingNode(thisThread, posKey, depth);
+
     // Step 12. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
     while ((move = mp.next_move(moveCountPruning)) != MOVE_NONE)
@@ -975,6 +1030,9 @@ moves_loop: // When in check, search starts here
           continue;
 
       ss->moveCount = ++moveCount;
+
+      if (moveCount > 1 && ThreadSearchingNode::held_by_other_threads(thisThread, pos.key_after(move), depth - 1))
+        continue;
 
       if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000)
           sync_cout << "info depth " << depth
