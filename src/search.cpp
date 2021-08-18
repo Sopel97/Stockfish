@@ -75,6 +75,16 @@ namespace {
     int idx;
     bool used;
 
+    static void clear()
+    {
+      for (auto& b : breadcrumbs)
+      {
+        b.owner = nullptr;
+        b.key = 0;
+        b.depth = 0;
+      }
+    }
+
     static bool held_by_other_threads(Thread* th, Key key, Depth d)
     {
       if (d < 6)
@@ -83,8 +93,22 @@ namespace {
       const int idx = key & (breadcrumbs.size() - 1);
       std::unique_lock<std::mutex> lk(mutexes[idx]);
       Breadcrumb b = breadcrumbs[idx];
-      const bool hit = (b.owner != nullptr && b.owner != th && b.key == key && b.depth >= d);
-      return hit;
+      const bool hit = (b.owner != nullptr && b.owner != th && b.key == key);
+      //dbg_hit_on(hit && d <= b.depth);
+      if (hit)
+      {
+        if (d > b.depth)
+        {
+          b.depth = d;
+          return false;
+        }
+        else
+        {
+          //dbg_mean_of((int)(std::pow(d, 1.64)));
+          return true;
+        }
+      }
+      return false;
     }
 
     ThreadSearchingNode(Thread* th, Key key, Depth d)
@@ -102,12 +126,14 @@ namespace {
 
     ~ThreadSearchingNode()
     {
+      /*
       if (used)
       {
         std::unique_lock<std::mutex> lk(mutexes[idx]);
         Breadcrumb b{nullptr, 0, 0};
         breadcrumbs[idx] = b;
       }
+      */
     }
   };
 
@@ -316,6 +342,8 @@ void Thread::search() {
   double timeReduction = 1, totBestMoveChanges = 0;
   Color us = rootPos.side_to_move();
   int iterIdx = 0;
+
+  ThreadSearchingNode::clear();
 
   std::memset(ss-7, 0, 10 * sizeof(Stack));
   for (int i = 7; i > 0; i--)
