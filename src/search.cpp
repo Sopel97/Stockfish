@@ -1100,11 +1100,10 @@ moves_loop: // When in check, search starts here
 
       if (   !rootNode
           && depth >= 7
-          && extension == 0
           && captureOrPromotion
           && pos.count<ALL_PIECES>() > 20
           && (to_sq(move) & (Rank2BB | Rank7BB)))
-          extension = 1;
+          extension += 1;
 
       // Add extension to new depth
       newDepth += extension;
