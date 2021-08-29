@@ -372,6 +372,7 @@ void Thread::search() {
           while (true)
           {
               Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - searchAgainCounter);
+              ss->reset50mr = rootDepth < 10;
               bestValue = Stockfish::search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
               // Bring the best move to the front. It is critical that sorting
@@ -536,7 +537,12 @@ namespace {
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
-        return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+    {
+        if (!ss->reset50mr)
+            return value_draw(pos.this_thread());
+        else
+            return qsearch<PvNode ? PV : NonPV>(pos, ss, alpha, beta);
+    }
 
     assert(-VALUE_INFINITE <= alpha && alpha < beta && beta <= VALUE_INFINITE);
     assert(PvNode || (alpha == beta - 1));
@@ -1035,6 +1041,8 @@ moves_loop: // When in check, search starts here
                   continue;
           }
       }
+
+      (ss+1)->reset50mr = ss->reset50mr || type_of(movedPiece) == PAWN || captureOrPromotion;
 
       // Step 14. Extensions (~75 Elo)
 
