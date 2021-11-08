@@ -169,107 +169,19 @@ namespace Stockfish::Eval::NNUE {
       const auto& accumulation = pos.state()->accumulator.accumulation;
       const auto& psqt_accumulation = pos.state()->accumulator.psqt_accumulation;
 
-  #if defined(USE_AVX512)
-      constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
-      static_assert(kHalfDimensions % (kSimdWidth * 2) == 0);
-      const __m512i kControl = _mm512_setr_epi64(0, 2, 4, 6, 1, 3, 5, 7);
-      const __m512i kZero = _mm512_setzero_si512();
-
-  #elif defined(USE_AVX2)
-      constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
-      constexpr int kControl = 0b11011000;
-      const __m256i kZero = _mm256_setzero_si256();
-
-  #elif defined(USE_SSE2)
-      constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
-
-  #ifdef USE_SSE41
-      const __m128i kZero = _mm_setzero_si128();
-  #else
-      const __m128i k0x80s = _mm_set1_epi8(-128);
-  #endif
-
-  #elif defined(USE_MMX)
-      constexpr IndexType kNumChunks = kHalfDimensions / kSimdWidth;
-      const __m64 k0x80s = _mm_set1_pi8(-128);
-
-  #elif defined(USE_NEON)
-      constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
-      const int8x8_t kZero = {0};
-  #endif
-
       const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
       for (IndexType p = 0; p < 2; ++p) {
         const IndexType offset = kHalfDimensions * p;
 
-  #if defined(USE_AVX512)
-        auto out = reinterpret_cast<__m512i*>(&output[offset]);
-        for (IndexType j = 0; j < kNumChunks; ++j) {
-          __m512i sum0 = _mm512_load_si512(
-              &reinterpret_cast<const __m512i*>(accumulation[perspectives[p]][0])[j * 2 + 0]);
-          __m512i sum1 = _mm512_load_si512(
-              &reinterpret_cast<const __m512i*>(accumulation[perspectives[p]][0])[j * 2 + 1]);
-          _mm512_store_si512(&out[j], _mm512_permutexvar_epi64(kControl,
-              _mm512_max_epi8(_mm512_packs_epi16(sum0, sum1), kZero)));
-        }
-
-  #elif defined(USE_AVX2)
-        auto out = reinterpret_cast<__m256i*>(&output[offset]);
-        for (IndexType j = 0; j < kNumChunks; ++j) {
-          __m256i sum0 = _mm256_load_si256(
-              &reinterpret_cast<const __m256i*>(accumulation[perspectives[p]][0])[j * 2 + 0]);
-          __m256i sum1 = _mm256_load_si256(
-              &reinterpret_cast<const __m256i*>(accumulation[perspectives[p]][0])[j * 2 + 1]);
-          _mm256_store_si256(&out[j], _mm256_permute4x64_epi64(_mm256_max_epi8(
-              _mm256_packs_epi16(sum0, sum1), kZero), kControl));
-        }
-
-  #elif defined(USE_SSE2)
-        auto out = reinterpret_cast<__m128i*>(&output[offset]);
-        for (IndexType j = 0; j < kNumChunks; ++j) {
-          __m128i sum0 = _mm_load_si128(&reinterpret_cast<const __m128i*>(
-              accumulation[perspectives[p]][0])[j * 2 + 0]);
-          __m128i sum1 = _mm_load_si128(&reinterpret_cast<const __m128i*>(
-              accumulation[perspectives[p]][0])[j * 2 + 1]);
-      const __m128i packedbytes = _mm_packs_epi16(sum0, sum1);
-
-          _mm_store_si128(&out[j],
-
-  #ifdef USE_SSE41
-              _mm_max_epi8(packedbytes, kZero)
-  #else
-              _mm_subs_epi8(_mm_adds_epi8(packedbytes, k0x80s), k0x80s)
-  #endif
-
-          );
-        }
-
-  #elif defined(USE_MMX)
-        auto out = reinterpret_cast<__m64*>(&output[offset]);
-        for (IndexType j = 0; j < kNumChunks; ++j) {
-          __m64 sum0 = *(&reinterpret_cast<const __m64*>(
-              accumulation[perspectives[p]][0])[j * 2 + 0]);
-          __m64 sum1 = *(&reinterpret_cast<const __m64*>(
-              accumulation[perspectives[p]][0])[j * 2 + 1]);
-          const __m64 packedbytes = _mm_packs_pi16(sum0, sum1);
-          out[j] = _mm_subs_pi8(_mm_adds_pi8(packedbytes, k0x80s), k0x80s);
-        }
-
-  #elif defined(USE_NEON)
-        const auto out = reinterpret_cast<int8x8_t*>(&output[offset]);
-        for (IndexType j = 0; j < kNumChunks; ++j) {
-          int16x8_t sum = reinterpret_cast<const int16x8_t*>(
-              accumulation[perspectives[p]][0])[j];
-          out[j] = vmax_s8(vqmovn_s16(sum), kZero);
-        }
-
-  #else
         for (IndexType j = 0; j < kHalfDimensions; ++j) {
+          constexpr int prec = 2;
           BiasType sum = accumulation[static_cast<int>(perspectives[p])][0][j];
-          output[offset + j] = static_cast<OutputType>(
-              std::max<int>(0, std::min<int>(127, sum)));
+          std::int16_t v = std::min(std::abs(sum), 127 << prec) - (127 << prec);
+          std::int16_t vv = v * v >> (8 + prec * 2);
+          if (sum > 0)
+              vv = 126 - vv;
+          output[offset + j] = static_cast<OutputType>(vv);
         }
-  #endif
       }
 
       psqt = 0;
