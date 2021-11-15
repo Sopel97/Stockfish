@@ -153,15 +153,15 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(buffer, alignment);
 
     constexpr int idx_by_pc[33] = {
-        -1, -1,
-        0, 0, 0, 0, 0, 0, 0,
-        1, 1, 1, 1,
-        2, 2, 2, 2,
-        3, 3, 3, 3,
-        4, 4, 4, 4,
-        5, 5, 5, 5,
-        6, 6,
-        7, 7
+      -1, -1,
+      0, 0, 0, 0, 0, 0, 0,
+      1, 1, 1, 1, 1, 1,
+      2, 2, 2, 2, 2,
+      3, 3, 3, 3,
+      4, 4, 4, 4,
+      5, 5,
+      6, 6,
+      7
     };
     const std::size_t bucket = idx_by_pc[popcount(pos.pieces())];
     std::int32_t psqt = 0;
