@@ -42,10 +42,10 @@ constexpr IndexType kLayerStacks = 8;
 
 struct Network
 {
-  static constexpr int FC_0_OUTPUTS = 8;
+  static constexpr int FC_0_OUTPUTS = 7;
   static constexpr int FC_1_OUTPUTS = 32;
 
-  Layers::AffineTransform<kTransformedFeatureDimensions * 2, FC_0_OUTPUTS> fc_0;
+  Layers::AffineTransform<kTransformedFeatureDimensions * 2, FC_0_OUTPUTS + 1> fc_0;
   Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
   Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
   Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
@@ -103,7 +103,7 @@ struct Network
     ac_1.Propagate(buffer.fc_1_out, buffer.ac_1_out);
     fc_2.Propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-    std::uint32_t output_value = buffer.fc_2_out[0];
+    std::uint32_t output_value = buffer.fc_2_out[0] + buffer.fc_0_out[FC_0_OUTPUTS];
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     buffer.~Buffer();
