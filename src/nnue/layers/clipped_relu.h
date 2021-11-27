@@ -26,45 +26,34 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
   // Clipped ReLU
-  template <typename PreviousLayer>
+  template <IndexType InputDimensions>
   class ClippedReLU {
    public:
     // Input/output type
-    using InputType = typename PreviousLayer::OutputType;
+    using InputType = std::int32_t;
     using OutputType = std::uint8_t;
-    static_assert(std::is_same<InputType, std::int32_t>::value, "");
 
     // Number of input/output dimensions
-    static constexpr IndexType kInputDimensions =
-        PreviousLayer::kOutputDimensions;
+    static constexpr IndexType kInputDimensions = InputDimensions;
     static constexpr IndexType kOutputDimensions = kInputDimensions;
 
-    // Size of forward propagation buffer used in this layer
-    static constexpr std::size_t kSelfBufferSize =
-        CeilToMultiple(kOutputDimensions * sizeof(OutputType), kCacheLineSize);
-
-    // Size of the forward propagation buffer used from the input layer to this layer
-    static constexpr std::size_t kBufferSize =
-        PreviousLayer::kBufferSize + kSelfBufferSize;
+    using OutputBuffer = OutputType[kOutputDimensions];
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t GetHashValue() {
+    static constexpr std::uint32_t GetHashValue(std::uint32_t prevhash) {
       std::uint32_t hash_value = 0x538D24C7u;
-      hash_value += PreviousLayer::GetHashValue();
+      hash_value += prevhash;
       return hash_value;
     }
 
     // Read network parameters
-    bool ReadParameters(std::istream& stream) {
-      return previous_layer_.ReadParameters(stream);
+    bool ReadParameters(std::istream&) {
+      return true;
     }
 
     // Forward propagation
     const OutputType* Propagate(
-        const TransformedFeatureType* transformed_features, char* buffer) const {
-      const auto input = previous_layer_.Propagate(
-          transformed_features, buffer + kSelfBufferSize);
-      const auto output = reinterpret_cast<OutputType*>(buffer);
+        const InputType* input, OutputType* output) const {
 
   #if defined(USE_AVX2)
       constexpr IndexType kNumChunks = kInputDimensions / kSimdWidth;
@@ -156,9 +145,6 @@ namespace Stockfish::Eval::NNUE::Layers {
       }
       return output;
     }
-
-   private:
-    PreviousLayer previous_layer_;
   };
 
 }  // namespace Stockfish::Eval::NNUE::Layers

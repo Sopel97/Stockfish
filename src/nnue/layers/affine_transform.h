@@ -27,17 +27,15 @@
 namespace Stockfish::Eval::NNUE::Layers {
 
   // Affine transformation layer
-  template <typename PreviousLayer, IndexType OutputDimensions>
+  template <IndexType InputDimensions, IndexType OutputDimensions>
   class AffineTransform {
    public:
     // Input/output type
-    using InputType = typename PreviousLayer::OutputType;
+    using InputType = std::uint8_t;
     using OutputType = std::int32_t;
-    static_assert(std::is_same<InputType, std::uint8_t>::value, "");
 
     // Number of input/output dimensions
-    static constexpr IndexType kInputDimensions =
-        PreviousLayer::kOutputDimensions;
+    static constexpr IndexType kInputDimensions = InputDimensions;
     static constexpr IndexType kOutputDimensions = OutputDimensions;
     static constexpr IndexType kPaddedInputDimensions =
         CeilToMultiple<IndexType>(kInputDimensions, kMaxSimdWidth);
@@ -52,26 +50,19 @@ namespace Stockfish::Eval::NNUE::Layers {
     static constexpr const IndexType kInputSimdWidth = kSimdWidth;
 #endif
 
-    // Size of forward propagation buffer used in this layer
-    static constexpr std::size_t kSelfBufferSize =
-        CeilToMultiple(kOutputDimensions * sizeof(OutputType), kCacheLineSize);
-
-    // Size of the forward propagation buffer used from the input layer to this layer
-    static constexpr std::size_t kBufferSize =
-        PreviousLayer::kBufferSize + kSelfBufferSize;
+    using OutputBuffer = OutputType[kOutputDimensions];
 
     // Hash value embedded in the evaluation file
-    static constexpr std::uint32_t GetHashValue() {
+    static constexpr std::uint32_t GetHashValue(std::uint32_t prevhash) {
       std::uint32_t hash_value = 0xCC03DAE4u;
       hash_value += kOutputDimensions;
-      hash_value ^= PreviousLayer::GetHashValue() >> 1;
-      hash_value ^= PreviousLayer::GetHashValue() << 31;
+      hash_value ^= prevhash >> 1;
+      hash_value ^= prevhash << 31;
       return hash_value;
     }
 
    // Read network parameters
     bool ReadParameters(std::istream& stream) {
-      if (!previous_layer_.ReadParameters(stream)) return false;
       for (std::size_t i = 0; i < kOutputDimensions; ++i)
         biases_[i] = read_little_endian<BiasType>(stream);
       for (std::size_t i = 0; i < kOutputDimensions * kPaddedInputDimensions; ++i)
@@ -99,9 +90,7 @@ namespace Stockfish::Eval::NNUE::Layers {
 
     // Forward propagation
     const OutputType* Propagate(
-        const TransformedFeatureType* transformed_features, char* buffer) const {
-      const auto input = previous_layer_.Propagate(
-          transformed_features, buffer + kSelfBufferSize);
+        const InputType* input, OutputType* output) const {
 
 #if defined (USE_AVX512)
 
@@ -331,7 +320,6 @@ namespace Stockfish::Eval::NNUE::Layers {
       auto& vec_haddx4 = m128_haddx4;
 #endif
 
-      const auto output = reinterpret_cast<OutputType*>(buffer);
       const auto input_vector = reinterpret_cast<const vec_t*>(input);
 
 #if defined (USE_VNNI) || defined (USE_AVX512)
@@ -478,8 +466,6 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 // Use old implementation for the other architectures.
 
-      auto output = reinterpret_cast<OutputType*>(buffer);
-
 #if defined(USE_SSE2)
       constexpr IndexType kNumChunks = kPaddedInputDimensions / kSimdWidth;
       const __m128i kZeros = _mm_setzero_si128();
@@ -572,8 +558,6 @@ namespace Stockfish::Eval::NNUE::Layers {
    private:
     using BiasType = OutputType;
     using WeightType = std::int8_t;
-
-    PreviousLayer previous_layer_;
 
     alignas(kCacheLineSize) BiasType biases_[kOutputDimensions];
     alignas(kCacheLineSize) WeightType weights_[kOutputDimensions * kPaddedInputDimensions];
