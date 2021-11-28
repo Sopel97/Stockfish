@@ -103,7 +103,10 @@ struct Network
     ac_1.Propagate(buffer.fc_1_out, buffer.ac_1_out);
     fc_2.Propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-    std::uint32_t output_value = buffer.fc_2_out[0] + buffer.fc_0_out[FC_0_OUTPUTS];
+    // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<kWeightScaleBits) in quantized form
+    // but we want 1.0 to be equal to 600*FV_SCALE
+    std::int32_t fwd_out = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*FV_SCALE) / (127*(1<<kWeightScaleBits));
+    std::int32_t output_value = buffer.fc_2_out[0] + fwd_out;
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     buffer.~Buffer();
