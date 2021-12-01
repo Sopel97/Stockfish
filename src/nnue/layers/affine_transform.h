@@ -80,10 +80,10 @@ namespace Stockfish::Eval::NNUE::Layers {
     const auto inputVector = reinterpret_cast<const int8x8_t*>(input);
 # endif
 
+# if defined(USE_SSE2)
     for (IndexType i = 0; i < OutputDimensions; ++i) {
       const IndexType offset = i * PaddedInputDimensions;
 
-# if defined(USE_SSE2)
       __m128i sumLo = _mm_cvtsi32_si128(biases[i]);
       __m128i sumHi = Zeros;
       const auto row = reinterpret_cast<const __m128i*>(&weights[offset]);
@@ -105,8 +105,12 @@ namespace Stockfish::Eval::NNUE::Layers {
       __m128i sum_second_32 = _mm_shufflelo_epi16(sum, _MM_SHUFFLE(1, 0, 3, 2));
       sum = _mm_add_epi32(sum, sum_second_32);
       output[i] = _mm_cvtsi128_si32(sum);
+    }
 
 # elif defined(USE_MMX)
+    for (IndexType i = 0; i < OutputDimensions; ++i) {
+      const IndexType offset = i * PaddedInputDimensions;
+
       __m64 sumLo = _mm_cvtsi32_si64(biases[i]);
       __m64 sumHi = Zeros;
       const auto row = reinterpret_cast<const __m64*>(&weights[offset]);
@@ -125,25 +129,56 @@ namespace Stockfish::Eval::NNUE::Layers {
       __m64 sum = _mm_add_pi32(sumLo, sumHi);
       sum = _mm_add_pi32(sum, _mm_unpackhi_pi32(sum, sum));
       output[i] = _mm_cvtsi64_si32(sum);
+    }
 
 # elif defined(USE_NEON)
-      int32x4_t sum = {biases[i]};
-      const auto row = reinterpret_cast<const int8x8_t*>(&weights[offset]);
-      for (IndexType j = 0; j < NumChunks; ++j) {
-        int16x8_t product = vmull_s8(inputVector[j * 2], row[j * 2]);
-        product = vmlal_s8(product, inputVector[j * 2 + 1], row[j * 2 + 1]);
-        sum = vpadalq_s16(sum, product);
+      if constexpr (PaddedInputDimensions >= 128)
+      {
+        int32x4_t sum[OutputDimensions];
+        for (IndexType i = 0; i < OutputDimensions; ++i)
+          sum[i] = { biases[i] };
+
+        for (IndexType j = 0; j < NumChunks; j += 1) {
+          int8x8_t input0 = inputVector[j * 2 + 0];
+          int8x8_t input1 = inputVector[j * 2 + 1];
+          for (IndexType i = 0; i < OutputDimensions; ++i) {
+            const auto row = reinterpret_cast<const int8x8_t*>(&weights[i * PaddedInputDimensions]);
+            int16x8_t product = vmull_s8(input0, row[j * 2]);
+            product = vmlal_s8(product, input1, row[j * 2 + 1]);
+            sum[i] = vpadalq_s16(sum[i], product);
+          }
+        }
+
+        for (IndexType i = 0; i < OutputDimensions; ++i)
+          output[i] = sum[i][0] + sum[i][1] + sum[i][2] + sum[i][3];
       }
-      output[i] = sum[0] + sum[1] + sum[2] + sum[3];
+      else
+      {
+        for (IndexType i = 0; i < OutputDimensions; ++i) {
+          const IndexType offset = i * PaddedInputDimensions;
+
+          int32x4_t sum = {biases[i]};
+          const auto row = reinterpret_cast<const int8x8_t*>(&weights[offset]);
+          for (IndexType j = 0; j < NumChunks; ++j) {
+            int16x8_t product = vmull_s8(inputVector[j * 2], row[j * 2]);
+            product = vmlal_s8(product, inputVector[j * 2 + 1], row[j * 2 + 1]);
+            sum = vpadalq_s16(sum, product);
+          }
+          output[i] = sum[0] + sum[1] + sum[2] + sum[3];
+        }
+      }
 
 # else
+    for (IndexType i = 0; i < OutputDimensions; ++i) {
+      const IndexType offset = i * PaddedInputDimensions;
+
       std::int32_t sum = biases[i];
       for (IndexType j = 0; j < InputDimensions; ++j) {
         sum += weights[offset + j] * input[j];
       }
       output[i] = sum;
-# endif
     }
+# endif
 
 # if defined(USE_MMX)
     _mm_empty();
