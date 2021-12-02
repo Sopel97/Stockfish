@@ -336,6 +336,32 @@ namespace Stockfish::Simd {
 
 #endif
 
+#if defined (USE_NEON)
+
+    [[maybe_unused]] static int neon_m128_hadd(int32x4_t sum, int bias) {
+      return vaddvq_s32(sum) + bias;
+    }
+
+    [[maybe_unused]] static int32x4_t neon_m128_haddx4(
+        int32x4_t sum0, int32x4_t sum1, int32x4_t sum2, int32x4_t sum3,
+        int32x4_t bias) {
+
+      int32x4_t hsums{ vaddvq_s32(sum0), vaddvq_s32(sum1), vaddvq_s32(sum2), vaddvq_s32(sum3) };
+      return vaddq_s32(hsums, bias);
+    }
+
+    [[maybe_unused]] static void neon_m128_add_dpbusd_epi32x2(
+        int32x4_t& acc,
+        int8x8_t a0, int8x8_t b0,
+        int8x8_t a1, int8x8_t b1) {
+
+      int16x8_t product = vmull_s8(a0, b0);
+      product = vmlal_s8(product, a1, b1);
+      acc = vpadalq_s16(acc, product);
+    }
+
+#endif
+
 }
 
 #endif // STOCKFISH_SIMD_H_INCLUDED
