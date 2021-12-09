@@ -1109,12 +1109,11 @@ struct alignas(64) PawnCacheBucket
     {
       if (key == keys[i])
       {
-        quality[i] += 1;
+        quality[i] += 1 << 16;
         pawn_cache_hits += 1;
         for (int j = 0; j < 4; ++j)
         {
-          if (i != j)
-            quality[j] -= 1;
+          quality[j] /= 2;
         }
         return data[i];
       }
