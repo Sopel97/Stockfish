@@ -1122,7 +1122,7 @@ struct alignas(64) PawnCacheBucket
     }
 
     keys[best] = key;
-    quality[best] = 1;
+    quality[best] = 1 << 16;
     pawn_cache_misses += 1;
     return data[best];
   }
