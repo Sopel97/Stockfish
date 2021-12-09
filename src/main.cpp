@@ -49,5 +49,8 @@ int main(int argc, char* argv[]) {
   UCI::loop(argc, argv);
 
   Threads.set(0);
+
+  std::cout << pawn_cache_hits << '\t' << pawn_cache_misses << '\t' << (pawn_cache_hits + pawn_cache_misses) << '\n';
+
   return 0;
 }

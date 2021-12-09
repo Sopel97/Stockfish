@@ -1079,7 +1079,73 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
+std::uint64_t pawn_cache_hits = 0;
+std::uint64_t pawn_cache_misses = 0;
+
+struct PawnCacheEntry
+{
+  char payload[16];
+};
+
+struct alignas(64) PawnCacheBucket
+{
+  std::uint64_t keys[4];
+  std::int64_t quality[4];
+  PawnCacheEntry data[4]{};
+
+  PawnCacheBucket()
+  {
+    for (int i = 0; i < 4; ++i)
+    {
+      keys[i] = 0;
+      quality[i] = 0;
+    }
+  }
+
+  PawnCacheEntry& get_entry(std::uint64_t key)
+  {
+    int best = 0;
+    for (int i = 0; i < 4; ++i)
+    {
+      if (key == keys[i])
+      {
+        quality[i] += 1;
+        pawn_cache_hits += 1;
+        return data[i];
+      }
+      else if (quality[i] < quality[best])
+        best = i;
+    }
+
+    keys[best] = key;
+    quality[best] = 1;
+    pawn_cache_misses += 1;
+    return data[best];
+  }
+};
+
+struct PawnCache
+{
+  static constexpr std::size_t bucket_size = sizeof(PawnCacheBucket);
+  static constexpr std::size_t max_size_bytes = 1024 * 1024;
+  static constexpr std::size_t num_buckets = max_size_bytes / bucket_size;
+
+  PawnCacheEntry& get_entry(const Position& pos)
+  {
+    const std::uint64_t key = pos.pawn_key();
+    const std::uint64_t bucket_id = mul_hi64(key, num_buckets);
+    return buckets[bucket_id].get_entry(key);
+  }
+
+  PawnCacheBucket buckets[num_buckets];
+};
+
 Value Eval::evaluate(const Position& pos) {
+
+  static thread_local PawnCache pawn_cache;
+
+  auto& e = pawn_cache.get_entry(pos);
+  e.payload[0] = pos.key();
 
   Value v;
 

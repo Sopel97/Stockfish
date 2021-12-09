@@ -28,6 +28,8 @@ namespace Stockfish {
 
 class Position;
 
+extern std::uint64_t pawn_cache_hits;
+extern std::uint64_t pawn_cache_misses;
 namespace Eval {
 
   std::string trace(Position& pos);
