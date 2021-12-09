@@ -1111,6 +1111,11 @@ struct alignas(64) PawnCacheBucket
       {
         quality[i] += 1;
         pawn_cache_hits += 1;
+        for (int j = 0; j < 4; ++j)
+        {
+          if (i != j)
+            quality[j] /= 2;
+        }
         return data[i];
       }
       else if (quality[i] < quality[best])
