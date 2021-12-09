@@ -1114,7 +1114,7 @@ struct alignas(64) PawnCacheBucket
         for (int j = 0; j < 4; ++j)
         {
           if (i != j)
-            quality[j] = (quality[j] * 3 / 4) + 1;
+            quality[j] -= 1;
         }
         return data[i];
       }
