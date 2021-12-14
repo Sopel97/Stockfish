@@ -63,19 +63,17 @@ namespace Stockfish::Eval::NNUE::Layers {
   {
 # if defined(USE_SSE2)
     // At least a multiple of 16, with SSE2.
-    static_assert(PaddedInputDimensions % 16 == 0);
-    constexpr IndexType NumChunks = PaddedInputDimensions / 16;
+    constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 16) / 16;
     const __m128i Zeros = _mm_setzero_si128();
     const auto inputVector = reinterpret_cast<const __m128i*>(input);
 
 # elif defined(USE_MMX)
-    static_assert(InputDimensions % 8 == 0);
-    constexpr IndexType NumChunks = InputDimensions / 8;
+    constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / 8;
     const __m64 Zeros = _mm_setzero_si64();
     const auto inputVector = reinterpret_cast<const __m64*>(input);
 
 # elif defined(USE_NEON)
-    constexpr IndexType NumChunks = (InputDimensions + 15) / 16;
+    constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 16) / 16;
     const auto inputVector = reinterpret_cast<const int8x8_t*>(input);
 # endif
 
@@ -469,12 +467,11 @@ namespace Stockfish::Eval::NNUE::Layers {
 #if defined (USE_SSSE3)
       const auto inputVector = reinterpret_cast<const vec_t*>(input);
 
-      static_assert(InputDimensions % 8 == 0);
       static_assert(OutputDimensions % OutputSimdWidth == 0 || OutputDimensions == 1);
 
       if constexpr (OutputDimensions % OutputSimdWidth == 0)
       {
-        constexpr IndexType NumChunks = InputDimensions / 4;
+        constexpr IndexType NumChunks = ceil_to_multiple<IndexType>(InputDimensions, 8) / 4;
         constexpr IndexType NumRegs = OutputDimensions / OutputSimdWidth;
 
         const auto input32 = reinterpret_cast<const std::int32_t*>(input);

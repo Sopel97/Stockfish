@@ -42,10 +42,10 @@ constexpr IndexType LayerStacks = 8;
 
 struct Network
 {
-  static constexpr int FC_0_OUTPUTS = 8;
+  static constexpr int FC_0_OUTPUTS = 7;
   static constexpr int FC_1_OUTPUTS = 32;
 
-  Layers::AffineTransform<TransformedFeatureDimensions * 2, FC_0_OUTPUTS> fc_0;
+  Layers::AffineTransform<TransformedFeatureDimensions * 2, FC_0_OUTPUTS + 1> fc_0;
   Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
   Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
   Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
@@ -113,7 +113,10 @@ struct Network
     ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
     fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-    std::uint32_t output_value = buffer.fc_2_out[0];
+    // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in quantized form
+    // but we want 1.0 to be equal to 600*OutputScale
+    std::int32_t fwd_out = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*OutputScale) / (127*(1<<WeightScaleBits));
+    std::int32_t output_value = buffer.fc_2_out[0] + fwd_out;
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     buffer.~Buffer();
