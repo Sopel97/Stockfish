@@ -42,10 +42,10 @@ constexpr IndexType LayerStacks = 8;
 
 struct Network
 {
-  static constexpr int FC_0_OUTPUTS = 7;
+  static constexpr int FC_0_OUTPUTS = 15;
   static constexpr int FC_1_OUTPUTS = 32;
 
-  Layers::AffineTransform<TransformedFeatureDimensions * 2, FC_0_OUTPUTS + 1> fc_0;
+  Layers::AffineTransform<TransformedFeatureDimensions, FC_0_OUTPUTS + 1> fc_0;
   Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
   Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
   Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
