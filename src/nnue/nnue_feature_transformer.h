@@ -233,41 +233,14 @@ namespace Stockfish::Eval::NNUE {
       {
           const IndexType offset = (HalfDimensions / 2) * p;
 
-#if defined(USE_AVX512)
-
-          constexpr IndexType OutputChunkSize = 512 / 8;
-          static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
-          constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
-
-          const __m512i Zero = _mm512_setzero_si512();
-          const __m512i One = _mm512_set1_epi16(127);
-          const __m512i Control = _mm512_setr_epi64(0, 2, 4, 6, 1, 3, 5, 7);
-
-          const __m512i* in0 = reinterpret_cast<const __m512i*>(&(accumulation[perspectives[p]][0]));
-          const __m512i* in1 = reinterpret_cast<const __m512i*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
-                __m512i* out = reinterpret_cast<      __m512i*>(output + offset);
-
-          for (IndexType j = 0; j < NumOutputChunks; j += 1)
-          {
-              const __m512i sum0a = _mm512_max_epi16(_mm512_min_epi16(in0[j * 2 + 0], One), Zero);
-              const __m512i sum0b = _mm512_max_epi16(_mm512_min_epi16(in0[j * 2 + 1], One), Zero);
-              const __m512i sum1a = _mm512_max_epi16(_mm512_min_epi16(in1[j * 2 + 0], One), Zero);
-              const __m512i sum1b = _mm512_max_epi16(_mm512_min_epi16(in1[j * 2 + 1], One), Zero);
-
-              const __m512i pa = _mm512_srli_epi16(_mm512_mullo_epi16(sum0a, sum1a), 7);
-              const __m512i pb = _mm512_srli_epi16(_mm512_mullo_epi16(sum0b, sum1b), 7);
-
-              out[j] = _mm512_permutexvar_epi64(Control, _mm512_packs_epi16(pa, pb));
-          }
-
-#elif defined(USE_AVX2)
+#if defined(USE_AVX2)
 
           constexpr IndexType OutputChunkSize = 256 / 8;
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
-          const __m256i Zero = _mm256_setzero_si256();
-          const __m256i One = _mm256_set1_epi16(127);
+          const __m256i cst_127_epi16 = _mm256_set1_epi16(127);
+          const __m256i cst_63_epi16 = _mm256_set1_epi16(63);
           constexpr int Control = 0b11011000;
 
           const __m256i* in0 = reinterpret_cast<const __m256i*>(&(accumulation[perspectives[p]][0]));
@@ -276,25 +249,45 @@ namespace Stockfish::Eval::NNUE {
 
           for (IndexType j = 0; j < NumOutputChunks; j += 1)
           {
-              const __m256i sum0a = _mm256_max_epi16(_mm256_min_epi16(in0[j * 2 + 0], One), Zero);
-              const __m256i sum0b = _mm256_max_epi16(_mm256_min_epi16(in0[j * 2 + 1], One), Zero);
-              const __m256i sum1a = _mm256_max_epi16(_mm256_min_epi16(in1[j * 2 + 0], One), Zero);
-              const __m256i sum1b = _mm256_max_epi16(_mm256_min_epi16(in1[j * 2 + 1], One), Zero);
+              const __m256i v0a = in0[j * 2 + 0];
+              const __m256i v0b = in0[j * 2 + 1];
+              const __m256i v1a = in1[j * 2 + 0];
+              const __m256i v1b = in1[j * 2 + 1];
 
-              const __m256i pa = _mm256_srli_epi16(_mm256_mullo_epi16(sum0a, sum1a), 7);
-              const __m256i pb = _mm256_srli_epi16(_mm256_mullo_epi16(sum0b, sum1b), 7);
+              __m256i vv0a = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v0a));
+              __m256i vv0b = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v0b));
+              __m256i vv1a = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v1a));
+              __m256i vv1b = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v1b));
+
+              vv0a = _mm256_slli_epi16(vv0a, 4);
+              vv0b = _mm256_slli_epi16(vv0b, 4);
+              vv1a = _mm256_slli_epi16(vv1a, 4);
+              vv1b = _mm256_slli_epi16(vv1b, 4);
+
+              vv0a = _mm256_sub_epi16(cst_63_epi16, _mm256_mulhi_epi16(vv0a, vv0a));
+              vv0b = _mm256_sub_epi16(cst_63_epi16, _mm256_mulhi_epi16(vv0b, vv0b));
+              vv1a = _mm256_sub_epi16(cst_63_epi16, _mm256_mulhi_epi16(vv1a, vv1a));
+              vv1b = _mm256_sub_epi16(cst_63_epi16, _mm256_mulhi_epi16(vv1b, vv1b));
+
+              vv0a = _mm256_add_epi16(cst_63_epi16, _mm256_sign_epi16(vv0a, v0a));
+              vv0b = _mm256_add_epi16(cst_63_epi16, _mm256_sign_epi16(vv0b, v0b));
+              vv1a = _mm256_add_epi16(cst_63_epi16, _mm256_sign_epi16(vv1a, v1a));
+              vv1b = _mm256_add_epi16(cst_63_epi16, _mm256_sign_epi16(vv1b, v1b));
+
+              const __m256i pa = _mm256_srli_epi16(_mm256_mullo_epi16(vv0a, vv1a), 7);
+              const __m256i pb = _mm256_srli_epi16(_mm256_mullo_epi16(vv0b, vv1b), 7);
 
               out[j] = _mm256_permute4x64_epi64(_mm256_packs_epi16(pa, pb), Control);
           }
 
-#elif defined(USE_SSE2)
+#elif defined (USE_SSSE3)
 
           constexpr IndexType OutputChunkSize = 128 / 8;
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
-          const __m128i Zero = _mm_setzero_si128();
-          const __m128i One = _mm_set1_epi16(127);
+          const __m128i cst_127_epi16 = _mm_set1_epi16(127);
+          const __m128i cst_63_epi16 = _mm_set1_epi16(63);
 
           const __m128i* in0 = reinterpret_cast<const __m128i*>(&(accumulation[perspectives[p]][0]));
           const __m128i* in1 = reinterpret_cast<const __m128i*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
@@ -302,13 +295,33 @@ namespace Stockfish::Eval::NNUE {
 
           for (IndexType j = 0; j < NumOutputChunks; j += 1)
           {
-              const __m128i sum0a = _mm_max_epi16(_mm_min_epi16(in0[j * 2 + 0], One), Zero);
-              const __m128i sum0b = _mm_max_epi16(_mm_min_epi16(in0[j * 2 + 1], One), Zero);
-              const __m128i sum1a = _mm_max_epi16(_mm_min_epi16(in1[j * 2 + 0], One), Zero);
-              const __m128i sum1b = _mm_max_epi16(_mm_min_epi16(in1[j * 2 + 1], One), Zero);
+              const __m128i v0a = in0[j * 2 + 0];
+              const __m128i v0b = in0[j * 2 + 1];
+              const __m128i v1a = in1[j * 2 + 0];
+              const __m128i v1b = in1[j * 2 + 1];
 
-              const __m128i pa = _mm_srli_epi16(_mm_mullo_epi16(sum0a, sum1a), 7);
-              const __m128i pb = _mm_srli_epi16(_mm_mullo_epi16(sum0b, sum1b), 7);
+              __m128i vv0a = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v0a));
+              __m128i vv0b = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v0b));
+              __m128i vv1a = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v1a));
+              __m128i vv1b = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v1b));
+
+              vv0a = _mm_slli_epi16(vv0a, 4);
+              vv0b = _mm_slli_epi16(vv0b, 4);
+              vv1a = _mm_slli_epi16(vv1a, 4);
+              vv1b = _mm_slli_epi16(vv1b, 4);
+
+              vv0a = _mm_sub_epi16(cst_63_epi16, _mm_mulhi_epi16(vv0a, vv0a));
+              vv0b = _mm_sub_epi16(cst_63_epi16, _mm_mulhi_epi16(vv0b, vv0b));
+              vv1a = _mm_sub_epi16(cst_63_epi16, _mm_mulhi_epi16(vv1a, vv1a));
+              vv1b = _mm_sub_epi16(cst_63_epi16, _mm_mulhi_epi16(vv1b, vv1b));
+
+              vv0a = _mm_add_epi16(cst_63_epi16, _mm_sign_epi16(vv0a, v0a));
+              vv0b = _mm_add_epi16(cst_63_epi16, _mm_sign_epi16(vv0b, v0b));
+              vv1a = _mm_add_epi16(cst_63_epi16, _mm_sign_epi16(vv1a, v1a));
+              vv1b = _mm_add_epi16(cst_63_epi16, _mm_sign_epi16(vv1b, v1b));
+
+              const __m128i pa = _mm_srli_epi16(_mm_mullo_epi16(vv0a, vv1a), 7);
+              const __m128i pb = _mm_srli_epi16(_mm_mullo_epi16(vv0b, vv1b), 7);
 
               out[j] = _mm_packs_epi16(pa, pb);
           }
@@ -318,9 +331,15 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType j = 0; j < HalfDimensions / 2; ++j) {
               BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
               BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
-              sum0 = std::max<int>(0, std::min<int>(127, sum0));
-              sum1 = std::max<int>(0, std::min<int>(127, sum1));
-              output[offset + j] = static_cast<OutputType>(sum0 * sum1 / 128);
+              std::int16_t v0 = std::min(std::abs(sum0), 127) - 127;
+              std::int16_t v1 = std::min(std::abs(sum1), 127) - 127;
+              std::int16_t vv0 = v0 * v0 >> 8;
+              std::int16_t vv1 = v1 * v1 >> 8;
+              if (sum0 > 0)
+                  vv0 = 126 - vv0;
+              if (sum1 > 0)
+                  vv1 = 126 - vv1;
+              output[offset + j] = static_cast<OutputType>(vv0 * vv1 / 128);
           }
 
 #endif
