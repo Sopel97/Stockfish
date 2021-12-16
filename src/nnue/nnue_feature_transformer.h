@@ -270,6 +270,44 @@ namespace Stockfish::Eval::NNUE {
               out[j] = _mm256_permute4x64_epi64(v0, Control);
           }
 
+  #elif defined (USE_SSSE3)
+
+          auto out = reinterpret_cast<__m256i*>(&output[offset]);
+          static_assert(HalfDimensions % (ChunkSize * 2) == 0);
+          constexpr int OutputChunkSize = 128 / 8;
+          constexpr int NumOutputChunks = HalfDimensions / OutputChunkSize;
+
+          const __m256i cst_127_epi16 = _mm256_set1_epi16(127);
+          const __m256i cst_63_epi8 = _mm256_set1_epi8(63);
+
+          const __m256i* in  = reinterpret_cast<const __m256i*>(accumulation[perspectives[p]]);
+                __m256i* out = reinterpret_cast<      __m256i*>(output + offset);
+
+          for (int j = 0; j < NumOutputChunks; ++j)
+          {
+              __m256i v0 = in[j * 2 + 0];
+              __m256i v1 = in[j * 2 + 1];
+
+              __m256i sign = _mm256_packs_epi16(v0, v1);
+
+              __m256i vv0 = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v0));
+              __m256i vv1 = _mm256_subs_epu16(cst_127_epi16, _mm256_abs_epi16(v1));
+
+              vv0 = _mm256_slli_epi16(vv0, 4);
+              vv1 = _mm256_slli_epi16(vv1, 4);
+
+              vv0 = _mm256_mulhi_epi16(vv0, vv0);
+              vv1 = _mm256_mulhi_epi16(vv1, vv1);
+
+              vv0 = _mm256_packs_epi16(vv0, vv1);
+
+              vv0 = _mm256_sub_epi16(cst_63_epi8, vv0);
+
+              vv0 = _mm256_add_epi16(cst_63_epi8, _mm256_sign_epi8(vv0, v0));
+
+              out[j] = vv0;
+          }
+
   #else
 
           for (IndexType j = 0; j < HalfDimensions; ++j)
