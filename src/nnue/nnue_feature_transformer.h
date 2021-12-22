@@ -234,9 +234,8 @@ namespace Stockfish::Eval::NNUE {
 
   #if defined(USE_AVX2)
 
-          auto out = reinterpret_cast<__m256i*>(&output[offset]);
-          static_assert(HalfDimensions % (ChunkSize * 2) == 0);
           constexpr int OutputChunkSize = 256 / 8;
+          static_assert(HalfDimensions % OutputChunkSize == 0);
           constexpr int NumOutputChunks = HalfDimensions / OutputChunkSize;
           constexpr int Control = 0b11011000;
 
@@ -272,9 +271,8 @@ namespace Stockfish::Eval::NNUE {
 
   #elif defined (USE_SSSE3)
 
-          auto out = reinterpret_cast<__m128i*>(&output[offset]);
-          static_assert(HalfDimensions % (ChunkSize * 2) == 0);
           constexpr int OutputChunkSize = 128 / 8;
+          static_assert(HalfDimensions % OutputChunkSize == 0);
           constexpr int NumOutputChunks = HalfDimensions / OutputChunkSize;
 
           const __m128i cst_127_epi16 = _mm_set1_epi16(127);
@@ -287,8 +285,6 @@ namespace Stockfish::Eval::NNUE {
           {
               __m128i v0 = in[j * 2 + 0];
               __m128i v1 = in[j * 2 + 1];
-
-              __m128i sign = _mm_packs_epi16(v0, v1);
 
               __m128i vv0 = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v0));
               __m128i vv1 = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v1));
