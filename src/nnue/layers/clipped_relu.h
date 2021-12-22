@@ -65,8 +65,6 @@ namespace Stockfish::Eval::NNUE::Layers {
       constexpr unsigned additional_precision_bits = 4;
 
   #if defined(USE_AVX2)
-      static_assert(InputDimensions % 16 == 0);
-
       if constexpr (InputDimensions % 32 == 0) {
         constexpr int OutputChunkSize = 256 / 8;
         constexpr int NumOutputChunks = InputDimensions / OutputChunkSize;
@@ -85,8 +83,8 @@ namespace Stockfish::Eval::NNUE::Layers {
           __m256i v1a = in[i*4 + 2];
           __m256i v1b = in[i*4 + 3];
 
-          __m256i v0 = _mm256_srai_epi16(_mm256_packs_epi32(v0a, v0b), WeightScaleBits - prec);
-          __m256i v1 = _mm256_srai_epi16(_mm256_packs_epi32(v1a, v1b), WeightScaleBits - prec);
+          __m256i v0 = _mm256_srai_epi16(_mm256_packs_epi32(v0a, v0b), WeightScaleBits - additional_precision_bits);
+          __m256i v1 = _mm256_srai_epi16(_mm256_packs_epi32(v1a, v1b), WeightScaleBits - additional_precision_bits);
 
           __m256i sign = _mm256_packs_epi16(v0, v1);
 
@@ -121,13 +119,13 @@ namespace Stockfish::Eval::NNUE::Layers {
 
         for (int i = 0; i < NumOutputChunks; ++i)
         {
-          __m256i v0a = in[i*4 + 0];
-          __m256i v0b = in[i*4 + 1];
-          __m256i v1a = in[i*4 + 2];
-          __m256i v1b = in[i*4 + 3];
+          __m128i v0a = in[i*4 + 0];
+          __m128i v0b = in[i*4 + 1];
+          __m128i v1a = in[i*4 + 2];
+          __m128i v1b = in[i*4 + 3];
 
-          __m128i v0 = _mm_srai_epi16(_mm_packs_epi32(v0a, v0b), WeightScaleBits - prec);
-          __m128i v1 = _mm_srai_epi16(_mm_packs_epi32(v1a, v1b), WeightScaleBits - prec);
+          __m128i v0 = _mm_srai_epi16(_mm_packs_epi32(v0a, v0b), WeightScaleBits - additional_precision_bits);
+          __m128i v1 = _mm_srai_epi16(_mm_packs_epi32(v1a, v1b), WeightScaleBits - additional_precision_bits);
 
           __m128i sign = _mm_packs_epi16(v0, v1);
 
