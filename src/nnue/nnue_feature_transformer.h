@@ -239,7 +239,7 @@ namespace Stockfish::Eval::NNUE {
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
-          const __m512i Zero = _mm512_setzero_si128();
+          const __m512i Zero = _mm512_setzero_si512();
           const __m512i One = _mm512_set1_epi16(127);
           const __m512i Control = _mm512_setr_epi64(0, 2, 4, 6, 1, 3, 5, 7);
 
@@ -266,7 +266,7 @@ namespace Stockfish::Eval::NNUE {
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
-          const __m256i Zero = _mm256_setzero_si128();
+          const __m256i Zero = _mm256_setzero_si256();
           const __m256i One = _mm256_set1_epi16(127);
           constexpr int Control = 0b11011000;
 
@@ -316,8 +316,8 @@ namespace Stockfish::Eval::NNUE {
 #else
 
           for (IndexType j = 0; j < HalfDimensions / 2; ++j) {
-              BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][0][j + 0];
-              BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][0][j + HalfDimensions / 2];
+              BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
+              BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
               sum0 = std::max<int>(0, std::min<int>(127, sum0));
               sum1 = std::max<int>(0, std::min<int>(127, sum1));
               output[offset + j] = static_cast<OutputType>(sum0 * sum1 / 128);
