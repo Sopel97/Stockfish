@@ -132,7 +132,7 @@ static inline IndexType msb_(std::uint64_t b) {
 #if defined (USE_AVX512)
     static constexpr const IndexType InputSimdWidth = SimdWidth * 2;
     static constexpr const IndexType OutputSimdWidth = SimdWidth / 2;
-#elif defined (USE_SSSE3)
+#elif defined (USE_SSE2)
     static constexpr const IndexType InputSimdWidth = SimdWidth;
     static constexpr const IndexType OutputSimdWidth = SimdWidth / 4;
 #endif
@@ -231,8 +231,8 @@ static inline IndexType msb_(std::uint64_t b) {
       for (IndexType i = 0; i < NumNnzCountChunks; i += 2) {
         const auto inputChunk0a = inputVector[i+0];
         const auto inputChunk1a = inputVector[i+1];
-        std::uint64_t nnz0 = ~((std::uint64_t)_mm512_movemask_epi8(inputChunk0a));
-        std::uint64_t nnz1 = ~((std::uint64_t)_mm512_movemask_epi8(inputChunk1a));
+        std::uint64_t nnz0 = ~((std::uint64_t)_mm512_movepi8_mask(inputChunk0a));
+        std::uint64_t nnz1 = ~((std::uint64_t)_mm512_movepi8_mask(inputChunk1a));
 # elif defined (USE_AVX2)
       for (IndexType i = 0; i < NumNnzCountChunks; i += 4) {
         const auto inputChunk0a = inputVector[i+0];
