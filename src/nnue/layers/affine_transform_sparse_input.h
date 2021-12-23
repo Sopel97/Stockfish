@@ -130,11 +130,17 @@ static inline IndexType msb_(std::uint64_t b) {
     static constexpr IndexType OutputDimensions = OutDims;
 
 #if defined (USE_AVX512)
-    static constexpr const IndexType InputSimdWidth = SimdWidth * 2;
-    static constexpr const IndexType OutputSimdWidth = SimdWidth / 2;
+    static constexpr const IndexType NnzInputSimdWidth = 64;
+    static constexpr const IndexType InputSimdWidth = 32;
+    static constexpr const IndexType OutputSimdWidth = 8;
+#elif defined (USE_AVX2)
+    static constexpr const IndexType NnzInputSimdWidth = 32;
+    static constexpr const IndexType InputSimdWidth = 32;
+    static constexpr const IndexType OutputSimdWidth = 8;
 #elif defined (USE_SSE2)
-    static constexpr const IndexType InputSimdWidth = SimdWidth;
-    static constexpr const IndexType OutputSimdWidth = SimdWidth / 4;
+    static constexpr const IndexType NnzInputSimdWidth = 16;
+    static constexpr const IndexType InputSimdWidth = 16;
+    static constexpr const IndexType OutputSimdWidth = 4;
 #endif
 
     static constexpr const IndexType MaxInputSimdWidth = 64;
@@ -225,7 +231,7 @@ static inline IndexType msb_(std::uint64_t b) {
       IndexType numNnzInputIndices = 0;
 
       static_assert(InDims % 128 == 0);
-      constexpr IndexType NumNnzCountChunks = InputDimensions / InputSimdWidth;
+      constexpr IndexType NumNnzCountChunks = InputDimensions / NnzInputSimdWidth;
       const auto inputVector = reinterpret_cast<const vec_t*>(input);
 # if defined (USE_AVX512)
       for (IndexType i = 0; i < NumNnzCountChunks; i += 2) {
@@ -350,6 +356,9 @@ static inline IndexType msb_(std::uint64_t b) {
       }
 
 #else
+      for (IndexType i = 0; i < OutputDimensions; ++i)
+        output[i] = biases[i];
+
       for (IndexType i = 0; i < InputDimensions; ++i) {
         if (input[i] != 0)
           for (IndexType j = 0; j < OutputDimensions; ++j)
