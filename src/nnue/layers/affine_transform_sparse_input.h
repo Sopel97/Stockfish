@@ -200,15 +200,7 @@ static inline IndexType msb_(std::uint64_t b) {
     const OutputType* propagate(
         const InputType* input, OutputType* output) const {
 
-#if defined (USE_AVX512)
-      using vec_t = __m512i;
-      #define vec_zero _mm512_setzero_si512()
-      #define vec_broadcast_32(a) _mm512_set1_epi32(a)
-      #define vec_unpacklo_16(a, b) _mm512_unpacklo_epi16(a, b)
-      #define vec_unpackhi_16(a, b) _mm512_unpackhi_epi16(a, b)
-      #define vec_add_32(a, b) _mm512_add_epi32(a, b)
-      #define vec_madd_16(a, b) _mm512_madd_epi16(a, b)
-#elif defined (USE_AVX2)
+#if defined (USE_AVX2)
       using vec_t = __m256i;
       #define vec_zero _mm256_setzero_si256()
       #define vec_broadcast_32(a) _mm256_set1_epi32(a)
