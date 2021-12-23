@@ -289,6 +289,8 @@ namespace Stockfish::Eval::NNUE {
               __m128i vv0 = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v0));
               __m128i vv1 = _mm_subs_epu16(cst_127_epi16, _mm_abs_epi16(v1));
 
+              v0 = _mm_packs_epi16(v0, v1);
+
               vv0 = _mm_slli_epi16(vv0, 4);
               vv1 = _mm_slli_epi16(vv1, 4);
 
@@ -297,9 +299,9 @@ namespace Stockfish::Eval::NNUE {
 
               vv0 = _mm_packs_epi16(vv0, vv1);
 
-              vv0 = _mm_sub_epi16(cst_63_epi8, vv0);
+              vv0 = _mm_subs_epi8(cst_63_epi8, vv0);
 
-              vv0 = _mm_add_epi16(cst_63_epi8, _mm_sign_epi8(vv0, v0));
+              vv0 = _mm_adds_epi8(cst_63_epi8, _mm_sign_epi8(vv0, v0));
 
               out[j] = vv0;
           }
