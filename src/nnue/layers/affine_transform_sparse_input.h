@@ -227,10 +227,10 @@ static inline IndexType msb_(std::uint64_t b) {
         const auto inputChunk0b = inputVector[i+1];
         const auto inputChunk1a = inputVector[i+2];
         const auto inputChunk1b = inputVector[i+3];
-        std::uint64_t nnz0 = ~(   (std::uint64_t)_mm256_movemask_epi8(inputChunk0a)
-                               | ((std::uint64_t)_mm256_movemask_epi8(inputChunk0b) << 32ull));
-        std::uint64_t nnz1 = ~(   (std::uint64_t)_mm256_movemask_epi8(inputChunk1a)
-                               | ((std::uint64_t)_mm256_movemask_epi8(inputChunk1b) << 32ull));
+        std::uint64_t nnz0 = (   (std::uint64_t)_mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk0a, _mm256_setzero_si256()))
+                               | ((std::uint64_t)_mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk0b, _mm256_setzero_si256())) << 32ull));
+        std::uint64_t nnz1 = (   (std::uint64_t)_mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk1a, _mm256_setzero_si256()))
+                               | ((std::uint64_t)_mm256_movemask_epi8(_mm256_cmpgt_epi8(inputChunk1b, _mm256_setzero_si256())) << 32ull));
 # elif defined (USE_SSE2)
       for (IndexType i = 0; i < NumNnzCountChunks; i += 8) {
         const auto inputChunk0a = inputVector[i+0];
@@ -241,14 +241,14 @@ static inline IndexType msb_(std::uint64_t b) {
         const auto inputChunk1b = inputVector[i+5];
         const auto inputChunk1c = inputVector[i+6];
         const auto inputChunk1d = inputVector[i+7];
-        std::uint64_t nnz0 = ~(   (std::uint64_t)_mm_movemask_epi8(inputChunk0a)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk0b) << 16ull)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk0c) << 32ull)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk0d) << 48ull));
-        std::uint64_t nnz1 = ~(   (std::uint64_t)_mm_movemask_epi8(inputChunk1a)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk1b) << 16ull)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk1c) << 32ull)
-                               | ((std::uint64_t)_mm_movemask_epi8(inputChunk1d) << 48ull));
+        std::uint64_t nnz0 = (   (std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk0a, _mm_setzero_si128()))
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk0b, _mm_setzero_si128())) << 16ull)
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk0c, _mm_setzero_si128())) << 32ull)
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk0d, _mm_setzero_si128())) << 48ull));
+        std::uint64_t nnz1 = (   (std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk1a, _mm_setzero_si128()))
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk1b, _mm_setzero_si128())) << 16ull)
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk1c, _mm_setzero_si128())) << 32ull)
+                               | ((std::uint64_t)_mm_movemask_epi8(_mm_cmpgt_epi8(inputChunk1d, _mm_setzero_si128())) << 48ull));
 # endif
         const unsigned offset    = popcount(nnz0);
         const unsigned nnz1count = popcount(nnz1);
