@@ -156,7 +156,7 @@ namespace Stockfish::Eval::NNUE::Layers {
   #endif
 
       for (IndexType i = Start; i < InputDimensions; ++i) {
-        std::int16_t v = std::min(std::abs(input[i]) >> (WeightScaleBits - additional_precision_bits), 127 << additional_precision_bits) - (127 << additional_precision_bits);
+        std::int16_t v = std::min(std::abs(input[i] >> (WeightScaleBits - additional_precision_bits)), 127 << additional_precision_bits) - (127 << additional_precision_bits);
         std::int16_t vv = v * v >> (8 + additional_precision_bits * 2);
         if (input[i] > 0)
             vv = 126 - vv;
