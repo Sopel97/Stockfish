@@ -201,6 +201,11 @@ static inline IndexType msb_(std::uint64_t b) {
         const InputType* input, OutputType* output) const {
 
 #if defined (USE_AVX2)
+# if defined (USE_AVX512)
+      using nnz_vec_t = __m512i;
+# else
+      using nnz_vec_t = __m256i;
+# endif
       using vec_t = __m256i;
       #define vec_zero _mm256_setzero_si256()
       #define vec_broadcast_32(a) _mm256_set1_epi32(a)
@@ -209,6 +214,7 @@ static inline IndexType msb_(std::uint64_t b) {
       #define vec_add_32(a, b) _mm256_add_epi32(a, b)
       #define vec_madd_16(a, b) _mm256_madd_epi16(a, b)
 #elif defined (USE_SSE2)
+      using nnz_vec_t = __m128i;
       using vec_t = __m128i;
       #define vec_zero _mm_setzero_si128()
       #define vec_broadcast_32(a) _mm_set1_epi32(a)
@@ -224,7 +230,7 @@ static inline IndexType msb_(std::uint64_t b) {
 
       static_assert(InDims % 128 == 0);
       constexpr IndexType NumNnzCountChunks = InputDimensions / NnzInputSimdWidth;
-      const auto inputVector = reinterpret_cast<const vec_t*>(input);
+      const auto inputVector = reinterpret_cast<const nnz_vec_t*>(input);
 # if defined (USE_AVX512)
       for (IndexType i = 0; i < NumNnzCountChunks; i += 2) {
         const auto inputChunk0a = inputVector[i+0];
