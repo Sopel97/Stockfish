@@ -324,7 +324,7 @@ namespace Stockfish::Eval::NNUE {
 
           const int16x8_t* in0 = reinterpret_cast<const int16x8_t*>(&(accumulation[perspectives[p]][0]));
           const int16x8_t* in1 = reinterpret_cast<const int16x8_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
-                int16x8_t* out = reinterpret_cast<      int16x8_t*>(output + offset);
+                int8x16_t* out = reinterpret_cast<      int8x16_t*>(output + offset);
 
           for (IndexType j = 0; j < NumOutputChunks; j += 1)
           {
