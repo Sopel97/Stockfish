@@ -333,8 +333,8 @@ namespace Stockfish::Eval::NNUE {
               const int16x8_t sum1a = vmaxq_s16(vminq_s16(in1[j * 2 + 0], One), Zero);
               const int16x8_t sum1b = vmaxq_s16(vminq_s16(in1[j * 2 + 1], One), Zero);
 
-              const int8x8_t pa = vqshrun_n_s16(vmulq_s16(sum0a, sum1a), 7);
-              const int8x8_t pb = vqshrun_n_s16(vmulq_s16(sum0b, sum1b), 7);
+              const int8x8_t pa = vshrn_n_s16(vmulq_s16(sum0a, sum1a), 7);
+              const int8x8_t pb = vshrn_n_s16(vmulq_s16(sum0b, sum1b), 7);
 
               out[j] = vcombine_s8(pa, pb);
           }
