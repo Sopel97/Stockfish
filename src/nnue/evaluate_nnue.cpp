@@ -159,7 +159,7 @@ namespace Stockfish::Eval::NNUE {
 
     const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
-    const bool lazy = abs(psqt) > 1500;
+    const bool lazy = abs(psqt) > 1500 * OutputScale;
     const auto positional = network[bucket]->propagate(transformedFeatures, lazy);
 
     // Give more value to positional evaluation when adjusted flag is set
