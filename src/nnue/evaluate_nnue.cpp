@@ -159,7 +159,8 @@ namespace Stockfish::Eval::NNUE {
 
     const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
-    const auto positional = network[bucket]->propagate(transformedFeatures);
+    const bool lazy = abs(psqt) > 800;
+    const auto positional = network[bucket]->propagate(transformedFeatures, lazy);
 
     // Give more value to positional evaluation when adjusted flag is set
     if (adjusted)
@@ -199,7 +200,7 @@ namespace Stockfish::Eval::NNUE {
     t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
     for (std::size_t bucket = 0; bucket < LayerStacks; ++bucket) {
       const auto materialist = featureTransformer->transform(pos, transformedFeatures, bucket);
-      const auto positional = network[bucket]->propagate(transformedFeatures);
+      const auto positional = network[bucket]->propagate(transformedFeatures, false);
 
       t.psqt[bucket] = static_cast<Value>( materialist / OutputScale );
       t.positional[bucket] = static_cast<Value>( positional / OutputScale );

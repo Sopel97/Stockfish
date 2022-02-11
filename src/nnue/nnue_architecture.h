@@ -86,7 +86,7 @@ struct Network
     return true;
   }
 
-  std::int32_t propagate(const TransformedFeatureType* transformedFeatures)
+  std::int32_t propagate(const TransformedFeatureType* transformedFeatures, bool lazy = false)
   {
     constexpr uint64_t alignment = CacheLineSize;
 
@@ -107,16 +107,26 @@ struct Network
     alignas(alignment) Buffer buffer;
 #endif
 
-    fc_0.propagate(transformedFeatures, buffer.fc_0_out);
-    ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
-    fc_1.propagate(buffer.ac_0_out, buffer.fc_1_out);
-    ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
-    fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
+    std::int32_t outputValue;
+    if (lazy)
+    {
+      fc_0.propagate_single_output<FC_0_OUTPUTS>(transformedFeatures, buffer.fc_0_out);
+      std::int32_t fwdOut = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*OutputScale) / (127*(1<<WeightScaleBits));
+      outputValue = fwdOut;
+    }
+    else
+    {
+      fc_0.propagate(transformedFeatures, buffer.fc_0_out);
+      ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
+      fc_1.propagate(buffer.ac_0_out, buffer.fc_1_out);
+      ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
+      fc_2.propagate(buffer.ac_1_out, buffer.fc_2_out);
 
-    // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in quantized form
-    // but we want 1.0 to be equal to 600*OutputScale
-    std::int32_t fwdOut = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*OutputScale) / (127*(1<<WeightScaleBits));
-    std::int32_t outputValue = buffer.fc_2_out[0] + fwdOut;
+      // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in quantized form
+      // but we want 1.0 to be equal to 600*OutputScale
+      std::int32_t fwdOut = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*OutputScale) / (127*(1<<WeightScaleBits));
+      outputValue = buffer.fc_2_out[0] + fwdOut;
+    }
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     buffer.~Buffer();
