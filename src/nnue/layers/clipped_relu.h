@@ -62,6 +62,19 @@ namespace Stockfish::Eval::NNUE::Layers {
     const OutputType* propagate(
         const InputType* input, OutputType* output) const {
 
+      if (InputDimensions == 32)
+      {
+        for (IndexType i = 0; i < 16; ++i) {
+          output[i] = static_cast<OutputType>(
+            std::max(0, std::min(127, (input[i] * input[i]) >> WeightScaleBits)));
+        }
+        for (IndexType i = 16; i < 32; ++i) {
+          output[i] = static_cast<OutputType>(
+            std::max(0, std::min(127, input[i] >> WeightScaleBits)));
+        }
+        return output;
+      }
+
   #if defined(USE_AVX2)
       if constexpr (InputDimensions % SimdWidth == 0) {
         constexpr IndexType NumChunks = InputDimensions / SimdWidth;
