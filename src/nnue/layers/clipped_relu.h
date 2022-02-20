@@ -66,7 +66,7 @@ namespace Stockfish::Eval::NNUE::Layers {
       {
         for (IndexType i = 0; i < 16; ++i) {
           output[i] = static_cast<OutputType>(
-            std::max(0, std::min(127, (input[i] * input[i]) >> WeightScaleBits)));
+            std::max(0, std::min(127, ((input[i] * input[i]) >> (2 * WeightScaleBits)) / 127)));
         }
         for (IndexType i = 16; i < 32; ++i) {
           output[i] = static_cast<OutputType>(
