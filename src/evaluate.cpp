@@ -1093,10 +1093,13 @@ Value Eval::evaluate(const Position& pos, int* complexity) {
   if (complexity && (!useNNUE || useClassical))
        *complexity = abs(v - psq);
 
-  if (v > Value(-5) && v < Value(0))
-    v = Value(-5);
-  else if (v < Value(5) && v >= Value(0))
-    v = Value(5);
+  if (v < Value(0))
+    v = v - Value(5);
+  else
+    v = v + Value(5);
+
+  // Guarantee evaluation does not hit the tablebase range
+  v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 
   return v;
 }
