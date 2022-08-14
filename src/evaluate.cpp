@@ -1093,6 +1093,11 @@ Value Eval::evaluate(const Position& pos, int* complexity) {
   if (complexity && (!useNNUE || useClassical))
        *complexity = abs(v - psq);
 
+  if (v > Value(-5) && v < Value(0))
+    v = Value(-5);
+  else if (v < Value(5) && v >= Value(0))
+    v = Value(5);
+
   return v;
 }
 
