@@ -32,6 +32,7 @@
 #include "thread.h"
 #include "timeman.h"
 #include "tt.h"
+#include "move_tt.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 
@@ -930,11 +931,18 @@ moves_loop: // When in check, search starts here
 
     Move countermove = thisThread->counterMoves[pos.piece_on(prevSq)][prevSq];
 
+    Key mkey = move_tt_key((ss-1)->currentMove, (ss-2)->currentMove);
+    bool mttHit;
+    MoveTTEntry* mtte = MoveTT.probe(mkey, mttHit);
+    Move ttm = mttHit ? (Move)mtte->move() : MOVE_NONE;
+    if (ttm != MOVE_NONE && (!is_ok(ttm) || !pos.pseudo_legal(ttm)))
+      ttm = MOVE_NONE;
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
                                       &captureHistory,
                                       contHist,
                                       countermove,
-                                      ss->killers);
+                                      ss->killers,
+                                      ttm);
 
     value = bestValue;
     moveCountPruning = singularQuietLMR = false;
@@ -1688,6 +1696,11 @@ moves_loop: // When in check, search starts here
             thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
             update_continuation_histories(ss, pos.moved_piece(quietsSearched[i]), to_sq(quietsSearched[i]), -bonus2);
         }
+
+        Key key = move_tt_key((ss-1)->currentMove, (ss-2)->currentMove);
+        bool ttHit;
+        MoveTTEntry* tte = MoveTT.probe(key, ttHit);
+        tte->save(key, bestMove, depth);
     }
     else
         // Increase stats for the best move in case it was a capture move
