@@ -90,7 +90,7 @@ struct Network
     return true;
   }
 
-  std::int32_t propagate(const TransformedFeatureType* transformedFeatures)
+  std::pair<std::int32_t, std::int32_t> propagate(const TransformedFeatureType* transformedFeatures)
   {
     struct alignas(CacheLineSize) Buffer
     {
@@ -127,9 +127,7 @@ struct Network
     // buffer.fc_0_out[FC_0_OUTPUTS] is such that 1.0 is equal to 127*(1<<WeightScaleBits) in quantized form
     // but we want 1.0 to be equal to 600*OutputScale
     std::int32_t fwdOut = int(buffer.fc_0_out[FC_0_OUTPUTS]) * (600*OutputScale) / (127*(1<<WeightScaleBits));
-    std::int32_t outputValue = buffer.fc_2_out[0] + fwdOut;
-
-    return outputValue;
+    return { buffer.fc_2_out[0], fwdOut };
   }
 };
 

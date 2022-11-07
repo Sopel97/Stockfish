@@ -32,6 +32,28 @@
 
 #include "evaluate_nnue.h"
 
+namespace Stockfish {
+constexpr int64_t DENOM = 1 << 16;
+int output_coeffs1[3] = {
+  DENOM, DENOM, DENOM
+};
+int output_coeffs2[6] = {
+  0, 0, 0,
+  0, 0, 0
+};
+int output_coeffs3[10] = {
+  0, 0, 0,
+  0, 0, 0,
+  0, 0, 0,
+  0
+};
+TUNE(SetRange(-2*DENOM, 2*DENOM), output_coeffs1);
+//TUNE(SetRange(-2*(1 << 8), 2*(1 << 8)), output_coeffs2); // halts lmao
+//TUNE(SetRange(-2*(1 << 4), 2*(1 << 4)), output_coeffs3);
+TUNE(SetRange(-2*256, 2*256), output_coeffs2);
+TUNE(SetRange(-2*16, 2*16), output_coeffs3);
+}
+
 namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
@@ -143,7 +165,6 @@ namespace Stockfish::Eval::NNUE {
     // overaligning stack variables with alignas() doesn't work correctly.
 
     constexpr uint64_t alignment = CacheLineSize;
-    int delta = 24 - pos.non_pawn_material() / 9560;
 
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     TransformedFeatureType transformedFeaturesUnaligned[
@@ -159,16 +180,41 @@ namespace Stockfish::Eval::NNUE {
 
     const int bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
-    const auto positional = network[bucket]->propagate(transformedFeatures);
+    const auto [positional, fwd] = network[bucket]->propagate(transformedFeatures);
 
     if (complexity)
-        *complexity = abs(psqt - positional) / OutputScale;
+        *complexity = abs(psqt - (positional + fwd)) / OutputScale;
 
-    // Give more value to positional evaluation when adjusted flag is set
     if (adjusted)
-        return static_cast<Value>(((1024 - delta) * psqt + (1024 + delta) * positional) / (1024 * OutputScale));
+    {
+        const int64_t p0 = positional;
+        const int64_t p1 = fwd;
+        const int64_t p2 = psqt;
+        int64_t v =
+              (int64_t)(output_coeffs1[0]) * p0
+            + (int64_t)(output_coeffs1[1]) * p1
+            + (int64_t)(output_coeffs1[2]) * p2
+            + (int64_t)(output_coeffs2[0]) * p0 * p0
+            + (int64_t)(output_coeffs2[1]) * p1 * p1
+            + (int64_t)(output_coeffs2[2]) * p2 * p2
+            + (int64_t)(output_coeffs2[3]) * p0 * p1
+            + (int64_t)(output_coeffs2[4]) * p1 * p2
+            + (int64_t)(output_coeffs2[5]) * p2 * p0
+            + (int64_t)(output_coeffs3[0]) * p0 * p0 * p0
+            + (int64_t)(output_coeffs3[1]) * p1 * p1 * p1
+            + (int64_t)(output_coeffs3[2]) * p2 * p2 * p2
+            + (int64_t)(output_coeffs3[3]) * p0 * p0 * p1
+            + (int64_t)(output_coeffs3[4]) * p0 * p0 * p2
+            + (int64_t)(output_coeffs3[5]) * p1 * p1 * p2
+            + (int64_t)(output_coeffs3[6]) * p1 * p1 * p0
+            + (int64_t)(output_coeffs3[7]) * p2 * p2 * p0
+            + (int64_t)(output_coeffs3[8]) * p2 * p2 * p1
+            + (int64_t)(output_coeffs3[9]) * p0 * p1 * p2;
+
+        return static_cast<Value>(v / (DENOM * OutputScale));
+    }
     else
-        return static_cast<Value>((psqt + positional) / OutputScale);
+        return static_cast<Value>((psqt + positional + fwd) / OutputScale);
   }
 
   struct NnueEvalTrace {
@@ -202,10 +248,10 @@ namespace Stockfish::Eval::NNUE {
     t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
     for (IndexType bucket = 0; bucket < LayerStacks; ++bucket) {
       const auto materialist = featureTransformer->transform(pos, transformedFeatures, bucket);
-      const auto positional = network[bucket]->propagate(transformedFeatures);
+      const auto [positional, fwd] = network[bucket]->propagate(transformedFeatures);
 
       t.psqt[bucket] = static_cast<Value>( materialist / OutputScale );
-      t.positional[bucket] = static_cast<Value>( positional / OutputScale );
+      t.positional[bucket] = static_cast<Value>( (positional+fwd) / OutputScale );
     }
 
     return t;
