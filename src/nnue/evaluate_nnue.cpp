@@ -172,7 +172,13 @@ namespace Stockfish::Eval::NNUE {
         int64_t v =
               (int64_t)(60203) * p0
             + (int64_t)(77036) * p1
-            + (int64_t)(67319) * p2;
+            + (int64_t)(67319) * p2
+            + (int64_t)(55) * p0 * p0
+            + (int64_t)(8) * p1 * p1
+            + (int64_t)(-40) * p2 * p2
+            + (int64_t)(-6) * p0 * p1
+            + (int64_t)(61) * p1 * p2
+            + (int64_t)(-60) * p2 * p0;
 
         return static_cast<Value>(v / (DENOM * OutputScale));
     }
