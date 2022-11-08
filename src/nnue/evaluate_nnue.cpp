@@ -37,21 +37,7 @@ constexpr int64_t DENOM = 1 << 16;
 int output_coeffs1[3] = {
   DENOM, DENOM, DENOM
 };
-int output_coeffs2[6] = {
-  0, 0, 0,
-  0, 0, 0
-};
-int output_coeffs3[10] = {
-  0, 0, 0,
-  0, 0, 0,
-  0, 0, 0,
-  0
-};
 TUNE(SetRange(-2*DENOM, 2*DENOM), output_coeffs1);
-//TUNE(SetRange(-2*(1 << 8), 2*(1 << 8)), output_coeffs2); // halts lmao
-//TUNE(SetRange(-2*(1 << 4), 2*(1 << 4)), output_coeffs3);
-TUNE(SetRange(-2*256, 2*256), output_coeffs2);
-TUNE(SetRange(-2*16, 2*16), output_coeffs3);
 }
 
 namespace Stockfish::Eval::NNUE {
@@ -193,23 +179,7 @@ namespace Stockfish::Eval::NNUE {
         int64_t v =
               (int64_t)(output_coeffs1[0]) * p0
             + (int64_t)(output_coeffs1[1]) * p1
-            + (int64_t)(output_coeffs1[2]) * p2
-            + (int64_t)(output_coeffs2[0]) * p0 * p0
-            + (int64_t)(output_coeffs2[1]) * p1 * p1
-            + (int64_t)(output_coeffs2[2]) * p2 * p2
-            + (int64_t)(output_coeffs2[3]) * p0 * p1
-            + (int64_t)(output_coeffs2[4]) * p1 * p2
-            + (int64_t)(output_coeffs2[5]) * p2 * p0
-            + (int64_t)(output_coeffs3[0]) * p0 * p0 * p0
-            + (int64_t)(output_coeffs3[1]) * p1 * p1 * p1
-            + (int64_t)(output_coeffs3[2]) * p2 * p2 * p2
-            + (int64_t)(output_coeffs3[3]) * p0 * p0 * p1
-            + (int64_t)(output_coeffs3[4]) * p0 * p0 * p2
-            + (int64_t)(output_coeffs3[5]) * p1 * p1 * p2
-            + (int64_t)(output_coeffs3[6]) * p1 * p1 * p0
-            + (int64_t)(output_coeffs3[7]) * p2 * p2 * p0
-            + (int64_t)(output_coeffs3[8]) * p2 * p2 * p1
-            + (int64_t)(output_coeffs3[9]) * p0 * p1 * p2;
+            + (int64_t)(output_coeffs1[2]) * p2;
 
         return static_cast<Value>(v / (DENOM * OutputScale));
     }
