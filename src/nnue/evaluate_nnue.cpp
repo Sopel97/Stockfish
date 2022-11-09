@@ -170,9 +170,9 @@ namespace Stockfish::Eval::NNUE {
         const int64_t p1 = fwd;
         const int64_t p2 = psqt;
         int64_t v =
-              (int64_t)(60203) * p0
-            + (int64_t)(77036) * p1
-            + (int64_t)(67319) * p2;
+              (int64_t)(75649) * p0
+            + (int64_t)(71819) * p1
+            + (int64_t)(71641) * p2;
 
         return static_cast<Value>(v / (DENOM * OutputScale));
     }
