@@ -378,20 +378,17 @@ namespace Stockfish::Eval::NNUE {
 
         // Gather all features to be updated.
         const Square ksq = pos.square<KING>(Perspective);
-        FeatureSet::IndexList removed[2], added[2];
+        FeatureSet::IndexList removed, added;
         FeatureSet::append_changed_indices<Perspective>(
-          ksq, next->dirtyPiece, removed[0], added[0]);
+          ksq, next->dirtyPiece, removed, added);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           FeatureSet::append_changed_indices<Perspective>(
-            ksq, st2->dirtyPiece, removed[1], added[1]);
+            ksq, st2->dirtyPiece, removed, added);
 
         // Mark the accumulators as computed.
-        next->accumulator.computed[Perspective] = true;
         pos.state()->accumulator.computed[Perspective] = true;
 
         // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
-        StateInfo *states_to_update[3] =
-          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
   #ifdef VECTOR
         for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
         {
@@ -401,32 +398,29 @@ namespace Stockfish::Eval::NNUE {
           for (IndexType k = 0; k < NumRegs; ++k)
             acc[k] = vec_load(&accTile[k]);
 
-          for (IndexType i = 0; states_to_update[i]; ++i)
+          // Difference calculation for the deactivated features
+          for (const auto index : removed)
           {
-            // Difference calculation for the deactivated features
-            for (const auto index : removed[i])
-            {
-              const IndexType offset = HalfDimensions * index + j * TileHeight;
-              auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
-              for (IndexType k = 0; k < NumRegs; ++k)
-                acc[k] = vec_sub_16(acc[k], column[k]);
-            }
-
-            // Difference calculation for the activated features
-            for (const auto index : added[i])
-            {
-              const IndexType offset = HalfDimensions * index + j * TileHeight;
-              auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
-              for (IndexType k = 0; k < NumRegs; ++k)
-                acc[k] = vec_add_16(acc[k], column[k]);
-            }
-
-            // Store accumulator
-            accTile = reinterpret_cast<vec_t*>(
-              &states_to_update[i]->accumulator.accumulation[Perspective][j * TileHeight]);
+            const IndexType offset = HalfDimensions * index + j * TileHeight;
+            auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
             for (IndexType k = 0; k < NumRegs; ++k)
-              vec_store(&accTile[k], acc[k]);
+              acc[k] = vec_sub_16(acc[k], column[k]);
           }
+
+          // Difference calculation for the activated features
+          for (const auto index : added)
+          {
+            const IndexType offset = HalfDimensions * index + j * TileHeight;
+            auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
+            for (IndexType k = 0; k < NumRegs; ++k)
+              acc[k] = vec_add_16(acc[k], column[k]);
+          }
+
+          // Store accumulator
+          accTile = reinterpret_cast<vec_t*>(
+            &pos.state()->accumulator.accumulation[Perspective][j * TileHeight]);
+          for (IndexType k = 0; k < NumRegs; ++k)
+            vec_store(&accTile[k], acc[k]);
         }
 
         for (IndexType j = 0; j < PSQTBuckets / PsqtTileHeight; ++j)
@@ -437,69 +431,61 @@ namespace Stockfish::Eval::NNUE {
           for (std::size_t k = 0; k < NumPsqtRegs; ++k)
             psqt[k] = vec_load_psqt(&accTilePsqt[k]);
 
-          for (IndexType i = 0; states_to_update[i]; ++i)
-          {
-            // Difference calculation for the deactivated features
-            for (const auto index : removed[i])
-            {
-              const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
-              auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
-              for (std::size_t k = 0; k < NumPsqtRegs; ++k)
-                psqt[k] = vec_sub_psqt_32(psqt[k], columnPsqt[k]);
-            }
-
-            // Difference calculation for the activated features
-            for (const auto index : added[i])
-            {
-              const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
-              auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
-              for (std::size_t k = 0; k < NumPsqtRegs; ++k)
-                psqt[k] = vec_add_psqt_32(psqt[k], columnPsqt[k]);
-            }
-
-            // Store accumulator
-            accTilePsqt = reinterpret_cast<psqt_vec_t*>(
-              &states_to_update[i]->accumulator.psqtAccumulation[Perspective][j * PsqtTileHeight]);
-            for (std::size_t k = 0; k < NumPsqtRegs; ++k)
-              vec_store_psqt(&accTilePsqt[k], psqt[k]);
-          }
-        }
-
-  #else
-        for (IndexType i = 0; states_to_update[i]; ++i)
-        {
-          std::memcpy(states_to_update[i]->accumulator.accumulation[Perspective],
-              st->accumulator.accumulation[Perspective],
-              HalfDimensions * sizeof(BiasType));
-
-          for (std::size_t k = 0; k < PSQTBuckets; ++k)
-            states_to_update[i]->accumulator.psqtAccumulation[Perspective][k] = st->accumulator.psqtAccumulation[Perspective][k];
-
-          st = states_to_update[i];
-
           // Difference calculation for the deactivated features
-          for (const auto index : removed[i])
+          for (const auto index : removed)
           {
-            const IndexType offset = HalfDimensions * index;
-
-            for (IndexType j = 0; j < HalfDimensions; ++j)
-              st->accumulator.accumulation[Perspective][j] -= weights[offset + j];
-
-            for (std::size_t k = 0; k < PSQTBuckets; ++k)
-              st->accumulator.psqtAccumulation[Perspective][k] -= psqtWeights[index * PSQTBuckets + k];
+            const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
+            auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
+            for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+              psqt[k] = vec_sub_psqt_32(psqt[k], columnPsqt[k]);
           }
 
           // Difference calculation for the activated features
-          for (const auto index : added[i])
+          for (const auto index : added)
           {
-            const IndexType offset = HalfDimensions * index;
-
-            for (IndexType j = 0; j < HalfDimensions; ++j)
-              st->accumulator.accumulation[Perspective][j] += weights[offset + j];
-
-            for (std::size_t k = 0; k < PSQTBuckets; ++k)
-              st->accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
+            const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
+            auto columnPsqt = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
+            for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+              psqt[k] = vec_add_psqt_32(psqt[k], columnPsqt[k]);
           }
+
+          // Store accumulator
+          accTilePsqt = reinterpret_cast<psqt_vec_t*>(
+            &pos.state()->accumulator.psqtAccumulation[Perspective][j * PsqtTileHeight]);
+          for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+            vec_store_psqt(&accTilePsqt[k], psqt[k]);
+        }
+
+  #else
+        std::memcpy(states_to_update[i]->accumulator.accumulation[Perspective],
+            st->accumulator.accumulation[Perspective],
+            HalfDimensions * sizeof(BiasType));
+
+        for (std::size_t k = 0; k < PSQTBuckets; ++k)
+          pos.state()->accumulator.psqtAccumulation[Perspective][k] = st->accumulator.psqtAccumulation[Perspective][k];
+
+        // Difference calculation for the deactivated features
+        for (const auto index : removed)
+        {
+          const IndexType offset = HalfDimensions * index;
+
+          for (IndexType j = 0; j < HalfDimensions; ++j)
+            pos.state()->accumulator.accumulation[Perspective][j] -= weights[offset + j];
+
+          for (std::size_t k = 0; k < PSQTBuckets; ++k)
+            pos.state()->accumulator.psqtAccumulation[Perspective][k] -= psqtWeights[index * PSQTBuckets + k];
+        }
+
+        // Difference calculation for the activated features
+        for (const auto index : added)
+        {
+          const IndexType offset = HalfDimensions * index;
+
+          for (IndexType j = 0; j < HalfDimensions; ++j)
+            pos.state()->accumulator.accumulation[Perspective][j] += weights[offset + j];
+
+          for (std::size_t k = 0; k < PSQTBuckets; ++k)
+            pos.state()->accumulator.psqtAccumulation[Perspective][k] += psqtWeights[index * PSQTBuckets + k];
         }
   #endif
       }
