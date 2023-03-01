@@ -653,10 +653,34 @@ namespace Stockfish::Eval::NNUE {
         //     1. for the current position
         //     2. the next accumulator after the computed one
         // The heuristic may change in the future.
-        StateInfo *states_to_update[3] =
-          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
+        StateInfo *states_to_update[4] = {};
 
-        update_accumulator_incremental<Perspective, 3>(pos, oldest_st, states_to_update);
+        StateInfo* current = pos.state();
+        StateInfo* previous = current->previous;
+
+        if (next == current)
+        {
+          states_to_update[0] = next;
+          states_to_update[1] = nullptr;
+          states_to_update[2] = nullptr;
+          states_to_update[3] = nullptr;
+        }
+        else if (next == previous)
+        {
+          states_to_update[0] = next;
+          states_to_update[1] = current;
+          states_to_update[2] = nullptr;
+          states_to_update[3] = nullptr;
+        }
+        else
+        {
+          states_to_update[0] = next;
+          states_to_update[1] = previous;
+          states_to_update[2] = current;
+          states_to_update[3] = nullptr;
+        }
+
+        update_accumulator_incremental<Perspective, 4>(pos, oldest_st, states_to_update);
       }
       else
       {
