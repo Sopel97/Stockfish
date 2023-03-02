@@ -890,6 +890,8 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
       }
   }
 
+  Stockfish::Eval::NNUE::hint_common_parent_position(*this);
+
   assert(pos_is_ok());
 }
 
