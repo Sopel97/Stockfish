@@ -28,9 +28,23 @@
 #include "tt.h"
 #include "uci.h"
 
+#if defined(__linux__) && defined (USE_AMX)
+#include <sys/syscall.h>      /* Definition of SYS_* constants */
+#include <unistd.h>
+#endif
+
 using namespace Stockfish;
 
 int main(int argc, char* argv[]) {
+
+#if defined (__linux__) && defined (USE_AMX)
+  /* Set_tiledata_use() - Invoke syscall to set ARCH_SET_STATE_USE */
+  if (syscall(SYS_arch_prctl, ARCH_REQ_XCOMP_PERM, XFEATURE_XTILEDATA))
+  {
+    printf("\n Failed to enable XFEATURE_XTILEDATA \n\n");
+    exit(0);
+  }
+#endif
 
   std::cout << engine_info() << std::endl;
 

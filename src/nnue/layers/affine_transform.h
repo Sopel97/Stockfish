@@ -169,6 +169,141 @@ namespace Stockfish::Eval::NNUE::Layers {
   constexpr IndexType LargeInputSize = std::numeric_limits<IndexType>::max();
 #endif
 
+#if defined (USE_AMX)
+  struct __tile_config
+  {
+    uint8_t palette_id;
+    uint8_t start_row;
+    uint8_t reserved_0[14];
+    uint16_t colsb[16];
+    uint8_t rows[16];
+  };
+
+  // A specialization for large inputs and AMX.
+  // The implementation hardcodes 16 outputs because
+  // it's not easy to generalize to different sizes with AMX.
+  template <IndexType InDims, IndexType OutDims>
+  class AffineTransform<InDims, OutDims, std::enable_if_t<(ceil_to_multiple<IndexType>(InDims, MaxSimdWidth) >= LargeInputSize)>> {
+    static_assert(OutDims == 16);
+    static_assert(InDims % 64 == 0);
+   public:
+    // Input/output type
+    using InputType = std::uint8_t;
+    using OutputType = std::int32_t;
+
+    // Number of input/output dimensions
+    static constexpr IndexType InputDimensions = InDims;
+    static constexpr IndexType OutputDimensions = OutDims;
+
+    static constexpr IndexType PaddedInputDimensions =
+      ceil_to_multiple<IndexType>(InputDimensions, MaxSimdWidth);
+    static constexpr IndexType PaddedOutputDimensions =
+      ceil_to_multiple<IndexType>(OutputDimensions, MaxSimdWidth);
+
+    using OutputBuffer = OutputType[PaddedOutputDimensions];
+
+    static_assert(PaddedInputDimensions >= LargeInputSize, "Something went wrong. This specialization should not have been chosen.");
+
+    // Hash value embedded in the evaluation file
+    static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash) {
+      std::uint32_t hashValue = 0xCC03DAE4u;
+      hashValue += OutputDimensions;
+      hashValue ^= prevHash >> 1;
+      hashValue ^= prevHash << 31;
+      return hashValue;
+    }
+
+    static IndexType get_weight_index(IndexType i)
+    {
+      // We need to interleave 4 consecutive rows for dpbusd-like accumulation
+      // We also need to transpose because we keep the matrix column-major.
+      const IndexType col = i / InputDimensions;
+      const IndexType row = i % InputDimensions;
+      const IndexType row4 = row / 4;
+      const IndexType col4 = row % 4 * 16 + col;
+      const IndexType col16 = col4 % 16;
+      const IndexType col4a = col4 / 16;
+
+      return row4 * 64 + col16 * 4 + col4a;
+    }
+
+    // Read network parameters
+    bool read_parameters(std::istream& stream) {
+      for (IndexType i = 0; i < OutputDimensions; ++i)
+        biases[i] = read_little_endian<BiasType>(stream);
+
+      for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
+
+      return !stream.fail();
+    }
+
+    // Write network parameters
+    bool write_parameters(std::ostream& stream) const {
+      for (IndexType i = 0; i < OutputDimensions; ++i)
+          write_little_endian<BiasType>(stream, biases[i]);
+
+      for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
+
+      return !stream.fail();
+    }
+
+    // Forward propagation
+    const OutputType* propagate(
+        const InputType* input, OutputType* output) const {
+
+// These need to be literals, not constant expressions,
+// because GCC doesn't allow non-literals as register numbers.
+#define INPUT_TILE 0
+#define WEIGHT_TILE 1
+#define RESULT_TILE 2
+
+      __tile_config tileinfo;
+      std::memset(&tileinfo, 0, sizeof(tileinfo));
+
+      tileinfo.palette_id = 1;
+      tileinfo.start_row = 0;
+
+      tileinfo.rows[INPUT_TILE] = 1;
+      tileinfo.colsb[INPUT_TILE] = 64;
+
+      tileinfo.rows[WEIGHT_TILE] = 16;
+      tileinfo.colsb[WEIGHT_TILE] = 64;
+
+      tileinfo.rows[RESULT_TILE] = 1;
+      tileinfo.colsb[RESULT_TILE] = 16 * 4;
+
+      _tile_loadconfig(&tileinfo);
+
+      _tile_loadd(RESULT_TILE, biases, 16 * 4);
+
+      for (IndexType block = 0; block < InputDimensions / 64; ++block)
+      {
+        _tile_loadd(INPUT_TILE, input + block * 64, 64);
+        _tile_loadd(WEIGHT_TILE, weights + block * 64 * 16, 64);
+        _tile_dpbusd(RESULT_TILE, INPUT_TILE, WEIGHT_TILE);
+      }
+
+      _tile_stored(RESULT_TILE, output, 64);
+
+#undef INPUT_TILE
+#undef WEIGHT_TILE
+#undef RESULT_TILE
+
+      return output;
+    }
+
+   private:
+    using BiasType = OutputType;
+    using WeightType = std::int8_t;
+
+    alignas(CacheLineSize) BiasType biases[OutputDimensions];
+    alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
+  };
+
+#else
+
   // A specialization for large inputs.
   template <IndexType InDims, IndexType OutDims>
   class AffineTransform<InDims, OutDims, std::enable_if_t<(ceil_to_multiple<IndexType>(InDims, MaxSimdWidth) >= LargeInputSize)>> {
@@ -397,6 +532,7 @@ namespace Stockfish::Eval::NNUE::Layers {
     alignas(CacheLineSize) BiasType biases[OutputDimensions];
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
   };
+#endif
 
   template <IndexType InDims, IndexType OutDims>
   class AffineTransform<InDims, OutDims, std::enable_if_t<(ceil_to_multiple<IndexType>(InDims, MaxSimdWidth) < LargeInputSize)>> {
