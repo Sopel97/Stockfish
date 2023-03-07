@@ -255,9 +255,11 @@ namespace Stockfish::Eval::NNUE::Layers {
 
 // These need to be literals, not constant expressions,
 // because GCC doesn't allow non-literals as register numbers.
-#define INPUT_TILE 0
-#define WEIGHT_TILE 1
-#define RESULT_TILE 2
+#define INPUT_TILE_0 0
+#define INPUT_TILE_1 1
+#define WEIGHT_TILE_0 2
+#define WEIGHT_TILE_1 3
+#define RESULT_TILE 4
 
       __tile_config tileinfo;
       std::memset(&tileinfo, 0, sizeof(tileinfo));
@@ -265,11 +267,17 @@ namespace Stockfish::Eval::NNUE::Layers {
       tileinfo.palette_id = 1;
       tileinfo.start_row = 0;
 
-      tileinfo.rows[INPUT_TILE] = 1;
-      tileinfo.colsb[INPUT_TILE] = 64;
+      tileinfo.rows[INPUT_TILE_0] = 1;
+      tileinfo.colsb[INPUT_TILE_0] = 64;
 
-      tileinfo.rows[WEIGHT_TILE] = 16;
-      tileinfo.colsb[WEIGHT_TILE] = 64;
+      tileinfo.rows[INPUT_TILE_1] = 1;
+      tileinfo.colsb[INPUT_TILE_1] = 64;
+
+      tileinfo.rows[WEIGHT_TILE_0] = 16;
+      tileinfo.colsb[WEIGHT_TILE_0] = 64;
+
+      tileinfo.rows[WEIGHT_TILE_1] = 16;
+      tileinfo.colsb[WEIGHT_TILE_1] = 64;
 
       tileinfo.rows[RESULT_TILE] = 1;
       tileinfo.colsb[RESULT_TILE] = 16 * 4;
@@ -278,11 +286,15 @@ namespace Stockfish::Eval::NNUE::Layers {
 
       _tile_loadd(RESULT_TILE, biases, 16 * 4);
 
-      for (IndexType block = 0; block < InputDimensions / 64; ++block)
+      static_assert(InDims % 128 == 0);
+      for (IndexType block = 0; block < InputDimensions / 64; block += 2)
       {
-        _tile_loadd(INPUT_TILE, input + block * 64, 64);
-        _tile_loadd(WEIGHT_TILE, weights + block * 64 * 16, 64);
-        _tile_dpbusd(RESULT_TILE, INPUT_TILE, WEIGHT_TILE);
+        _tile_loadd(INPUT_TILE_0, input + block * 64, 64);
+        _tile_loadd(WEIGHT_TILE_0, weights + block * 64 * 16, 64);
+        _tile_dpbusd(RESULT_TILE, INPUT_TILE_0, WEIGHT_TILE_0);
+        _tile_loadd(INPUT_TILE_1, input + (block+1) * 64, 64);
+        _tile_loadd(WEIGHT_TILE_1, weights + (block+1) * 64 * 16, 64);
+        _tile_dpbusd(RESULT_TILE, INPUT_TILE_1, WEIGHT_TILE_1);
       }
 
       _tile_stored(RESULT_TILE, output, 64);
