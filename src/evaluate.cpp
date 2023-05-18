@@ -62,6 +62,7 @@ namespace Eval {
 
   bool useNNUE;
   string currentEvalFileName = "None";
+  string currentPolicyEvalFileName = "None";
 
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
   /// receives a UCI command "setoption name EvalFile value nn-[a-z0-9]{12}.nnue"
@@ -112,6 +113,53 @@ namespace Eval {
                 if (NNUE::load_eval(eval_file, stream))
                     currentEvalFileName = eval_file;
             }
+        }
+  }
+
+  void NNUE::init_policy() {
+
+    useNNUE = Options["Use NNUE"];
+    if (!useNNUE)
+        return;
+
+    string eval_file = string(Options["PolicyEvalFile"]);
+    if (eval_file.empty())
+        eval_file = EvalFilePolicyDefaultName;
+
+    #if defined(DEFAULT_NNUE_DIRECTORY)
+    vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory , stringify(DEFAULT_NNUE_DIRECTORY) };
+    #else
+    vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory };
+    #endif
+
+    for (const string& directory : dirs)
+        if (currentPolicyEvalFileName != eval_file)
+        {
+            if (directory != "<internal>")
+            {
+                ifstream stream(directory + eval_file, ios::binary);
+                if (NNUE::load_policy_eval(eval_file, stream))
+                    currentPolicyEvalFileName = eval_file;
+            }
+
+            /*
+            TODO: embed
+            if (directory == "<internal>" && eval_file == EvalFilePolicyDefaultName)
+            {
+                // C++ way to prepare a buffer for a memory stream
+                class MemoryBuffer : public basic_streambuf<char> {
+                    public: MemoryBuffer(char* p, size_t n) { setg(p, p, p + n); setp(p, p + n); }
+                };
+
+                MemoryBuffer buffer(const_cast<char*>(reinterpret_cast<const char*>(gEmbeddedPolicyNNUEData)),
+                                    size_t(gEmbeddedPolicyNNUESize));
+                (void) gEmbeddedPolicyNNUEEnd; // Silence warning on unused variable
+
+                istream stream(&buffer);
+                if (NNUE::load_policy_eval(eval_file, stream))
+                    currentPolicyEvalFileName = eval_file;
+            }
+            */
         }
   }
 

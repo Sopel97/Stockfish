@@ -43,8 +43,9 @@ static void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
 static void on_logger(const Option& o) { start_logger(o); }
 static void on_threads(const Option& o) { Threads.set(size_t(o)); }
 static void on_tb_path(const Option& o) { Tablebases::init(o); }
-static void on_use_NNUE(const Option&) { Eval::NNUE::init(); }
+static void on_use_NNUE(const Option&) { Eval::NNUE::init(); Eval::NNUE::init_policy(); }
 static void on_eval_file(const Option&) { Eval::NNUE::init(); }
+static void on_policy_eval_file(const Option&) { Eval::NNUE::init_policy(); }
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -81,6 +82,7 @@ void init(OptionsMap& o) {
   o["SyzygyProbeLimit"]      << Option(7, 0, 7);
   o["Use NNUE"]              << Option(true, on_use_NNUE);
   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
+  o["PolicyEvalFile"]        << Option(EvalFilePolicyDefaultName, on_policy_eval_file);
 }
 
 

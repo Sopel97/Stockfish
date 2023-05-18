@@ -60,6 +60,7 @@ struct StateInfo {
 
   // Used by NNUE
   Eval::NNUE::Accumulator accumulator;
+  Eval::NNUE::PolicyAccumulator policyAccumulator;
   DirtyPiece dirtyPiece;
 };
 

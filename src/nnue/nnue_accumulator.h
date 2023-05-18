@@ -32,6 +32,12 @@ namespace Stockfish::Eval::NNUE {
     bool computed[2];
   };
 
+  // Class that holds the result of affine transformation of input features
+  struct alignas(CacheLineSize) PolicyAccumulator {
+    std::int16_t accumulation[2][PolicyTransformedFeatureDimensions];
+    bool computed[2];
+  };
+
 }  // namespace Stockfish::Eval::NNUE
 
 #endif // NNUE_ACCUMULATOR_H_INCLUDED

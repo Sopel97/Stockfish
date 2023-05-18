@@ -31,6 +31,9 @@ namespace Stockfish::Eval::NNUE {
   constexpr std::uint32_t HashValue =
       FeatureTransformer::get_hash_value() ^ Network::get_hash_value();
 
+  constexpr std::uint32_t PolicyHashValue =
+      PolicyFeatureTransformer::get_hash_value() ^ PolicyNetwork::get_hash_value();
+
 
   // Deleter for automating release of memory area
   template <typename T>
@@ -57,9 +60,11 @@ namespace Stockfish::Eval::NNUE {
 
   std::string trace(Position& pos);
   Value evaluate(const Position& pos, bool adjusted = false, int* complexity = nullptr);
+  void evaluate_policy(const Position& pos);
   void hint_common_parent_position(const Position& pos);
 
   bool load_eval(std::string name, std::istream& stream);
+  bool load_policy_eval(std::string name, std::istream& stream);
   bool save_eval(std::ostream& stream);
   bool save_eval(const std::optional<std::string>& filename);
 

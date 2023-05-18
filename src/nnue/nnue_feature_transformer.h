@@ -210,8 +210,9 @@ namespace Stockfish::Eval::NNUE {
           return 1;
       }
 
-      static constexpr int NumRegs     = BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD>();
-      static constexpr int NumPsqtRegs = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
+      static constexpr int NumRegs       = BestRegisterCount<vec_t, WeightType, TransformedFeatureDimensions, NumRegistersSIMD>();
+      static constexpr int PolicyNumRegs = BestRegisterCount<vec_t, WeightType, PolicyTransformedFeatureDimensions, NumRegistersSIMD>();
+      static constexpr int NumPsqtRegs   = BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
       #if defined(__GNUC__)
       #pragma GCC diagnostic pop
       #endif
@@ -667,6 +668,373 @@ namespace Stockfish::Eval::NNUE {
     alignas(CacheLineSize) BiasType biases[HalfDimensions];
     alignas(CacheLineSize) WeightType weights[HalfDimensions * InputDimensions];
     alignas(CacheLineSize) PSQTWeightType psqtWeights[InputDimensions * PSQTBuckets];
+  };
+
+
+  // Input feature converter
+  class PolicyFeatureTransformer {
+
+   private:
+    // Number of output dimensions for one side
+    static constexpr IndexType HalfDimensions = PolicyTransformedFeatureDimensions;
+
+    #ifdef VECTOR
+    static constexpr IndexType TileHeight = PolicyNumRegs * sizeof(vec_t) / 2;
+    static_assert(HalfDimensions % TileHeight == 0, "TileHeight must divide HalfDimensions");
+    #endif
+
+   public:
+    // Output type
+    using OutputType = TransformedFeatureType;
+
+    // Number of input/output dimensions
+    static constexpr IndexType InputDimensions = PolicyFeatureSet::Dimensions;
+    static constexpr IndexType OutputDimensions = HalfDimensions;
+
+    // Size of forward propagation buffer
+    static constexpr std::size_t BufferSize =
+        OutputDimensions * sizeof(OutputType);
+
+    // Hash value embedded in the evaluation file
+    static constexpr std::uint32_t get_hash_value() {
+      return PolicyFeatureSet::HashValue ^ (OutputDimensions * 2);
+    }
+
+    // Read network parameters
+    bool read_parameters(std::istream& stream) {
+
+      read_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
+      read_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
+
+      return !stream.fail();
+    }
+
+    // Write network parameters
+    bool write_parameters(std::ostream& stream) const {
+
+      write_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
+      write_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
+
+      return !stream.fail();
+    }
+
+    // Convert input features
+    void transform(const Position& pos, OutputType* output) const {
+      update_accumulator<WHITE>(pos);
+      update_accumulator<BLACK>(pos);
+
+      const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
+      const auto& accumulation = pos.state()->policyAccumulator.accumulation;
+
+      for (IndexType p = 0; p < 2; ++p)
+      {
+          const IndexType offset = (HalfDimensions / 2) * p;
+
+#if defined(VECTOR)
+
+          constexpr IndexType OutputChunkSize = MaxChunkSize;
+          static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
+          constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
+
+          vec_t Zero = vec_zero();
+          vec_t One = vec_set_16(127);
+
+          const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0]));
+          const vec_t* in1 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][HalfDimensions / 2]));
+                vec_t* out = reinterpret_cast<      vec_t*>(output + offset);
+
+          for (IndexType j = 0; j < NumOutputChunks; j += 1)
+          {
+              const vec_t sum0a = vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero);
+              const vec_t sum0b = vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero);
+              const vec_t sum1a = vec_max_16(vec_min_16(in1[j * 2 + 0], One), Zero);
+              const vec_t sum1b = vec_max_16(vec_min_16(in1[j * 2 + 1], One), Zero);
+
+              const vec_t pa = vec_mul_16(sum0a, sum1a);
+              const vec_t pb = vec_mul_16(sum0b, sum1b);
+
+              out[j] = vec_msb_pack_16(pa, pb);
+          }
+
+#else
+
+          for (IndexType j = 0; j < HalfDimensions / 2; ++j) {
+              BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][j + 0];
+              BiasType sum1 = accumulation[static_cast<int>(perspectives[p])][j + HalfDimensions / 2];
+              sum0 = std::max<int>(0, std::min<int>(127, sum0));
+              sum1 = std::max<int>(0, std::min<int>(127, sum1));
+              output[offset + j] = static_cast<OutputType>(sum0 * sum1 / 128);
+          }
+
+#endif
+      }
+
+#if defined(vec_cleanup)
+      vec_cleanup();
+#endif
+    } // end of function transform()
+
+    void hint_common_access(const Position& pos) const {
+      hint_common_access_for_perspective<WHITE>(pos);
+      hint_common_access_for_perspective<BLACK>(pos);
+    }
+
+   private:
+    template<Color Perspective>
+    [[nodiscard]] std::pair<StateInfo*, StateInfo*> try_find_computed_accumulator(const Position& pos) const {
+      // Look for a usable accumulator of an earlier position. We keep track
+      // of the estimated gain in terms of features to be added/subtracted.
+      StateInfo *st = pos.state(), *next = nullptr;
+      int gain = PolicyFeatureSet::refresh_cost(pos);
+      while (st->previous && !st->accumulator.computed[Perspective])
+      {
+        // This governs when a full feature refresh is needed and how many
+        // updates are better than just one full refresh.
+        if (   PolicyFeatureSet::requires_refresh(st, Perspective)
+            || (gain -= PolicyFeatureSet::update_cost(st) + 1) < 0)
+          break;
+        next = st;
+        st = st->previous;
+      }
+      return { st, next };
+    }
+
+    // NOTE: The parameter states_to_update is an array of position states, ending with nullptr.
+    //       All states must be sequential, that is states_to_update[i] must either be reachable
+    //       by repeatedly applying ->previous from states_to_update[i+1] or states_to_update[i] == nullptr.
+    //       computed_st must be reachable by repeatedly applying ->previous on states_to_update[0], if not nullptr.
+    template<Color Perspective, size_t N>
+    void update_accumulator_incremental(const Position& pos, StateInfo* computed_st, StateInfo* states_to_update[N]) const {
+      static_assert(N > 0);
+      assert(states_to_update[N-1] == nullptr);
+
+  #ifdef VECTOR
+      // Gcc-10.2 unnecessarily spills AVX2 registers if this array
+      // is defined in the VECTOR code below, once in each branch
+      vec_t acc[NumRegs];
+  #endif
+
+      if (states_to_update[0] == nullptr)
+        return;
+
+      // Update incrementally going back through states_to_update.
+
+      // Gather all features to be updated.
+      const Square ksq = pos.square<KING>(Perspective);
+
+      // The size must be enough to contain the largest possible update.
+      // That might depend on the feature set and generally relies on the
+      // feature set's update cost calculation to be correct and never
+      // allow updates with more added/removed features than MaxActiveDimensions.
+      PolicyFeatureSet::IndexList removed[N-1], added[N-1];
+
+      {
+        int i = N-2; // last potential state to update. Skip last element because it must be nullptr.
+        while (states_to_update[i] == nullptr)
+          --i;
+
+        StateInfo *st2 = states_to_update[i];
+
+        for (; i >= 0; --i)
+        {
+          states_to_update[i]->policyAccumulator.computed[Perspective] = true;
+
+          StateInfo* end_state = i == 0 ? computed_st : states_to_update[i - 1];
+
+          for (; st2 != end_state; st2 = st2->previous)
+            PolicyFeatureSet::append_changed_indices<Perspective>(
+              ksq, st2->dirtyPiece, removed[i], added[i]);
+        }
+      }
+
+      StateInfo* st = computed_st;
+
+      // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
+#ifdef VECTOR
+      for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
+      {
+        // Load accumulator
+        auto accTile = reinterpret_cast<vec_t*>(
+          &st->policyAccumulator.accumulation[Perspective][j * TileHeight]);
+        for (IndexType k = 0; k < NumRegs; ++k)
+          acc[k] = vec_load(&accTile[k]);
+
+        for (IndexType i = 0; states_to_update[i]; ++i)
+        {
+          // Difference calculation for the deactivated features
+          for (const auto index : removed[i])
+          {
+            const IndexType offset = HalfDimensions * index + j * TileHeight;
+            auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
+            for (IndexType k = 0; k < NumRegs; ++k)
+              acc[k] = vec_sub_16(acc[k], column[k]);
+          }
+
+          // Difference calculation for the activated features
+          for (const auto index : added[i])
+          {
+            const IndexType offset = HalfDimensions * index + j * TileHeight;
+            auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
+            for (IndexType k = 0; k < NumRegs; ++k)
+              acc[k] = vec_add_16(acc[k], column[k]);
+          }
+
+          // Store accumulator
+          accTile = reinterpret_cast<vec_t*>(
+            &states_to_update[i]->policyAccumulator.accumulation[Perspective][j * TileHeight]);
+          for (IndexType k = 0; k < NumRegs; ++k)
+            vec_store(&accTile[k], acc[k]);
+        }
+      }
+
+#else
+      for (IndexType i = 0; states_to_update[i]; ++i)
+      {
+        std::memcpy(states_to_update[i]->policyAccumulator.accumulation[Perspective],
+            st->policyAccumulator.accumulation[Perspective],
+            HalfDimensions * sizeof(BiasType));
+
+        st = states_to_update[i];
+
+        // Difference calculation for the deactivated features
+        for (const auto index : removed[i])
+        {
+          const IndexType offset = HalfDimensions * index;
+
+          for (IndexType j = 0; j < HalfDimensions; ++j)
+            st->policyAccumulator.accumulation[Perspective][j] -= weights[offset + j];
+        }
+
+        // Difference calculation for the activated features
+        for (const auto index : added[i])
+        {
+          const IndexType offset = HalfDimensions * index;
+
+          for (IndexType j = 0; j < HalfDimensions; ++j)
+            st->policyAccumulator.accumulation[Perspective][j] += weights[offset + j];
+        }
+      }
+#endif
+
+  #if defined(USE_MMX)
+      _mm_empty();
+  #endif
+    }
+
+    template<Color Perspective>
+    void update_accumulator_refresh(const Position& pos) const {
+  #ifdef VECTOR
+      // Gcc-10.2 unnecessarily spills AVX2 registers if this array
+      // is defined in the VECTOR code below, once in each branch
+      vec_t acc[NumRegs];
+  #endif
+
+      // Refresh the accumulator
+      // Could be extracted to a separate function because it's done in 2 places,
+      // but it's unclear if compilers would correctly handle register allocation.
+      auto& accumulator = pos.state()->policyAccumulator;
+      accumulator.computed[Perspective] = true;
+      PolicyFeatureSet::IndexList active;
+      PolicyFeatureSet::append_active_indices<Perspective>(pos, active);
+
+#ifdef VECTOR
+      for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
+      {
+        auto biasesTile = reinterpret_cast<const vec_t*>(
+            &biases[j * TileHeight]);
+        for (IndexType k = 0; k < NumRegs; ++k)
+          acc[k] = biasesTile[k];
+
+        for (const auto index : active)
+        {
+          const IndexType offset = HalfDimensions * index + j * TileHeight;
+          auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
+
+          for (unsigned k = 0; k < NumRegs; ++k)
+            acc[k] = vec_add_16(acc[k], column[k]);
+        }
+
+        auto accTile = reinterpret_cast<vec_t*>(
+            &accumulator.accumulation[Perspective][j * TileHeight]);
+        for (unsigned k = 0; k < NumRegs; k++)
+          vec_store(&accTile[k], acc[k]);
+      }
+
+#else
+      std::memcpy(accumulator.accumulation[Perspective], biases,
+          HalfDimensions * sizeof(BiasType));
+
+      for (std::size_t k = 0; k < PSQTBuckets; ++k)
+        accumulator.psqtAccumulation[Perspective][k] = 0;
+
+      for (const auto index : active)
+      {
+        const IndexType offset = HalfDimensions * index;
+
+        for (IndexType j = 0; j < HalfDimensions; ++j)
+          accumulator.accumulation[Perspective][j] += weights[offset + j];
+      }
+#endif
+
+  #if defined(USE_MMX)
+      _mm_empty();
+  #endif
+    }
+
+    template<Color Perspective>
+    void hint_common_access_for_perspective(const Position& pos) const {
+
+      // Works like update_accumulator, but performs less work.
+      // Updates ONLY the accumulator for pos.
+
+      // Look for a usable accumulator of an earlier position. We keep track
+      // of the estimated gain in terms of features to be added/subtracted.
+      // Fast early exit.
+      if (pos.state()->policyAccumulator.computed[Perspective])
+        return;
+
+      auto [oldest_st, _] = try_find_computed_accumulator<Perspective>(pos);
+
+      if (oldest_st->policyAccumulator.computed[Perspective])
+      {
+        // Only update current position accumulator to minimize work.
+        StateInfo* states_to_update[2] = { pos.state(), nullptr };
+        update_accumulator_incremental<Perspective, 2>(pos, oldest_st, states_to_update);
+      }
+      else
+      {
+        update_accumulator_refresh<Perspective>(pos);
+      }
+    }
+
+    template<Color Perspective>
+    void update_accumulator(const Position& pos) const {
+
+      auto [oldest_st, next] = try_find_computed_accumulator<Perspective>(pos);
+
+      if (oldest_st->policyAccumulator.computed[Perspective])
+      {
+        if (next == nullptr)
+          return;
+
+        // Now update the accumulators listed in states_to_update[], where the last element is a sentinel.
+        // Currently we update 2 accumulators.
+        //     1. for the current position
+        //     2. the next accumulator after the computed one
+        // The heuristic may change in the future.
+        StateInfo *states_to_update[3] =
+          { next, next == pos.state() ? nullptr : pos.state(), nullptr };
+
+        update_accumulator_incremental<Perspective, 3>(pos, oldest_st, states_to_update);
+      }
+      else
+      {
+        update_accumulator_refresh<Perspective>(pos);
+      }
+    }
+
+    alignas(CacheLineSize) BiasType biases[HalfDimensions];
+    alignas(CacheLineSize) WeightType weights[HalfDimensions * InputDimensions];
   };
 
 }  // namespace Stockfish::Eval::NNUE

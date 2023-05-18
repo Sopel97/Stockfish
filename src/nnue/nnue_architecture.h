@@ -26,6 +26,7 @@
 #include "nnue_common.h"
 
 #include "features/half_ka_v2_hm.h"
+#include "features/half_ka_v2.h"
 
 #include "layers/affine_transform.h"
 #include "layers/clipped_relu.h"
@@ -37,9 +38,11 @@ namespace Stockfish::Eval::NNUE {
 
 // Input features used in evaluation function
 using FeatureSet = Features::HalfKAv2_hm;
+using PolicyFeatureSet = Features::HalfKAv2;
 
 // Number of input feature dimensions after conversion
 constexpr IndexType TransformedFeatureDimensions = 1024;
+constexpr IndexType PolicyTransformedFeatureDimensions = 1024;
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;
 
@@ -128,6 +131,87 @@ struct Network
     std::int32_t outputValue = buffer.fc_2_out[0] + fwdOut;
 
     return outputValue;
+  }
+};
+
+struct PolicyHead
+{
+  static constexpr int NumOutputs = 64 * 64;
+};
+
+struct PolicyNetwork
+{
+  static constexpr int FC_0_OUTPUTS = 256;
+  static constexpr int FC_1_OUTPUTS = 256;
+
+  Layers::AffineTransform<TransformedFeatureDimensions, FC_0_OUTPUTS> fc_0;
+  Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
+  Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
+  Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
+  Layers::AffineTransform<FC_1_OUTPUTS, PolicyHead::NumOutputs> fc_2;
+
+  // Hash value embedded in the evaluation file
+  static constexpr std::uint32_t get_hash_value() {
+    // input slice hash
+    std::uint32_t hashValue = 0xEC42E90Du;
+    hashValue ^= PolicyTransformedFeatureDimensions * 2;
+
+    hashValue = decltype(fc_0)::get_hash_value(hashValue);
+    hashValue = decltype(ac_0)::get_hash_value(hashValue);
+    hashValue = decltype(fc_1)::get_hash_value(hashValue);
+    hashValue = decltype(ac_1)::get_hash_value(hashValue);
+    hashValue = decltype(fc_2)::get_hash_value(hashValue);
+
+    return hashValue;
+  }
+
+  // Read network parameters
+  bool read_parameters(std::istream& stream) {
+    return   fc_0.read_parameters(stream)
+          && ac_0.read_parameters(stream)
+          && fc_1.read_parameters(stream)
+          && ac_1.read_parameters(stream)
+          && fc_2.read_parameters(stream);
+  }
+
+  // Write network parameters
+  bool write_parameters(std::ostream& stream) const {
+    return   fc_0.write_parameters(stream)
+          && ac_0.write_parameters(stream)
+          && fc_1.write_parameters(stream)
+          && ac_1.write_parameters(stream)
+          && fc_2.write_parameters(stream);
+  }
+
+  void propagate(const TransformedFeatureType* transformedFeatures, int32_t policy[PolicyHead::NumOutputs])
+  {
+    struct alignas(CacheLineSize) Buffer
+    {
+      alignas(CacheLineSize) decltype(fc_0)::OutputBuffer fc_0_out;
+      alignas(CacheLineSize) decltype(ac_0)::OutputBuffer ac_0_out;
+      alignas(CacheLineSize) decltype(fc_1)::OutputBuffer fc_1_out;
+      alignas(CacheLineSize) decltype(ac_1)::OutputBuffer ac_1_out;
+
+      Buffer()
+      {
+          std::memset(this, 0, sizeof(*this));
+      }
+    };
+
+#if defined(__clang__) && (__APPLE__)
+    // workaround for a bug reported with xcode 12
+    static thread_local auto tlsBuffer = std::make_unique<Buffer>();
+    // Access TLS only once, cache result.
+    Buffer& buffer = *tlsBuffer;
+#else
+    alignas(CacheLineSize) static thread_local Buffer buffer;
+#endif
+
+    fc_0.propagate(transformedFeatures, buffer.fc_0_out);
+    ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
+    fc_1.propagate(buffer.ac_0_out, buffer.fc_1_out);
+    ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
+    fc_2.propagate(buffer.ac_1_out, policy); // TODO: sparse
   }
 };
 

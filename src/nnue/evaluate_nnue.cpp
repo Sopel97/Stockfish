@@ -36,13 +36,17 @@ namespace Stockfish::Eval::NNUE {
 
   // Input feature converter
   LargePagePtr<FeatureTransformer> featureTransformer;
+  LargePagePtr<PolicyFeatureTransformer> policyFeatureTransformer;
 
   // Evaluation function
   AlignedPtr<Network> network[LayerStacks];
+  AlignedPtr<PolicyNetwork> policyNetwork[LayerStacks];
 
   // Evaluation function file name
   std::string fileName;
+  std::string policyFileName;
   std::string netDescription;
+  std::string policyNetDescription;
 
   namespace Detail {
 
@@ -90,6 +94,14 @@ namespace Stockfish::Eval::NNUE {
       Detail::initialize(network[i]);
   }
 
+  // Initialize the evaluation function parameters
+  static void initialize_policy() {
+
+    Detail::initialize(policyFeatureTransformer);
+    for (std::size_t i = 0; i < LayerStacks; ++i)
+      Detail::initialize(policyNetwork[i]);
+  }
+
   // Read network header
   static bool read_header(std::istream& stream, std::uint32_t* hashValue, std::string* desc)
   {
@@ -126,6 +138,18 @@ namespace Stockfish::Eval::NNUE {
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
+  // Read network parameters
+  static bool read_policy_parameters(std::istream& stream) {
+
+    std::uint32_t hashValue;
+    if (!read_header(stream, &hashValue, &policyNetDescription)) return false;
+    if (hashValue != PolicyHashValue) return false;
+    if (!Detail::read_parameters(stream, *policyFeatureTransformer)) return false;
+    for (std::size_t i = 0; i < LayerStacks; ++i)
+      if (!Detail::read_parameters(stream, *(policyNetwork[i]))) return false;
+    return stream && stream.peek() == std::ios::traits_type::eof();
+  }
+
   // Write network parameters
   static bool write_parameters(std::ostream& stream) {
 
@@ -139,6 +163,7 @@ namespace Stockfish::Eval::NNUE {
   void hint_common_parent_position(const Position& pos) {
     if (Eval::useNNUE)
         featureTransformer->hint_common_access(pos);
+    // TODO: hint for policy?
   }
 
   // Evaluation function. Perform differential calculation.
@@ -174,6 +199,34 @@ namespace Stockfish::Eval::NNUE {
         return static_cast<Value>(((1024 - delta) * psqt + (1024 + delta) * positional) / (1024 * OutputScale));
     else
         return static_cast<Value>((psqt + positional) / OutputScale);
+  }
+
+  // Evaluation function. Perform differential calculation.
+  void evaluate_policy(const Position& pos) {
+
+    // We manually align the arrays on the stack because with gcc < 9.3
+    // overaligning stack variables with alignas() doesn't work correctly.
+
+    constexpr uint64_t alignment = CacheLineSize;
+
+#if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
+    TransformedFeatureType transformedFeaturesUnaligned[
+      PolicyFeatureTransformer::BufferSize + alignment / sizeof(TransformedFeatureType)];
+
+    auto* transformedFeatures = align_ptr_up<alignment>(&transformedFeaturesUnaligned[0]);
+#else
+    alignas(alignment)
+      TransformedFeatureType transformedFeatures[PolicyFeatureTransformer::BufferSize];
+#endif
+
+    ASSERT_ALIGNED(transformedFeatures, alignment);
+
+    const int bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    policyFeatureTransformer->transform(pos, transformedFeatures);
+
+    // TODO: sparse
+    int32_t policy[64*64];
+    policyNetwork[bucket]->propagate(transformedFeatures, policy);
   }
 
   struct NnueEvalTrace {
@@ -360,6 +413,16 @@ namespace Stockfish::Eval::NNUE {
     initialize();
     fileName = name;
     return read_parameters(stream);
+  }
+
+
+  // Load eval, from a file stream or a memory stream
+  bool load_policy_eval(std::string name, std::istream& stream) {
+    if (name == "xxx.nnue")
+      std::cout << "DUMMY POLICY NET\n";
+    initialize_policy();
+    policyFileName = name;
+    return read_policy_parameters(stream);
   }
 
   // Save eval, to a file stream or a memory stream
