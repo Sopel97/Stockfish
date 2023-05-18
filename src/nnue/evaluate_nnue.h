@@ -59,8 +59,9 @@ namespace Stockfish::Eval::NNUE {
   using LargePagePtr = std::unique_ptr<T, LargePageDeleter<T>>;
 
   std::string trace(Position& pos);
+  std::string trace_policy(Position& pos);
   Value evaluate(const Position& pos, bool adjusted = false, int* complexity = nullptr);
-  void evaluate_policy(const Position& pos);
+  std::map<Move, float> evaluate_policy(const Position& pos);
   void hint_common_parent_position(const Position& pos);
 
   bool load_eval(std::string name, std::istream& stream);

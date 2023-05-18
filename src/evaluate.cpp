@@ -169,8 +169,11 @@ namespace Eval {
     string eval_file = string(Options["EvalFile"]);
     if (eval_file.empty())
         eval_file = EvalFileDefaultName;
+    string policy_eval_file = string(Options["PolicyEvalFile"]);
+    if (policy_eval_file.empty())
+        policy_eval_file = EvalFilePolicyDefaultName;
 
-    if (useNNUE && currentEvalFileName != eval_file)
+    if (useNNUE && (currentEvalFileName != eval_file || currentPolicyEvalFileName != policy_eval_file))
     {
 
         string msg1 = "If the UCI option \"Use NNUE\" is set to true, network evaluation parameters compatible with the engine must be available.";

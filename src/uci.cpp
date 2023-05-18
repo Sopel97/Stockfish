@@ -92,6 +92,17 @@ namespace {
     sync_cout << "\n" << Eval::trace(p) << sync_endl;
   }
 
+  void trace_eval_policy(Position& pos) {
+
+    StateListPtr states(new std::deque<StateInfo>(1));
+    Position p;
+    p.set(pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
+
+    Eval::NNUE::verify();
+
+    sync_cout << "\n" << Eval::NNUE::trace_policy(p) << sync_endl;
+  }
+
 
   // setoption() is called when the engine receives the "setoption" UCI command.
   // The function updates the UCI option ("name") to the given value ("value").
@@ -280,6 +291,7 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "bench")    bench(pos, is, states);
       else if (token == "d")        sync_cout << pos << sync_endl;
       else if (token == "eval")     trace_eval(pos);
+      else if (token == "eval_policy") trace_eval_policy(pos);
       else if (token == "compiler") sync_cout << compiler_info() << sync_endl;
       else if (token == "export_net")
       {

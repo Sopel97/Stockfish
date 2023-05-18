@@ -27,6 +27,7 @@
 
 #include "../evaluate.h"
 #include "../position.h"
+#include "../movegen.h"
 #include "../uci.h"
 #include "../types.h"
 
@@ -202,7 +203,7 @@ namespace Stockfish::Eval::NNUE {
   }
 
   // Evaluation function. Perform differential calculation.
-  void evaluate_policy(const Position& pos) {
+  std::map<Move, float> evaluate_policy(const Position& pos) {
 
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
@@ -227,6 +228,14 @@ namespace Stockfish::Eval::NNUE {
     // TODO: sparse
     int32_t policy[64*64];
     policyNetwork[bucket]->propagate(transformedFeatures, policy);
+
+    std::map<Move, float> ms;
+    for (const auto& m : MoveList<LEGAL>(pos))
+    {
+      const int idx = PolicyHead::encode_move(pos.side_to_move(), m);
+      ms[m] = float(policy[idx]) / PolicyOutputScale;
+    }
+    return ms;
   }
 
   struct NnueEvalTrace {
@@ -402,6 +411,17 @@ namespace Stockfish::Eval::NNUE {
     }
 
     ss << "+------------+------------+------------+------------+\n";
+
+    return ss.str();
+  }
+
+  std::string trace_policy(Position& pos) {
+
+    std::stringstream ss;
+
+    auto ms = evaluate_policy(pos);
+    for (auto& [move, raw] : ms)
+      std::cout << UCI::move(move, false) << ": " << raw << '\n';
 
     return ss.str();
   }

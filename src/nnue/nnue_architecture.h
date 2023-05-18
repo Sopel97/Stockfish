@@ -134,9 +134,20 @@ struct Network
   }
 };
 
+inline Square orient_flip(Color perspective, Square s) {
+  return Square(int(s) ^ (bool(perspective) * 56));
+}
+
 struct PolicyHead
 {
   static constexpr int NumOutputs = 64 * 64;
+
+  static int encode_move(Color stm, Move m)
+  {
+    const auto from = int(orient_flip(stm, from_sq(m)));
+    const auto to = int(orient_flip(stm, to_sq(m)));
+    return from * 64 + to;
+  }
 };
 
 struct PolicyNetwork
