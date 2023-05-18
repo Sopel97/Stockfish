@@ -53,6 +53,7 @@ namespace Stockfish::Eval::NNUE {
   // Constant used in evaluation value calculation
   constexpr int OutputScale = 16;
   constexpr int WeightScaleBits = 6;
+  constexpr int PolicyOutputScale = 256 * 16;
 
   // Size of cache line (in bytes)
   constexpr std::size_t CacheLineSize = 64;
