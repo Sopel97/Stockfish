@@ -159,7 +159,7 @@ struct PolicyNetwork
   Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
   Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
   Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
-  Layers::AffineTransform<FC_1_OUTPUTS, PolicyHead::NumOutputs> fc_2;
+  Layers::AffineTransformSparseOutput<FC_1_OUTPUTS, PolicyHead::NumOutputs> fc_2;
 
   // Hash value embedded in the evaluation file
   static constexpr std::uint32_t get_hash_value() {
@@ -194,7 +194,7 @@ struct PolicyNetwork
           && fc_2.write_parameters(stream);
   }
 
-  void propagate(const TransformedFeatureType* transformedFeatures, int32_t policy[PolicyHead::NumOutputs])
+  void propagate(Color stm, const TransformedFeatureType* transformedFeatures, Move moves[MAX_MOVES], int32_t policy[MAX_MOVES], IndexType num_moves)
   {
     struct alignas(CacheLineSize) Buffer
     {
@@ -218,11 +218,15 @@ struct PolicyNetwork
     alignas(CacheLineSize) static thread_local Buffer buffer;
 #endif
 
+    uint16_t encoded_moves[MAX_MOVES];
+    for (IndexType i = 0; i < num_moves; ++i)
+      encoded_moves[i] = PolicyHead::encode_move(stm, moves[i]);
+
     fc_0.propagate(transformedFeatures, buffer.fc_0_out);
     ac_0.propagate(buffer.fc_0_out, buffer.ac_0_out);
     fc_1.propagate(buffer.ac_0_out, buffer.fc_1_out);
     ac_1.propagate(buffer.fc_1_out, buffer.ac_1_out);
-    fc_2.propagate(buffer.ac_1_out, policy); // TODO: sparse
+    fc_2.propagate(buffer.ac_1_out, encoded_moves, num_moves, policy); // TODO: sparse
   }
 };
 

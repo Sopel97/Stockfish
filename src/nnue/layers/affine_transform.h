@@ -558,6 +558,179 @@ namespace Stockfish::Eval::NNUE::Layers {
     alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
   };
 
+  // A specialization for large inputs
+  template <IndexType InDims, IndexType OutDims>
+  class AffineTransformSparseOutput {
+   public:
+    // Input/output type
+    using InputType = std::uint8_t;
+    using OutputType = std::int32_t;
+
+    // Number of input/output dimensions
+    static constexpr IndexType InputDimensions = InDims;
+    static constexpr IndexType OutputDimensions = OutDims;
+
+    static constexpr IndexType PaddedInputDimensions =
+      ceil_to_multiple<IndexType>(InputDimensions, MaxSimdWidth);
+
+#if defined (USE_AVX512)
+    static constexpr IndexType InputSimdWidth = 64;
+    static constexpr IndexType MaxNumOutputRegs = 16;
+#elif defined (USE_AVX2)
+    static constexpr IndexType InputSimdWidth = 32;
+    static constexpr IndexType MaxNumOutputRegs = 8;
+#elif defined (USE_SSSE3)
+    static constexpr IndexType InputSimdWidth = 16;
+    static constexpr IndexType MaxNumOutputRegs = 8;
+#elif defined (USE_NEON_DOTPROD)
+    static constexpr IndexType InputSimdWidth = 16;
+    static constexpr IndexType MaxNumOutputRegs = 8;
+#elif defined (USE_NEON)
+    static constexpr IndexType InputSimdWidth = 8;
+    static constexpr IndexType MaxNumOutputRegs = 8;
+#else
+    static constexpr IndexType InputSimdWidth = 1;
+    static constexpr IndexType MaxNumOutputRegs = 1;
+#endif
+
+    static_assert(PaddedInputDimensions % InputSimdWidth == 0);
+
+    static constexpr IndexType NumInputBlocks = PaddedInputDimensions / InputSimdWidth;
+
+    // Hash value embedded in the evaluation file
+    static constexpr std::uint32_t get_hash_value(std::uint32_t prevHash) {
+      std::uint32_t hashValue = 0xCC03DAE4u;
+      hashValue += OutputDimensions;
+      hashValue ^= prevHash >> 1;
+      hashValue ^= prevHash << 31;
+      return hashValue;
+    }
+
+    static IndexType get_weight_index(IndexType i)
+    {
+      return i;
+    }
+
+    // Read network parameters
+    bool read_parameters(std::istream& stream) {
+      read_little_endian<BiasType>(stream, biases, OutputDimensions);
+
+      for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        weights[get_weight_index(i)] = read_little_endian<WeightType>(stream);
+
+      return !stream.fail();
+    }
+
+    // Write network parameters
+    bool write_parameters(std::ostream& stream) const {
+      write_little_endian<BiasType>(stream, biases, OutputDimensions);
+
+      for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; ++i)
+        write_little_endian<WeightType>(stream, weights[get_weight_index(i)]);
+
+      return !stream.fail();
+    }
+
+    // Forward propagation
+    const OutputType* propagate(
+        const InputType* input, uint16_t* output_indices, IndexType num_outputs, OutputType* output) const {
+
+#if defined (USE_AVX512)
+      using acc_vec_t = __m512i;
+      using weight_vec_t = __m512i;
+      using in_vec_t = __m512i;
+      #define vec_zero _mm512_setzero_si512()
+      #define vec_add_dpbusd_32x2 Simd::m512_add_dpbusd_epi32x2
+      #define vec_add_dpbusd_32 Simd::m512_add_dpbusd_epi32
+      #define vec_hadd Simd::m512_hadd
+      #define vec_haddx4 Simd::m512_haddx4
+#elif defined (USE_AVX2)
+      using acc_vec_t = __m256i;
+      using weight_vec_t = __m256i;
+      using in_vec_t = __m256i;
+      #define vec_zero _mm256_setzero_si256()
+      #define vec_add_dpbusd_32x2 Simd::m256_add_dpbusd_epi32x2
+      #define vec_add_dpbusd_32 Simd::m256_add_dpbusd_epi32
+      #define vec_hadd Simd::m256_hadd
+      #define vec_haddx4 Simd::m256_haddx4
+#elif defined (USE_SSSE3)
+      using acc_vec_t = __m128i;
+      using weight_vec_t = __m128i;
+      using in_vec_t = __m128i;
+      #define vec_zero _mm_setzero_si128()
+      #define vec_add_dpbusd_32x2 Simd::m128_add_dpbusd_epi32x2
+      #define vec_add_dpbusd_32 Simd::m128_add_dpbusd_epi32
+      #define vec_hadd Simd::m128_hadd
+      #define vec_haddx4 Simd::m128_haddx4
+#elif defined (USE_NEON_DOTPROD)
+      using acc_vec_t = int32x4_t;
+      using weight_vec_t = int8x16_t;
+      using in_vec_t = int8x16_t;
+      #define vec_zero {0}
+      #define vec_add_dpbusd_32x2 Simd::dotprod_m128_add_dpbusd_epi32x2
+      #define vec_add_dpbusd_32 Simd::dotprod_m128_add_dpbusd_epi32
+      #define vec_hadd Simd::neon_m128_hadd
+      #define vec_haddx4 Simd::neon_m128_haddx4
+#elif defined (USE_NEON)
+      using acc_vec_t = int32x4_t;
+      using weight_vec_t = int8x8_t;
+      using in_vec_t = int8x8_t;
+      #define vec_zero {0}
+      #define vec_add_dpbusd_32x2 Simd::neon_m128_add_dpbusd_epi32x2
+      #define vec_add_dpbusd_32 Simd::neon_m128_add_dpbusd_epi32
+      #define vec_hadd Simd::neon_m128_hadd
+      #define vec_haddx4 Simd::neon_m128_haddx4
+#endif
+
+#if defined (USE_SSSE3) || defined (USE_NEON)
+      const in_vec_t* invec = reinterpret_cast<const in_vec_t*>(input);
+
+      for (IndexType i = 0; i < num_outputs; ++i)
+      {
+        const uint16_t output_idx = output_indices[i];
+
+        const weight_vec_t* weightvec =
+          reinterpret_cast<const weight_vec_t*>(
+              weights
+            + output_idx * PaddedInputDimensions);
+
+        acc_vec_t acc = vec_zero;
+        for (IndexType k = 0; k < NumInputBlocks; ++k)
+          vec_add_dpbusd_32(acc, invec[k], weightvec[k]);
+
+        output[i] = vec_hadd(acc, biases[output_idx]);
+      }
+
+# undef vec_zero
+# undef vec_add_dpbusd_32x2
+# undef vec_add_dpbusd_32
+# undef vec_hadd
+# undef vec_haddx4
+
+#else
+
+# error "NOT IMPLEMENTED"
+      // TODO: THIS
+      /*
+      // Use old implementation for the other architectures.
+      affine_transform_sparse_output_non_ssse3<
+        InputDimensions,
+        PaddedInputDimensions>(output, weights, biases, input, output_indices, num_outputs);
+      */
+
+#endif
+
+      return output;
+    }
+
+   private:
+    using BiasType = OutputType;
+    using WeightType = std::int8_t;
+
+    alignas(CacheLineSize) BiasType biases[OutputDimensions];
+    alignas(CacheLineSize) WeightType weights[OutputDimensions * PaddedInputDimensions];
+  };
+
 }  // namespace Stockfish::Eval::NNUE::Layers
 
 #endif // #ifndef NNUE_LAYERS_AFFINE_TRANSFORM_H_INCLUDED

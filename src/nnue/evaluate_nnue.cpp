@@ -225,15 +225,17 @@ namespace Stockfish::Eval::NNUE {
     const int bucket = (pos.count<ALL_PIECES>() - 1) / 4;
     policyFeatureTransformer->transform(pos, transformedFeatures);
 
-    // TODO: sparse
-    int32_t policy[64*64];
-    policyNetwork[bucket]->propagate(transformedFeatures, policy);
+    int32_t policy[MAX_MOVES];
+    Move moves[MAX_MOVES];
+    IndexType num_moves = 0;
+    for (const auto& m : MoveList<LEGAL>(pos))
+      moves[num_moves++] = m;
+    policyNetwork[bucket]->propagate(pos.side_to_move(), transformedFeatures, moves, policy, num_moves);
 
     std::map<Move, float> ms;
-    for (const auto& m : MoveList<LEGAL>(pos))
+    for (IndexType i = 0; i < num_moves; ++i)
     {
-      const int idx = PolicyHead::encode_move(pos.side_to_move(), m);
-      ms[m] = float(policy[idx]) / PolicyOutputScale;
+      ms[moves[i]] = float(policy[i]) / PolicyOutputScale;
     }
     return ms;
   }
