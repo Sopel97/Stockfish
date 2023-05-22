@@ -193,6 +193,13 @@ namespace Stockfish::Simd {
       return _mm_cvtsi128_si32(sum128) + bias;
     }
 
+    [[maybe_unused]] static float m256_hadd_ps(__m256 x) {
+        const __m128 x128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
+        const __m128 x64 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
+        const __m128 x32 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
+        return _mm_cvtss_f32(x32);
+    }
+
     [[maybe_unused]] static __m128i m256_haddx4(
         __m256i sum0, __m256i sum1, __m256i sum2, __m256i sum3,
         __m128i bias) {
@@ -287,6 +294,12 @@ namespace Stockfish::Simd {
       sum = _mm_add_epi32(sum, _mm_shuffle_epi32(sum, 0x4E)); //_MM_PERM_BADC
       sum = _mm_add_epi32(sum, _mm_shuffle_epi32(sum, 0xB1)); //_MM_PERM_CDAB
       return _mm_cvtsi128_si32(sum) + bias;
+    }
+
+    [[maybe_unused]] static float m128_hadd_ps(__m128 x) {
+        const __m128 x64 = _mm_add_ps(x, _mm_movehl_ps(x, x));
+        const __m128 x32 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
+        return _mm_cvtss_f32(x32);
     }
 
     [[maybe_unused]] static __m128i m128_haddx4(
@@ -394,6 +407,71 @@ namespace Stockfish::Simd {
       int16x8_t product = vmull_s8(a0, b0);
       product = vmlal_s8(product, a1, b1);
       acc = vpadalq_s16(acc, product);
+    }
+
+#endif
+
+#if defined (USE_AVX2)
+
+    // https://stackoverflow.com/a/47025627/3763139
+    // max. rel. error = 1.72863156e-3 on [-87.33654, 88.72283]
+    [[maybe_unused]] static __m256 m256_fast_exp_ps(__m256 x) {
+        __m128 t, f, e, p, r;
+        __m128i i, j;
+        __m128 l2e = _mm256_set1_ps (1.442695041f);  /* log2(e) */
+        __m128 c0  = _mm256_set1_ps (0.3371894346f);
+        __m128 c1  = _mm256_set1_ps (0.657636276f);
+        __m128 c2  = _mm256_set1_ps (1.00172476f);
+
+        /* exp(x) = 2^i * 2^f; i = floor (log2(e) * x), 0 <= f <= 1 */
+        t = _mm256_mul_ps (x, l2e);             /* t = log2(e) * x */
+    #ifdef __SSE4_1__
+        e = _mm256_floor_ps (t);                /* floor(t) */
+        i = _mm256_cvtps_epi32 (e);             /* (int)floor(t) */
+    #else /* __SSE4_1__*/
+        i = _mm256_cvttps_epi32 (t);            /* i = (int)t */
+        j = _mm256_srli_epi32 (_mm256_castps_si128 (x), 31); /* signbit(t) */
+        i = _mm256_sub_epi32 (i, j);            /* (int)t - signbit(t) */
+        e = _mm256_cvtepi32_ps (i);             /* floor(t) ~= (int)t - signbit(t) */
+    #endif /* __SSE4_1__*/
+        f = _mm256_sub_ps (t, e);               /* f = t - floor(t) */
+        p = c0;                              /* c0 */
+        p = _mm256_mul_ps (p, f);               /* c0 * f */
+        p = _mm256_add_ps (p, c1);              /* c0 * f + c1 */
+        p = _mm256_mul_ps (p, f);               /* (c0 * f + c1) * f */
+        p = _mm256_add_ps (p, c2);              /* p = (c0 * f + c1) * f + c2 ~= 2^f */
+        j = _mm256_slli_epi32 (i, 23);          /* i << 23 */
+        r = _mm256_castsi128_ps (_mm256_add_epi32 (j, _mm256_castps_si128 (p))); /* r = p * 2^i*/
+        return r;
+    }
+
+#endif
+
+#if defined (USE_SSE41)
+
+    // https://stackoverflow.com/a/47025627/3763139
+    // max. rel. error = 1.72863156e-3 on [-87.33654, 88.72283]
+    [[maybe_unused]] static __m128 m128_fast_exp_ps(__m128 x) {
+        __m128 t, f, e, p, r;
+        __m128i i, j;
+        __m128 l2e = _mm_set1_ps (1.442695041f);  /* log2(e) */
+        __m128 c0  = _mm_set1_ps (0.3371894346f);
+        __m128 c1  = _mm_set1_ps (0.657636276f);
+        __m128 c2  = _mm_set1_ps (1.00172476f);
+
+        /* exp(x) = 2^i * 2^f; i = floor (log2(e) * x), 0 <= f <= 1 */
+        t = _mm_mul_ps (x, l2e);             /* t = log2(e) * x */
+        e = _mm_floor_ps (t);                /* floor(t) */
+        i = _mm_cvtps_epi32 (e);             /* (int)floor(t) */
+        f = _mm_sub_ps (t, e);               /* f = t - floor(t) */
+        p = c0;                              /* c0 */
+        p = _mm_mul_ps (p, f);               /* c0 * f */
+        p = _mm_add_ps (p, c1);              /* c0 * f + c1 */
+        p = _mm_mul_ps (p, f);               /* (c0 * f + c1) * f */
+        p = _mm_add_ps (p, c2);              /* p = (c0 * f + c1) * f + c2 ~= 2^f */
+        j = _mm_slli_epi32 (i, 23);          /* i << 23 */
+        r = _mm_castsi128_ps (_mm_add_epi32 (j, _mm_castps_si128 (p))); /* r = p * 2^i*/
+        return r;
     }
 
 #endif

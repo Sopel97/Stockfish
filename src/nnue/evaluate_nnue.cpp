@@ -31,6 +31,8 @@
 #include "../uci.h"
 #include "../types.h"
 
+#include "layers/simd.h"
+
 #include "evaluate_nnue.h"
 
 namespace Stockfish::Eval::NNUE {
@@ -202,6 +204,60 @@ namespace Stockfish::Eval::NNUE {
         return static_cast<Value>((psqt + positional) / OutputScale);
   }
 
+  // IMPORTANT NOTE: Computes more valus than N, up to the next full SIMD register size.
+  //                 Make sure the input buffer is large enough.
+  static void fast_softmax(float* x, IndexType N) {
+#if defined (USE_AVX2)
+
+    for (IndexType i = N; (i & 7) != 0; ++i)
+      x[i] = -100.0f;
+
+    __m256 acc = _mm256_setzero_ps();
+    for (IndexType i = 0; i < N; i += 8)
+    {
+      __m256 in = _mm256_loadu_ps(&x[i]);
+      in = Simd::m256_fast_exp_ps(in);
+      acc = _mm256_add_ps(acc, in);
+      _mm256_storeu_ps(&x[i], in);
+    }
+
+    const __m256 invdenom = _mm256_set1_ps(1.0f / Simd::m256_hadd_ps(acc));
+
+    for (IndexType i = 0; i < N; i += 8)
+    {
+      __m256 in = _mm256_loadu_ps(&x[i]);
+      in = _mm256_mul_ps(in, invdenom);
+      _mm256_storeu_ps(&x[i], in);
+    }
+
+#elif defined (USE_SSE41)
+
+    for (IndexType i = N; (i & 3) != 0; ++i)
+      x[i] = -100.0f;
+
+    __m128 acc = _mm_setzero_ps();
+    for (IndexType i = 0; i < N; i += 4)
+    {
+      __m128 in = _mm_loadu_ps(&x[i]);
+      in = Simd::m128_fast_exp_ps(in);
+      acc = _mm_add_ps(acc, in);
+      _mm_storeu_ps(&x[i], in);
+    }
+
+    const __m128 invdenom = _mm_set1_ps(1.0f / Simd::m128_hadd_ps(acc));
+
+    for (IndexType i = 0; i < N; i += 4)
+    {
+      __m128 in = _mm_loadu_ps(&x[i]);
+      in = _mm_mul_ps(in, invdenom);
+      _mm_storeu_ps(&x[i], in);
+    }
+
+#else
+#error "NOT IMPLEMENTED"
+#endif
+  }
+
   // Evaluation function. Perform differential calculation.
   std::map<Move, float> evaluate_policy(const Position& pos) {
 
@@ -226,16 +282,23 @@ namespace Stockfish::Eval::NNUE {
     policyFeatureTransformer->transform(pos, transformedFeatures);
 
     int32_t policy[MAX_MOVES];
+    float policy_f[MAX_MOVES];
     Move moves[MAX_MOVES];
     IndexType num_moves = 0;
     for (const auto& m : MoveList<LEGAL>(pos))
       moves[num_moves++] = m;
     policyNetwork[bucket]->propagate(pos.side_to_move(), transformedFeatures, moves, policy, num_moves);
 
+    for (IndexType i = 0; i < num_moves; ++i)
+    {
+      policy_f[i] = float(policy[i]) / PolicyOutputScale;
+    }
+    fast_softmax(policy_f, num_moves);
+
     std::map<Move, float> ms;
     for (IndexType i = 0; i < num_moves; ++i)
     {
-      ms[moves[i]] = float(policy[i]) / PolicyOutputScale;
+      ms[moves[i]] = policy_f[i];
     }
     return ms;
   }
