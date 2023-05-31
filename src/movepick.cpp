@@ -69,9 +69,6 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 {
   assert(d > 0);
 
-  if (Eval::useNNUE)
-    policy = Eval::NNUE::evaluate_policy(p);
-
   stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));
 }
@@ -107,6 +104,12 @@ MovePicker::MovePicker(const Position& p, Move ttm, Value th, const CapturePiece
 /// captures with a good history. Quiets moves are ordered using the history tables.
 template<GenType Type>
 void MovePicker::score() {
+
+  std::map<Move, float> policy;
+
+  const bool usePolicy = Eval::useNNUE && depth > 6;
+  if (usePolicy)
+    policy = Eval::NNUE::evaluate_policy(pos);
 
   static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
 
@@ -159,7 +162,7 @@ void MovePicker::score() {
       minValue = std::min(minValue, m.value);
   }
 
-  if (!policy.empty())
+  if (usePolicy)
   {
       for (auto& m : *this)
       {

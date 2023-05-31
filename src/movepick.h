@@ -149,7 +149,6 @@ private:
   Value threshold;
   Depth depth;
   ExtMove moves[MAX_MOVES];
-  std::map<Move, float> policy;
 };
 
 } // namespace Stockfish
