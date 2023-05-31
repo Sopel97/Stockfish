@@ -178,8 +178,6 @@ namespace Stockfish::Eval::NNUE {
     constexpr uint64_t alignment = CacheLineSize;
     constexpr int delta = 24;
 
-    evaluate_policy(pos);
-
 #if defined(ALIGNAS_ON_STACK_VARIABLES_BROKEN)
     TransformedFeatureType transformedFeaturesUnaligned[
       FeatureTransformer::BufferSize + alignment / sizeof(TransformedFeatureType)];
