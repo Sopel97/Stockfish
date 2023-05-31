@@ -18,6 +18,8 @@
 
 #include <cassert>
 
+#include "nnue/evaluate_nnue.h"
+
 #include "bitboard.h"
 #include "movepick.h"
 
@@ -66,6 +68,9 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
              ttMove(ttm), refutations{{killers[0], 0}, {killers[1], 0}, {cm, 0}}, depth(d)
 {
   assert(d > 0);
+
+  if (Eval::useNNUE)
+    policy = Eval::NNUE::evaluate_policy(p);
 
   stage = (pos.checkers() ? EVASION_TT : MAIN_TT) +
           !(ttm && pos.pseudo_legal(ttm));

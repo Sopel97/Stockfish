@@ -22,6 +22,7 @@
 #include <array>
 #include <limits>
 #include <type_traits>
+#include <map>
 
 #include "movegen.h"
 #include "position.h"
@@ -148,6 +149,7 @@ private:
   Value threshold;
   Depth depth;
   ExtMove moves[MAX_MOVES];
+  std::map<Move, float> policy;
 };
 
 } // namespace Stockfish

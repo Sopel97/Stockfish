@@ -23,6 +23,7 @@
 
 #include "nnue_common.h"
 #include "nnue_architecture.h"
+#include "../position.h"
 
 #include <cstring> // std::memset()
 #include <utility> // std::pair
@@ -811,7 +812,7 @@ namespace Stockfish::Eval::NNUE {
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
       // is defined in the VECTOR code below, once in each branch
-      vec_t acc[NumRegs];
+      vec_t acc[PolicyNumRegs];
   #endif
 
       if (states_to_update[0] == nullptr)
@@ -856,7 +857,7 @@ namespace Stockfish::Eval::NNUE {
         // Load accumulator
         auto accTile = reinterpret_cast<vec_t*>(
           &st->policyAccumulator.accumulation[Perspective][j * TileHeight]);
-        for (IndexType k = 0; k < NumRegs; ++k)
+        for (IndexType k = 0; k < PolicyNumRegs; ++k)
           acc[k] = vec_load(&accTile[k]);
 
         for (IndexType i = 0; states_to_update[i]; ++i)
@@ -866,7 +867,7 @@ namespace Stockfish::Eval::NNUE {
           {
             const IndexType offset = HalfDimensions * index + j * TileHeight;
             auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
-            for (IndexType k = 0; k < NumRegs; ++k)
+            for (IndexType k = 0; k < PolicyNumRegs; ++k)
               acc[k] = vec_sub_16(acc[k], column[k]);
           }
 
@@ -875,14 +876,14 @@ namespace Stockfish::Eval::NNUE {
           {
             const IndexType offset = HalfDimensions * index + j * TileHeight;
             auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
-            for (IndexType k = 0; k < NumRegs; ++k)
+            for (IndexType k = 0; k < PolicyNumRegs; ++k)
               acc[k] = vec_add_16(acc[k], column[k]);
           }
 
           // Store accumulator
           accTile = reinterpret_cast<vec_t*>(
             &states_to_update[i]->policyAccumulator.accumulation[Perspective][j * TileHeight]);
-          for (IndexType k = 0; k < NumRegs; ++k)
+          for (IndexType k = 0; k < PolicyNumRegs; ++k)
             vec_store(&accTile[k], acc[k]);
         }
       }
@@ -926,7 +927,7 @@ namespace Stockfish::Eval::NNUE {
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
       // is defined in the VECTOR code below, once in each branch
-      vec_t acc[NumRegs];
+      vec_t acc[PolicyNumRegs];
   #endif
 
       // Refresh the accumulator
@@ -942,7 +943,7 @@ namespace Stockfish::Eval::NNUE {
       {
         auto biasesTile = reinterpret_cast<const vec_t*>(
             &biases[j * TileHeight]);
-        for (IndexType k = 0; k < NumRegs; ++k)
+        for (IndexType k = 0; k < PolicyNumRegs; ++k)
           acc[k] = biasesTile[k];
 
         for (const auto index : active)
@@ -950,13 +951,13 @@ namespace Stockfish::Eval::NNUE {
           const IndexType offset = HalfDimensions * index + j * TileHeight;
           auto column = reinterpret_cast<const vec_t*>(&weights[offset]);
 
-          for (unsigned k = 0; k < NumRegs; ++k)
+          for (unsigned k = 0; k < PolicyNumRegs; ++k)
             acc[k] = vec_add_16(acc[k], column[k]);
         }
 
         auto accTile = reinterpret_cast<vec_t*>(
             &accumulator.accumulation[Perspective][j * TileHeight]);
-        for (unsigned k = 0; k < NumRegs; k++)
+        for (unsigned k = 0; k < PolicyNumRegs; k++)
           vec_store(&accTile[k], acc[k]);
       }
 
