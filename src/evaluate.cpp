@@ -47,10 +47,14 @@
 // Note that this does not work in Microsoft Visual Studio.
 #if !defined(_MSC_VER) && !defined(NNUE_EMBEDDING_OFF)
   INCBIN(EmbeddedNNUE, EvalFileDefaultName);
+  INCBIN(EmbeddedPolicyNNUE, EvalFilePolicyDefaultName);
 #else
   const unsigned char        gEmbeddedNNUEData[1] = {0x0};
   const unsigned char *const gEmbeddedNNUEEnd = &gEmbeddedNNUEData[1];
   const unsigned int         gEmbeddedNNUESize = 1;
+  const unsigned char        gEmbeddedPolicyNNUEData[1] = {0x0};
+  const unsigned char *const gEmbeddedPolicyNNUEEnd = &gEmbeddedNNUEData[1];
+  const unsigned int         gEmbeddedPolicyNNUESize = 1;
 #endif
 
 
@@ -142,8 +146,6 @@ namespace Eval {
                     currentPolicyEvalFileName = eval_file;
             }
 
-            /*
-            TODO: embed
             if (directory == "<internal>" && eval_file == EvalFilePolicyDefaultName)
             {
                 // C++ way to prepare a buffer for a memory stream
@@ -159,7 +161,6 @@ namespace Eval {
                 if (NNUE::load_policy_eval(eval_file, stream))
                     currentPolicyEvalFileName = eval_file;
             }
-            */
         }
   }
 

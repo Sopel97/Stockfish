@@ -41,7 +41,7 @@ namespace Eval {
   // name of the macro, as it is used in the Makefile.
   #define EvalFileDefaultName   "nn-e1fb1ade4432.nnue"
 
-  #define EvalFilePolicyDefaultName   "xxx.nnue"
+  #define EvalFilePolicyDefaultName   "nn-304f95855b34.nnue"
 
   namespace NNUE {
 
