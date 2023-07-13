@@ -51,7 +51,11 @@ namespace Stockfish::Eval::NNUE {
   #define vec_mul_16(a,b) _mm512_mullo_epi16(a,b)
   #define vec_zero() _mm512_setzero_epi32()
   #define vec_set_16(a) _mm512_set1_epi16(a)
+  #define vec_set_16(a) _mm512_set1_epi8(a)
   #define vec_max_16(a,b) _mm512_max_epi16(a,b)
+  #define vec_max_8(a,b) _mm512_max_epi8(a,b)
+  #define vec_and(a,b) _mm512_and_si512(a,b)
+  #define vec_cmpgt_8(a,b) _mm512_cmpgt_epi8_mask(a,b)
   #define vec_min_16(a,b) _mm512_min_epi16(a,b)
   inline vec_t vec_msb_pack_16(vec_t a, vec_t b){
     vec_t compacted = _mm512_packs_epi16(_mm512_srli_epi16(a,7),_mm512_srli_epi16(b,7));
@@ -75,7 +79,11 @@ namespace Stockfish::Eval::NNUE {
   #define vec_mul_16(a,b) _mm256_mullo_epi16(a,b)
   #define vec_zero() _mm256_setzero_si256()
   #define vec_set_16(a) _mm256_set1_epi16(a)
+  #define vec_set_8(a) _mm256_set1_epi8(a)
   #define vec_max_16(a,b) _mm256_max_epi16(a,b)
+  #define vec_max_8(a,b) _mm256_max_epi8(a,b)
+  #define vec_and(a,b) _mm256_and_si256(a,b)
+  #define vec_cmpgt_8(a,b) _mm256_cmpgt_epi8(a,b)
   #define vec_min_16(a,b) _mm256_min_epi16(a,b)
   inline vec_t vec_msb_pack_16(vec_t a, vec_t b){
     vec_t compacted = _mm256_packs_epi16(_mm256_srli_epi16(a,7), _mm256_srli_epi16(b,7));
@@ -99,7 +107,11 @@ namespace Stockfish::Eval::NNUE {
   #define vec_mul_16(a,b) _mm_mullo_epi16(a,b)
   #define vec_zero() _mm_setzero_si128()
   #define vec_set_16(a) _mm_set1_epi16(a)
+  #define vec_set_8(a) _mm_set1_epi8(a)
   #define vec_max_16(a,b) _mm_max_epi16(a,b)
+  #define vec_max_8(a,b) _mm_max_epi8(a,b)
+  #define vec_and(a,b) _mm_and_si128(a,b)
+  #define vec_cmpgt_8(a,b) _mm_cmpgt_epi8(a,b)
   #define vec_min_16(a,b) _mm_min_epi16(a,b)
   #define vec_msb_pack_16(a,b) _mm_packs_epi16(_mm_srli_epi16(a,7),_mm_srli_epi16(b,7))
   #define vec_load_psqt(a) (*(a))
@@ -120,8 +132,13 @@ namespace Stockfish::Eval::NNUE {
   #define vec_mul_16(a,b) _mm_mullo_pi16(a,b)
   #define vec_zero() _mm_setzero_si64()
   #define vec_set_16(a) _mm_set1_pi16(a)
+  #define vec_set_8(a) _mm_set1_pi8(a)
   inline vec_t vec_max_16(vec_t a,vec_t b){
     vec_t comparison = _mm_cmpgt_pi16(a,b);
+    return _mm_or_si64(_mm_and_si64(comparison, a), _mm_andnot_si64(comparison, b));
+  }
+  inline vec_t vec_max_8(vec_t a,vec_t b){
+    vec_t comparison = _mm_cmpgt_pi8(a,b);
     return _mm_or_si64(_mm_and_si64(comparison, a), _mm_andnot_si64(comparison, b));
   }
   inline vec_t vec_min_16(vec_t a,vec_t b){
@@ -148,7 +165,9 @@ namespace Stockfish::Eval::NNUE {
   #define vec_mul_16(a,b) vmulq_s16(a,b)
   #define vec_zero() vec_t{0}
   #define vec_set_16(a) vdupq_n_s16(a)
+  #define vec_set_8(a) vdupq_n_s8(a)
   #define vec_max_16(a,b) vmaxq_s16(a,b)
+  #define vec_max_8(a,b) vmaxq_s8(a,b)
   #define vec_min_16(a,b) vminq_s16(a,b)
   inline vec_t vec_msb_pack_16(vec_t a, vec_t b){
     const int8x8_t shifta = vshrn_n_s16(a, 7);
@@ -284,6 +303,8 @@ namespace Stockfish::Eval::NNUE {
           - psqtAccumulation[perspectives[1]][bucket]
         ) / 2;
 
+      const int threshold = std::min<int>(int64_t(psqt) * psqt >> 24, 64);
+
 
       for (IndexType p = 0; p < 2; ++p)
       {
@@ -294,6 +315,8 @@ namespace Stockfish::Eval::NNUE {
           constexpr IndexType OutputChunkSize = MaxChunkSize;
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
+
+          const vec_t threshold_simd = vec_set_8(threshold + 1);
 
           vec_t Zero = vec_zero();
           vec_t One = vec_set_16(127);
@@ -313,6 +336,7 @@ namespace Stockfish::Eval::NNUE {
               const vec_t pb = vec_mul_16(sum0b, sum1b);
 
               out[j] = vec_msb_pack_16(pa, pb);
+              out[j] = vec_and(out[j], vec_cmpgt_8(out[j], threshold_simd));
           }
 
 #else
@@ -323,6 +347,8 @@ namespace Stockfish::Eval::NNUE {
               sum0 = std::max<int>(0, std::min<int>(127, sum0));
               sum1 = std::max<int>(0, std::min<int>(127, sum1));
               output[offset + j] = static_cast<OutputType>(sum0 * sum1 / 128);
+              if (output[offset + j] <= threshold)
+                output[offset + j] = 0
           }
 
 #endif
