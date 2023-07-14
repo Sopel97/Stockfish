@@ -316,7 +316,7 @@ namespace Stockfish::Eval::NNUE {
           static_assert((HalfDimensions / 2) % OutputChunkSize == 0);
           constexpr IndexType NumOutputChunks = HalfDimensions / 2 / OutputChunkSize;
 
-          const vec_t threshold_simd = vec_set_8(threshold + 1);
+          const vec_t threshold_simd = vec_set_8(threshold);
 
           vec_t Zero = vec_zero();
           vec_t One = vec_set_16(127);
