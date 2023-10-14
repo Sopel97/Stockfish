@@ -28,6 +28,12 @@
 #include <iostream>
 #include <sstream>
 #include <string_view>
+#include <map>
+#include <array>
+
+#define _GNU_SOURCE
+#include <sched.h>
+#include <sys/sysinfo.h>
 
 #include "../evaluate.h"
 #include "../misc.h"
@@ -44,6 +50,12 @@ namespace Stockfish::Eval::NNUE {
 
   // Evaluation function
   AlignedPtr<Network> network[LayerStacks];
+
+  // Input feature converter
+  std::vector<LargePagePtr<FeatureTransformer>> numalocal_featureTransformer;
+
+  // Evaluation function
+  std::vector<std::array<AlignedPtr<Network>, LayerStacks>> numalocal_network;
 
   // Evaluation function file name
   std::string fileName;
@@ -129,6 +141,48 @@ namespace Stockfish::Eval::NNUE {
     if (!Detail::read_parameters(stream, *featureTransformer)) return false;
     for (std::size_t i = 0; i < LayerStacks; ++i)
       if (!Detail::read_parameters(stream, *(network[i]))) return false;
+
+    numalocal_featureTransformer.clear();
+    numalocal_network.clear();
+
+    int num_threads = get_nprocs();
+    numalocal_featureTransformer.resize(2);
+    numalocal_network.resize(2);
+    for (int j = 0; j < 2; ++j)
+    {
+      cpu_set_t mask;
+      CPU_ZERO(&mask);
+      CPU_SET(j, &mask);
+      int result = sched_setaffinity(0, sizeof(mask), &mask);
+
+      unsigned int node;
+      //getcpu(nullptr, &node);
+      node = sched_getcpu() & 1;
+
+      {
+        auto& w = numalocal_featureTransformer[node];
+        Detail::initialize(w);
+        *w = *featureTransformer;
+      }
+
+      {
+        auto& w = numalocal_network[node];
+        for (std::size_t i = 0; i < LayerStacks; ++i)
+        {
+          Detail::initialize(w[i]);
+          *(w[i]) = *(network[i]);
+        }
+      }
+    }
+
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    for (int j = 0; j < num_threads; ++j)
+    {
+      CPU_SET(j, &mask);
+    }
+    int result = sched_setaffinity(0, sizeof(mask), &mask);
+
     return stream && stream.peek() == std::ios::traits_type::eof();
   }
 
@@ -167,9 +221,13 @@ namespace Stockfish::Eval::NNUE {
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
+    unsigned int node;
+    //getcpu(nullptr, &node);
+    node = sched_getcpu() & 1;
+
     const int bucket = (pos.count<ALL_PIECES>() - 1) / 4;
-    const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
-    const auto positional = network[bucket]->propagate(transformedFeatures);
+    const auto psqt = numalocal_featureTransformer[node]->transform(pos, transformedFeatures, bucket);
+    const auto positional = numalocal_network[node][bucket]->propagate(transformedFeatures);
 
     if (complexity)
         *complexity = abs(psqt - positional) / OutputScale;
