@@ -41,6 +41,7 @@ using FeatureSet = Features::HalfKAv2_hm;
 constexpr IndexType TransformedFeatureDimensions = 2048;
 constexpr IndexType PSQTBuckets = 8;
 constexpr IndexType LayerStacks = 8;
+constexpr IndexType CatBuckets = 16;
 
 struct Network
 {
@@ -54,6 +55,9 @@ struct Network
   Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
   Layers::AffineTransform<FC_1_OUTPUTS, 1> fc_2;
 
+  Layers::AffineTransform<FC_1_OUTPUTS, 1> fc_error;
+  Layers::AffineTransform<FC_1_OUTPUTS, CatBuckets> fc_cat;
+
   // Hash value embedded in the evaluation file
   static constexpr std::uint32_t get_hash_value() {
     // input slice hash
@@ -65,6 +69,9 @@ struct Network
     hashValue = decltype(fc_1)::get_hash_value(hashValue);
     hashValue = decltype(ac_1)::get_hash_value(hashValue);
     hashValue = decltype(fc_2)::get_hash_value(hashValue);
+    hashValue = decltype(fc_error)::get_hash_value(hashValue);
+    hashValue = decltype(fc_cat)::get_hash_value(hashValue);
+    hashValue = (hashValue + 0x538D24C7) & 0xFFFFFFFF;
 
     return hashValue;
   }
@@ -75,7 +82,9 @@ struct Network
           && ac_0.read_parameters(stream)
           && fc_1.read_parameters(stream)
           && ac_1.read_parameters(stream)
-          && fc_2.read_parameters(stream);
+          && fc_2.read_parameters(stream)
+          && fc_error.read_parameters(stream)
+          && fc_cat.read_parameters(stream);
   }
 
   // Write network parameters
@@ -84,7 +93,9 @@ struct Network
           && ac_0.write_parameters(stream)
           && fc_1.write_parameters(stream)
           && ac_1.write_parameters(stream)
-          && fc_2.write_parameters(stream);
+          && fc_2.write_parameters(stream)
+          && fc_error.write_parameters(stream)
+          && fc_cat.write_parameters(stream);
   }
 
   std::int32_t propagate(const TransformedFeatureType* transformedFeatures)
@@ -97,6 +108,8 @@ struct Network
       alignas(CacheLineSize) decltype(fc_1)::OutputBuffer fc_1_out;
       alignas(CacheLineSize) decltype(ac_1)::OutputBuffer ac_1_out;
       alignas(CacheLineSize) decltype(fc_2)::OutputBuffer fc_2_out;
+      alignas(CacheLineSize) decltype(fc_error)::OutputBuffer fc_error_out;
+      alignas(CacheLineSize) decltype(fc_cat)::OutputBuffer fc_cat_out;
 
       Buffer()
       {
