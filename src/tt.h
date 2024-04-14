@@ -29,7 +29,7 @@ namespace Stockfish {
 
 // TTEntry struct is the 10 bytes transposition table entry, defined as below:
 //
-// key        16 bit
+// key        64 bit
 // depth       8 bit
 // generation  5 bit
 // pv node     1 bit
@@ -52,7 +52,7 @@ struct TTEntry {
    private:
     friend class TranspositionTable;
 
-    uint16_t key16;
+    uint64_t key64;
     uint8_t  depth8;
     uint8_t  genBound8;
     Move     move16;
@@ -60,22 +60,7 @@ struct TTEntry {
     int16_t  eval16;
 };
 
-
-// A TranspositionTable is an array of Cluster, of size clusterCount. Each
-// cluster consists of ClusterSize number of TTEntry. Each non-empty TTEntry
-// contains information on exactly one position. The size of a Cluster should
-// divide the size of a cache line for best performance, as the cacheline is
-// prefetched when possible.
 class TranspositionTable {
-
-    static constexpr int ClusterSize = 3;
-
-    struct Cluster {
-        TTEntry entry[ClusterSize];
-        char    padding[2];  // Pad to 32 bytes
-    };
-
-    static_assert(sizeof(Cluster) == 32, "Unexpected Cluster size");
 
     // Constants used to refresh the hash table periodically
 
@@ -103,7 +88,7 @@ class TranspositionTable {
     void     clear(size_t threadCount);
 
     TTEntry* first_entry(const Key key) const {
-        return &table[mul_hi64(key, clusterCount)].entry[0];
+        return &table[mul_hi64(key, entryCount)];
     }
 
     uint8_t generation() const { return generation8; }
@@ -111,8 +96,8 @@ class TranspositionTable {
    private:
     friend struct TTEntry;
 
-    size_t   clusterCount;
-    Cluster* table       = nullptr;
+    size_t   entryCount;
+    TTEntry* table       = nullptr;
     uint8_t  generation8 = 0;  // Size must be not bigger than TTEntry::genBound8
 };
 
