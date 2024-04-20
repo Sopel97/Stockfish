@@ -287,6 +287,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             th->worker->rootPos.set(pos.fen(), pos.is_chess960(), &th->worker->rootState);
             th->worker->rootState = setupStates->back();
             th->worker->tbConfig  = tbConfig;
+            th->worker->ftWeightCache.store(nullptr);
         });
     }
 

@@ -74,6 +74,12 @@ class HalfKAv2_hm {
     static constexpr IndexType Dimensions =
       static_cast<IndexType>(SQUARE_NB) * static_cast<IndexType>(PS_NB) / 2;
 
+    static constexpr IndexType DimensionsBits = ceillog2(Dimensions);
+
+    static_assert(DimensionsBits == 15);
+
+    using MoveKeyType = uint64_t;
+
 #define B(v) (v * PS_NB)
     // clang-format off
     static constexpr int KingBuckets[COLOR_NB][SQUARE_NB] = {
@@ -134,6 +140,11 @@ class HalfKAv2_hm {
     template<Color Perspective>
     static void
     append_changed_indices(Square ksq, const DirtyPiece& dp, IndexList& removed, IndexList& added);
+
+    template<Color Perspective>
+    static MoveKeyType make_move_key(Square ksq, const DirtyPiece& dp);
+
+    static void decode_move_key(MoveKeyType key, IndexList& removed, IndexList& added);
 
     // Returns the cost of updating one perspective, the most costly one.
     // Assumes no refresh needed.

@@ -26,9 +26,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <iosfwd>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+#include <type_traits>
 
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
@@ -195,6 +197,172 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
     uint64_t c3 = aL * bH + uint32_t(c2);
     return aH * bH + (c2 >> 32) + (c3 >> 32);
 #endif
+}
+
+template<typename T>
+constexpr unsigned floorlog2(T x) {
+    static_assert(std::is_unsigned_v<T>);
+    return x == 1 ? 0 : 1 + floorlog2(x >> 1);
+}
+
+template<typename T>
+constexpr unsigned ceillog2(T x) {
+    static_assert(std::is_unsigned_v<T>);
+    return x == 1 ? 0 : floorlog2(x - 1) + 1;
+}
+
+inline uint64_t splitmix64_hash(uint64_t x) {
+    x = (x ^ (x >> 30)) * uint64_t(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * uint64_t(0x94d049bb133111eb);
+    x = x ^ (x >> 31);
+    return x;
+}
+
+// This hash table has a fixed size. It uses open-addressing with a fixed maximum length
+// to resolve conflicts. Insertion may fail. Erasure is not supported. Lookup should be fast.
+// A specific key value is used as a tombstone. Said key value must be provided on construction.
+// For now KeyType and ValueType must be trivial.
+template<typename KeyT, typename ValueT, typename HashFunc = std::hash<KeyT>>
+class UnreliableInsertionHashTable: public HashFunc {
+    static_assert(std::is_trivial_v<KeyT>, "Key type must be trivial.");
+    static_assert(std::is_trivial_v<ValueT>, "Value type must be trivial.");
+
+   public:
+    using KeyType   = KeyT;
+    using ValueType = ValueT;
+    using EntryType = std::pair<KeyType, ValueType>;  // Key is not guarded by const! Be careful.
+
+    using HashFunc::operator();
+
+    UnreliableInsertionHashTable(KeyType tombstone_, size_t capacity_, size_t maxSearchLength_ = 3) :
+        tombstone(tombstone_),
+        capacity(capacity_),
+        numPopulated(0),
+        maxSearchLength(maxSearchLength_),
+        data(std::make_unique<EntryType[]>(capacity)) {
+        for (size_t i = 0; i < capacity; ++i)
+            data[i].first = tombstone;
+    }
+
+    // If the element is already present it will be returned with the
+    // value unchanged.
+    EntryType* find_or_emplace(const KeyType& k, const ValueType& v) {
+        size_t i = get_ideal_spot_index(k);
+        if (i + maxSearchLength >= capacity)
+        {
+            // need to handle wrap-around
+            for (size_t j = 0; j <= maxSearchLength; ++j)
+            {
+                if (data[i].first == k)
+                    return data.get() + i;
+
+                if (data[i].first == tombstone)
+                {
+                    data[i].first  = k;
+                    data[i].second = v;
+                    numPopulated += 1;
+                    return data.get() + i;
+                }
+
+                ++i;
+                if (i >= capacity)
+                    i = 0;
+            }
+        }
+        else
+        {
+            for (size_t j = 0; j <= maxSearchLength; ++j)
+            {
+                if (data[i].first == k)
+                    return data.get() + i;
+
+                if (data[i].first == tombstone)
+                {
+                    data[i].first  = k;
+                    data[i].second = v;
+                    numPopulated += 1;
+                    return data.get() + i;
+                }
+
+                ++i;
+            }
+        }
+
+        return nullptr;
+    }
+
+    const EntryType* find(const KeyType& k) const {
+        size_t i = get_ideal_spot_index(k);
+        if (i + maxSearchLength >= capacity)
+        {
+            // need to handle wrap-around
+            for (size_t j = 0; j <= maxSearchLength; ++j)
+            {
+                if (data[i].first == k)
+                    return data.get() + i;
+
+                ++i;
+                if (i >= capacity)
+                    i = 0;
+            }
+        }
+        else
+        {
+            for (size_t j = 0; j <= maxSearchLength; ++j)
+            {
+                if (data[i].first == k)
+                    return data.get() + i;
+
+                ++i;
+            }
+        }
+
+        return nullptr;
+    }
+
+    size_t size() const { return numPopulated; }
+
+    std::vector<EntryType> get_populated() const {
+        std::vector<EntryType> v;
+        v.reserve(numPopulated);
+        for (size_t i = 0; i < capacity; ++i)
+        {
+            if (data[i].first != tombstone)
+                v.push_back(data[i]);
+        }
+        return v;
+    }
+
+    std::vector<KeyType> get_populated_keys() const {
+        std::vector<KeyType> v;
+        v.reserve(numPopulated);
+        for (size_t i = 0; i < capacity; ++i)
+        {
+            if (data[i].first != tombstone)
+                v.push_back(data[i].first);
+        }
+        return v;
+    }
+
+   private:
+    KeyType                      tombstone;
+    size_t                       capacity;
+    size_t                       numPopulated;
+    size_t                       maxSearchLength;
+    std::unique_ptr<EntryType[]> data;
+
+    size_t get_ideal_spot_index(const KeyType& k) const {
+        return mul_hi64(HashFunc{}(k), capacity);
+    }
+};
+
+// Under Windows it is not possible for a process to run on more than one
+// logical processor group. This usually means being limited to using max 64
+// cores. To overcome this, some special platform-specific API should be
+// called to set group affinity for each thread. Original code from Texel by
+// Peter Österlund.
+namespace WinProcGroup {
+void bind_this_thread(size_t idx);
 }
 
 

@@ -55,7 +55,8 @@ bool Eval::use_smallnet(const Position& pos) {
 Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
                      const Position&                pos,
                      Eval::NNUE::AccumulatorCaches& caches,
-                     int                            optimism) {
+                     int                            optimism,
+                     const Eval::NNUE::FtWeightCacheType* bigNetCache) {
 
     assert(!pos.checkers());
 
@@ -64,7 +65,7 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
     int  v;
 
     auto [psqt, positional] = smallNet ? networks.small.evaluate(pos, &caches.small)
-                                       : networks.big.evaluate(pos, &caches.big);
+                                       : networks.big.evaluate(pos, &caches.big, bigNetCache);
 
     Value nnue           = (125 * psqt + 131 * positional) / 128;
     int   nnueComplexity = std::abs(psqt - positional);
@@ -116,7 +117,7 @@ std::string Eval::trace(Position& pos, const Eval::NNUE::Networks& networks) {
     v                       = pos.side_to_move() == WHITE ? v : -v;
     ss << "NNUE evaluation        " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)\n";
 
-    v = evaluate(networks, pos, *caches, VALUE_ZERO);
+    v = evaluate(networks, pos, *caches, VALUE_ZERO, nullptr);
     v = pos.side_to_move() == WHITE ? v : -v;
     ss << "Final evaluation       " << 0.01 * UCIEngine::to_cp(v, pos) << " (white side)";
     ss << " [with scaled NNUE, ...]";

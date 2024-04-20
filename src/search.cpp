@@ -46,6 +46,11 @@
 #include "uci.h"
 #include "ucioption.h"
 
+#include <map>
+#include <tuple>
+#include <algorithm>
+#include <vector>
+
 namespace Stockfish {
 
 namespace TB = Tablebases;
@@ -147,7 +152,8 @@ Search::Worker::Worker(SharedState&                    sharedState,
     threads(sharedState.threads),
     tt(sharedState.tt),
     networks(sharedState.networks),
-    refreshTable(networks[token]) {
+    refreshTable(networks[token]),
+    ftWeightCache(nullptr) {
     clear();
 }
 
@@ -160,18 +166,27 @@ void Search::Worker::start_searching() {
         return;
     }
 
-    main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
+    SearchManager* mainThread = main_manager();
+    mainThread->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options,
                             main_manager()->originalTimeAdjust);
     tt.new_search();
 
     if (rootMoves.empty())
     {
         rootMoves.emplace_back(Move::none());
-        main_manager()->updates.onUpdateNoMoves(
+        mainThread->updates.onUpdateNoMoves(
           {0, {rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW, rootPos}});
     }
     else
     {
+        // Cycle the weight cache
+        mainThread->prevFtWeightCache = std::move(mainThread->ftWeightCache);
+        mainThread->ftWeightCachePreanalyzer.reset();
+
+        // and assign to worker threads before the search starts
+        for (auto& th : threads)
+            th->worker->ftWeightCache.store(mainThread->prevFtWeightCache.get());
+
         threads.start_searching();  // start non-main threads
         iterative_deepening();      // main thread start searching
     }
@@ -181,7 +196,7 @@ void Search::Worker::start_searching() {
     // the UCI protocol states that we shouldn't print the best move before the
     // GUI sends a "stop" or "ponderhit" command. We therefore simply wait here
     // until the GUI sends one of those commands.
-    while (!threads.stop && (main_manager()->ponder || limits.infinite))
+    while (!threads.stop && (mainThread->ponder || limits.infinite))
     {}  // Busy wait for a stop or a ponder reset
 
     // Stop the threads if not already stopped (also raise the stop if
@@ -194,7 +209,7 @@ void Search::Worker::start_searching() {
     // When playing in 'nodes as time' mode, subtract the searched nodes from
     // the available ones before exiting.
     if (limits.npmsec)
-        main_manager()->tm.advance_nodes_time(threads.nodes_searched()
+        mainThread->tm.advance_nodes_time(threads.nodes_searched()
                                               - limits.inc[rootPos.side_to_move()]);
 
     Worker* bestThread = this;
@@ -205,12 +220,12 @@ void Search::Worker::start_searching() {
         && rootMoves[0].pv[0] != Move::none())
         bestThread = threads.get_best_thread()->worker.get();
 
-    main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
-    main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
+    mainThread->bestPreviousScore        = bestThread->rootMoves[0].score;
+    mainThread->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
 
     // Send again PV info if we have a new best thread
     if (bestThread != this)
-        main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth);
+        mainThread->pv(*bestThread, threads, tt, bestThread->completedDepth);
 
     std::string ponder;
 
@@ -219,7 +234,7 @@ void Search::Worker::start_searching() {
         ponder = UCIEngine::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
 
     auto bestmove = UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
-    main_manager()->updates.onBestmove(bestmove, ponder);
+    mainThread->updates.onBestmove(bestmove, ponder);
 }
 
 // Main iterative deepening loop. It calls search()
@@ -439,6 +454,8 @@ void Search::Worker::iterative_deepening() {
             th->worker->bestMoveChanges = 0;
         }
 
+        double timeRatioLeft = 1.0;
+
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
         {
@@ -459,11 +476,11 @@ void Search::Worker::iterative_deepening() {
             double totalTime = mainThread->tm.optimum() * fallingEval * reduction
                              * bestMoveInstability * EvalLevel[el] * recapture;
 
+            const auto elapsedTime = elapsed();
+
             // Cap used time in case of a single legal move for a better viewer experience
             if (rootMoves.size() == 1)
                 totalTime = std::min(500.0, totalTime);
-
-            auto elapsedTime = elapsed();
 
             if (completedDepth >= 10 && nodesEffort >= 97 && elapsedTime > totalTime * 0.739
                 && !mainThread->ponder)
@@ -481,10 +498,45 @@ void Search::Worker::iterative_deepening() {
             }
             else
                 threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.506;
+
+            timeRatioLeft = 1.0 - elapsedTime / totalTime;
         }
 
         mainThread->iterValue[iterIdx] = bestValue;
         iterIdx                        = (iterIdx + 1) & 3;
+
+        if (mainThread)
+        {
+            // FT cache stuff
+            if (mainThread->ftWeightCachePreanalyzer && !mainThread->ftWeightCache)
+            {
+                const bool materialize_cache = nodes > 1'000'000 && timeRatioLeft > 0.8;
+                if (materialize_cache)
+                {
+                    static constexpr size_t FtWeightCacheSize = 8192;
+
+                    // We push a new weight cache and update the references in the workers
+                    // Keep in mind that the previous one may still be used at this point due to
+                    // races, so we keep it in memory and only delete it on start of the next search.
+                    // mainThread->ftWeightCachePreanalyzer->print();
+                    mainThread->ftWeightCache = std::make_unique<SearchManager::WeightCacheType>(
+                      *(mainThread->ftWeightCachePreanalyzer), networks[numaAccessToken].big, FtWeightCacheSize);
+                    mainThread->ftWeightCachePreanalyzer.reset();
+                    for (auto& th : threads)
+                        th->worker->ftWeightCache.store(mainThread->ftWeightCache.get());
+                }
+            }
+
+            // We kinda want to be sure we're taking away precious time for nothing.
+            // Done after the materialization to prevent the materialization from happening immediately.
+            const bool start_gathering_stats = nodes > 500'000 && timeRatioLeft > 0.9;
+            if (start_gathering_stats && !mainThread->ftWeightCachePreanalyzer)
+            {
+                mainThread->ftWeightCachePreanalyzer =
+                  std::make_unique<SearchManager::WeightCachePreanalyzerType>();
+            }
+
+        }
     }
 
     if (!mainThread)
@@ -586,7 +638,7 @@ Value Search::Worker::search(
             || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !ss->inCheck)
                    ? evaluate(networks[numaAccessToken], pos, refreshTable,
-                              thisThread->optimism[us])
+                              thisThread->optimism[us], ftWeightCache.load())
                    : value_draw(thisThread->nodes);
 
         // Step 3. Mate distance pruning. Even if we mate at the next move our score
@@ -725,7 +777,7 @@ Value Search::Worker::search(
         unadjustedStaticEval = ttData.eval;
         if (unadjustedStaticEval == VALUE_NONE)
             unadjustedStaticEval =
-              evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us]);
+              evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us], ftWeightCache.load());
         else if (PvNode)
             Eval::NNUE::hint_common_parent_position(pos, networks[numaAccessToken], refreshTable);
 
@@ -739,7 +791,7 @@ Value Search::Worker::search(
     else
     {
         unadjustedStaticEval =
-          evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us]);
+          evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us], ftWeightCache.load());
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, *thisThread, pos);
 
         // Static evaluation is saved as it was before adjustment by correction history
@@ -875,6 +927,12 @@ Value Search::Worker::search(
 
                 thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
                 pos.do_move(move, st);
+                if (is_mainthread())
+                {
+                    SearchManager* mainThread = main_manager();
+                    if (mainThread->ftWeightCachePreanalyzer)
+                        mainThread->ftWeightCachePreanalyzer->after_do_move(pos, move);
+                }
 
                 // Perform a preliminary qsearch to verify that the move holds
                 value = -qsearch<NonPV>(pos, ss + 1, -probCutBeta, -probCutBeta + 1);
@@ -1126,6 +1184,12 @@ moves_loop:  // When in check, search starts here
         // Step 16. Make the move
         thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
         pos.do_move(move, st, givesCheck);
+        if (is_mainthread())
+        {
+            SearchManager* mainThread = main_manager();
+            if (mainThread->ftWeightCachePreanalyzer)
+                mainThread->ftWeightCachePreanalyzer->after_do_move(pos, move);
+        }
 
         // These reduction adjustments have proven non-linear scaling.
         // They are optimized to time controls of 180 + 1.8 and longer so
@@ -1449,7 +1513,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
     // Step 2. Check for an immediate draw or maximum ply reached
     if (pos.is_draw(ss->ply) || ss->ply >= MAX_PLY)
         return (ss->ply >= MAX_PLY && !ss->inCheck)
-               ? evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us])
+               ? evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us], ftWeightCache.load())
                : VALUE_DRAW;
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
@@ -1486,7 +1550,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
             unadjustedStaticEval = ttData.eval;
             if (unadjustedStaticEval == VALUE_NONE)
                 unadjustedStaticEval =
-                  evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us]);
+                  evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us], ftWeightCache.load());
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, *thisThread, pos);
 
@@ -1500,7 +1564,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
             // In case of null move search, use previous static eval with a different sign
             unadjustedStaticEval =
               (ss - 1)->currentMove != Move::null()
-                ? evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us])
+                ? evaluate(networks[numaAccessToken], pos, refreshTable, thisThread->optimism[us], ftWeightCache.load())
                 : -(ss - 1)->staticEval;
             ss->staticEval = bestValue =
               to_corrected_static_eval(unadjustedStaticEval, *thisThread, pos);
@@ -1613,6 +1677,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
         // Step 7. Make and search the move
         thisThread->nodes.fetch_add(1, std::memory_order_relaxed);
         pos.do_move(move, st, givesCheck);
+        if (is_mainthread())
+        {
+            SearchManager* mainThread = main_manager();
+            if (mainThread->ftWeightCachePreanalyzer)
+                mainThread->ftWeightCachePreanalyzer->after_do_move(pos, move);
+        }
         value = -qsearch<nodeType>(pos, ss + 1, -beta, -alpha, depth - 1);
         pos.undo_move(move);
 

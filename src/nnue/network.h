@@ -48,6 +48,8 @@ class Network {
     static constexpr IndexType FTDimensions = Arch::TransformedFeatureDimensions;
 
    public:
+    using FeatureTransformerType = Transformer;
+
     Network(EvalFile file, EmbeddedNNUEType type) :
         evalFile(file),
         embeddedType(type) {}
@@ -62,7 +64,9 @@ class Network {
     bool save(const std::optional<std::string>& filename) const;
 
     NetworkOutput evaluate(const Position&                         pos,
-                           AccumulatorCaches::Cache<FTDimensions>* cache) const;
+                           AccumulatorCaches::Cache<FTDimensions>* cache,
+                   const FeatureTransformerWeightCache<FeatureTransformerType::HalfDimensions>*
+                     ft_cache = nullptr) const;
 
 
     void hint_common_access(const Position&                         pos,
@@ -71,6 +75,8 @@ class Network {
     void          verify(std::string evalfilePath) const;
     NnueEvalTrace trace_evaluate(const Position&                         pos,
                                  AccumulatorCaches::Cache<FTDimensions>* cache) const;
+
+    const Transformer& get_feature_transformer() const { return *featureTransformer; }
 
    private:
     void load_user_net(const std::string&, const std::string&);
@@ -116,6 +122,7 @@ using BigNetworkArchitecture = NetworkArchitecture<TransformedFeatureDimensionsB
 using NetworkBig   = Network<BigNetworkArchitecture, BigFeatureTransformer>;
 using NetworkSmall = Network<SmallNetworkArchitecture, SmallFeatureTransformer>;
 
+using FtWeightCacheType = FeatureTransformerWeightCache<TransformedFeatureDimensionsBig>;
 
 struct Networks {
     Networks(NetworkBig&& nB, NetworkSmall&& nS) :

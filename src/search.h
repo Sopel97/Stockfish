@@ -41,6 +41,9 @@
 #include "timeman.h"
 #include "types.h"
 
+#include "nnue/nnue_feature_transformer.h"
+#include "nnue/network.h"
+
 namespace Stockfish {
 
 // Different node types, used as a template parameter
@@ -189,6 +192,9 @@ class SearchManager: public ISearchManager {
     using UpdateIter     = std::function<void(const InfoIteration&)>;
     using UpdateBestmove = std::function<void(std::string_view, std::string_view)>;
 
+    using WeightCacheType            = Eval::NNUE::FtWeightCacheType;
+    using WeightCachePreanalyzerType = typename WeightCacheType::PreanalyzerType;
+
     struct UpdateContext {
         UpdateShort    onUpdateNoMoves;
         UpdateFull     onUpdateFull;
@@ -221,6 +227,13 @@ class SearchManager: public ISearchManager {
     size_t id;
 
     const UpdateContext& updates;
+
+    std::unique_ptr<WeightCachePreanalyzerType> ftWeightCachePreanalyzer;
+    std::unique_ptr<WeightCacheType>            ftWeightCache;
+
+    // This one is used for one subsequent search, until it's replaced
+    // by the new one.
+    std::unique_ptr<WeightCacheType> prevFtWeightCache;
 };
 
 class NullSearchManager: public ISearchManager {
@@ -309,6 +322,10 @@ class Worker {
 
     // Used by NNUE
     Eval::NNUE::AccumulatorCaches refreshTable;
+
+    // If not nullptr then this value, and all objects pointed to it, must be valid
+    // for the duration of the search.
+    std::atomic<const SearchManager::WeightCacheType*> ftWeightCache;
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;
