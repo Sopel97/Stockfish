@@ -44,6 +44,8 @@ enum class EmbeddedNNUEType {
 template<typename Arch, typename Transformer>
 class Network {
    public:
+    using FeatureTransformerType = Transformer;
+
     Network(EvalFile file, EmbeddedNNUEType type) :
         evalFile(file),
         embeddedType(type) {}
@@ -55,13 +57,17 @@ class Network {
     Value evaluate(const Position& pos,
                    bool            adjusted   = false,
                    int*            complexity = nullptr,
-                   bool            psqtOnly   = false) const;
+                   bool            psqtOnly   = false,
+                   const FeatureTransformerWeightCache<FeatureTransformerType::HalfDimensions>*
+                     cache = nullptr) const;
 
 
     void hint_common_access(const Position& pos, bool psqtOnl) const;
 
     void          verify(std::string evalfilePath) const;
     NnueEvalTrace trace_evaluate(const Position& pos) const;
+
+    const Transformer& get_feature_transformer() const { return *featureTransformer; }
 
    private:
     void load_user_net(const std::string&, const std::string&);
@@ -104,6 +110,7 @@ using BigNetworkArchitecture = NetworkArchitecture<TransformedFeatureDimensionsB
 using NetworkBig   = Network<BigNetworkArchitecture, BigFeatureTransformer>;
 using NetworkSmall = Network<SmallNetworkArchitecture, SmallFeatureTransformer>;
 
+using FtWeightCacheType = FeatureTransformerWeightCache<TransformedFeatureDimensionsBig>;
 
 struct Networks {
     Networks(NetworkBig&& nB, NetworkSmall&& nS) :

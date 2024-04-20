@@ -22,6 +22,7 @@
 #include <string>
 
 #include "types.h"
+#include "nnue/network.h"
 
 namespace Stockfish {
 
@@ -38,14 +39,13 @@ constexpr inline int SmallNetThreshold = 1274, PsqtOnlyThreshold = 2389;
 #define EvalFileDefaultNameBig "nn-ae6a388e4a1a.nnue"
 #define EvalFileDefaultNameSmall "nn-baff1ede1f90.nnue"
 
-namespace NNUE {
-struct Networks;
-}
-
 std::string trace(Position& pos, const Eval::NNUE::Networks& networks);
 
 int   simple_eval(const Position& pos, Color c);
-Value evaluate(const NNUE::Networks& networks, const Position& pos, int optimism);
+Value evaluate(const NNUE::Networks&          networks,
+               const Position&                pos,
+               int                            optimism,
+               const NNUE::FtWeightCacheType* bigNetCache);
 
 
 }  // namespace Eval

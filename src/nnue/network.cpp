@@ -186,10 +186,12 @@ bool Network<Arch, Transformer>::save(const std::optional<std::string>& filename
 
 
 template<typename Arch, typename Transformer>
-Value Network<Arch, Transformer>::evaluate(const Position& pos,
-                                           bool            adjusted,
-                                           int*            complexity,
-                                           bool            psqtOnly) const {
+Value Network<Arch, Transformer>::evaluate(
+  const Position&                                                              pos,
+  bool                                                                         adjusted,
+  int*                                                                         complexity,
+  bool                                                                         psqtOnly,
+  const FeatureTransformerWeightCache<FeatureTransformerType::HalfDimensions>* cache) const {
     // We manually align the arrays on the stack because with gcc < 9.3
     // overaligning stack variables with alignas() doesn't work correctly.
 
@@ -210,7 +212,8 @@ Value Network<Arch, Transformer>::evaluate(const Position& pos,
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
     const int  bucket = (pos.count<ALL_PIECES>() - 1) / 4;
-    const auto psqt   = featureTransformer->transform(pos, transformedFeatures, bucket, psqtOnly);
+    const auto psqt =
+      featureTransformer->transform(pos, transformedFeatures, bucket, psqtOnly, cache);
     const auto positional = !psqtOnly ? (network[bucket]->propagate(transformedFeatures)) : 0;
 
     if (complexity)
