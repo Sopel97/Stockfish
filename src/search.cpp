@@ -493,14 +493,6 @@ void Search::Worker::iterative_deepening() {
         if (mainThread)
         {
             // FT cache stuff
-            // We kinda want to be sure we're taking away precious time for nothing.
-            const bool start_gathering_stats = nodes > 500'000 && timeRatioLeft > 0.9;
-            if (start_gathering_stats && !mainThread->ftWeightCachePreanalyzer)
-            {
-                mainThread->ftWeightCachePreanalyzer =
-                  std::make_unique<SearchManager::WeightCachePreanalyzerType>();
-            }
-
             if (mainThread->ftWeightCachePreanalyzer && !mainThread->ftWeightCache)
             {
                 const bool materialize_cache = nodes > 1'000'000 && timeRatioLeft > 0.8;
@@ -519,6 +511,16 @@ void Search::Worker::iterative_deepening() {
                         th->worker->ftWeightCache.store(mainThread->ftWeightCache.get());
                 }
             }
+
+            // We kinda want to be sure we're taking away precious time for nothing.
+            // Done after the materialization to prevent the materialization from happening immediately.
+            const bool start_gathering_stats = nodes > 500'000 && timeRatioLeft > 0.9;
+            if (start_gathering_stats && !mainThread->ftWeightCachePreanalyzer)
+            {
+                mainThread->ftWeightCachePreanalyzer =
+                  std::make_unique<SearchManager::WeightCachePreanalyzerType>();
+            }
+
         }
     }
 
