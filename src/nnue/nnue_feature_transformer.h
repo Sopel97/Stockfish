@@ -300,7 +300,8 @@ class FeatureTransformerWeightCache {
     FeatureTransformerWeightCache(const FeatureTransformerWeightCachePreanalyzer& preanalyzer,
                                   const Network&                                  net,
                                   size_t                                          numEntries) :
-        keyToWeightsIndex(MoveKeyTombstone, HashCapacity, HashMaxSearchLength) {
+        keyToWeightsIndex(MoveKeyTombstone, HashCapacity, HashMaxSearchLength),
+        numEntries(numEntries) {
         // Overallocate for alignment.
         weightsBuffer     = std::make_unique<WeightType[]>(numEntries * TransformedFeatureDimensions
                                                        + CacheLineSize / sizeof(WeightType));
@@ -310,6 +311,9 @@ class FeatureTransformerWeightCache {
         weights     = align_ptr_up<CacheLineSize>(weightsBuffer.get());
         psqtWeights = align_ptr_up<CacheLineSize>(psqtWeightsBuffer.get());
 
+        assert(weights - weightsBuffer.get() < CacheLineSize);
+        assert(psqtWeights - psqtWeightsBuffer.get() < CacheLineSize);
+
         IndexType index = 0;
         for (FeatureSet::MoveKeyType key : preanalyzer.get_top(numEntries))
         {
@@ -317,10 +321,13 @@ class FeatureTransformerWeightCache {
             // Insertion may fail, though it shouldn't because we're using the same size
             if (v)
             {
+                assert(v->second == index);
                 fill_weights_for_feature(index, key, net);
                 index += 1;
             }
         }
+
+        assert(index <= numEntries);
     }
 
     std::optional<FeatureWeightPtrs> find(FeatureSet::MoveKeyType key) const {
@@ -329,6 +336,7 @@ class FeatureTransformerWeightCache {
             return std::nullopt;
 
         const IndexType idx = it->second;
+        assert(idx < numEntries);
         return FeatureWeightPtrs{weights, psqtWeights}.offset<TransformedFeatureDimensions>(idx);
     }
 
@@ -340,6 +348,7 @@ class FeatureTransformerWeightCache {
     std::unique_ptr<PSQTWeightType[]> psqtWeightsBuffer;
     WeightType*                       weights;
     PSQTWeightType*                   psqtWeights;
+    size_t numEntries;
 
     template<typename Network>
     void
@@ -360,10 +369,16 @@ class FeatureTransformerWeightCache {
         std::fill(psqtWeights + psqtOffset, psqtWeights + psqtOffset + PSQTBuckets, 0);
 
         for (const auto idx : added)
+        {
+            assert(idx < FeatureSet::Dimensions);
             ft.add_feature_weights(idx, weights + offset, psqtWeights + psqtOffset);
+        }
 
         for (const auto idx : removed)
+        {
+            assert(idx < FeatureSet::Dimensions);
             ft.sub_feature_weights(idx, weights + offset, psqtWeights + psqtOffset);
+        }
     }
 };
 
@@ -381,7 +396,7 @@ class TranslatedFeatureUpdateList {
         {
             const FeatureSet::MoveKeyType key = FeatureSet::make_move_key<Perspective>(ksq, dp);
             auto                          e   = cache->find(key);
-            if (e.has_value())
+            if (false && e.has_value())
             {
                 added.push_back(*e);
                 // Early return, don't add them normally
@@ -398,9 +413,15 @@ class TranslatedFeatureUpdateList {
         }
 
         for (const auto& i : r)
+        {
+            assert(i < FeatureSet::Dimensions);
             removed.push_back(baseWeights.offset<TransformedFeatureDimensions>(i));
+        }
         for (const auto& i : a)
+        {
+            assert(i < FeatureSet::Dimensions);
             added.push_back(baseWeights.offset<TransformedFeatureDimensions>(i));
+        }
     }
 
     ValueList<FeatureWeightPtrs, FeatureSet::MaxActiveDimensions> removed;

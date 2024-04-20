@@ -80,7 +80,7 @@ class HalfKAv2_hm {
 
     static constexpr IndexType DimensionsBits = ceillog2(Dimensions);
 
-    static_assert((1 << DimensionsBits) > Dimensions);
+    static_assert(DimensionsBits == 15);
 
     using MoveKeyType = uint64_t;
 
