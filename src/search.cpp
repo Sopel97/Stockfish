@@ -170,8 +170,7 @@ void Search::Worker::start_searching() {
     {
         // Cycle the weight cache
         mainThread->prevFtWeightCache = std::move(mainThread->ftWeightCache);
-        mainThread->ftWeightCachePreanalyzer =
-          std::make_unique<SearchManager::WeightCachePreanalyzerType>();
+        mainThread->ftWeightCachePreanalyzer.reset();
 
         // and assign to worker threads before the search starts
         for (auto& th : threads)
@@ -441,7 +440,7 @@ void Search::Worker::iterative_deepening() {
             th->worker->bestMoveChanges = 0;
         }
 
-        bool is_good_time_for_cache_formation = true;
+        double timeRatioLeft = 1.0;
 
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
@@ -485,8 +484,7 @@ void Search::Worker::iterative_deepening() {
             else
                 threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.506;
 
-            is_good_time_for_cache_formation =
-              elapsedTime > totalTime * 0.1 && elapsedTime < totalTime * 0.2;
+            timeRatioLeft = 1.0 - elapsedTime / totalTime;
         }
 
         mainThread->iterValue[iterIdx] = bestValue;
@@ -495,20 +493,31 @@ void Search::Worker::iterative_deepening() {
         if (mainThread)
         {
             // FT cache stuff
-            const bool materialize_cache = nodes > 1'000'000 && is_good_time_for_cache_formation;
-            if (materialize_cache && mainThread->ftWeightCachePreanalyzer)
+            // We kinda want to be sure we're taking away precious time for nothing.
+            const bool start_gathering_stats = nodes > 500'000 && timeRatioLeft > 0.9;
+            if (start_gathering_stats)
             {
-                static constexpr size_t FtWeightCacheSize = 8192;
+                mainThread->ftWeightCachePreanalyzer =
+                  std::make_unique<SearchManager::WeightCachePreanalyzerType>();
+            }
 
-                // We push a new weight cache and update the references in the workers
-                // Keep in mind that the previous one may still be used at this point due to
-                // races, so we keep it in memory and only delete it on start of the next search.
-                // mainThread->ftWeightCachePreanalyzer->print();
-                mainThread->ftWeightCache = std::make_unique<SearchManager::WeightCacheType>(
-                  *(mainThread->ftWeightCachePreanalyzer), networks.big, FtWeightCacheSize);
-                mainThread->ftWeightCachePreanalyzer.reset();
-                for (auto& th : threads)
-                    th->worker->ftWeightCache.store(mainThread->ftWeightCache.get());
+            if (mainThread->ftWeightCachePreanalyzer)
+            {
+                const bool materialize_cache = nodes > 1'000'000 && timeRatioLeft > 0.8;
+                if (materialize_cache)
+                {
+                    static constexpr size_t FtWeightCacheSize = 8192;
+
+                    // We push a new weight cache and update the references in the workers
+                    // Keep in mind that the previous one may still be used at this point due to
+                    // races, so we keep it in memory and only delete it on start of the next search.
+                    // mainThread->ftWeightCachePreanalyzer->print();
+                    mainThread->ftWeightCache = std::make_unique<SearchManager::WeightCacheType>(
+                      *(mainThread->ftWeightCachePreanalyzer), networks.big, FtWeightCacheSize);
+                    mainThread->ftWeightCachePreanalyzer.reset();
+                    for (auto& th : threads)
+                        th->worker->ftWeightCache.store(mainThread->ftWeightCache.get());
+                }
             }
         }
     }
