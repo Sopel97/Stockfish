@@ -441,7 +441,7 @@ void Search::Worker::iterative_deepening() {
             th->worker->bestMoveChanges = 0;
         }
 
-        bool is_good_time_for_cache_formation = false;
+        bool is_good_time_for_cache_formation = true;
 
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
@@ -495,8 +495,7 @@ void Search::Worker::iterative_deepening() {
         if (mainThread)
         {
             // FT cache stuff
-            const bool materialize_cache =
-              nodes > 1'000'000 || (nodes > 25'000 && is_good_time_for_cache_formation);
+            const bool materialize_cache = nodes > 1'000'000 && is_good_time_for_cache_formation;
             if (materialize_cache && mainThread->ftWeightCachePreanalyzer)
             {
                 static constexpr size_t FtWeightCacheSize = 8192;
