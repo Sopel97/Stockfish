@@ -247,7 +247,7 @@ class UnreliableInsertionHashTable: public HashFunc {
         if (i + maxSearchLength >= capacity)
         {
             // need to handle wrap-around
-            for (size_t j = 0; j < maxSearchLength; ++j)
+            for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
                     return data.get() + i;
@@ -267,7 +267,7 @@ class UnreliableInsertionHashTable: public HashFunc {
         }
         else
         {
-            for (size_t j = 0; j < maxSearchLength; ++j)
+            for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
                     return data.get() + i;
@@ -292,7 +292,7 @@ class UnreliableInsertionHashTable: public HashFunc {
         if (i + maxSearchLength >= capacity)
         {
             // need to handle wrap-around
-            for (size_t j = 0; j < maxSearchLength; ++j)
+            for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
                     return data.get() + i;
@@ -304,7 +304,7 @@ class UnreliableInsertionHashTable: public HashFunc {
         }
         else
         {
-            for (size_t j = 0; j < maxSearchLength; ++j)
+            for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
                     return data.get() + i;
