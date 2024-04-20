@@ -495,13 +495,13 @@ void Search::Worker::iterative_deepening() {
             // FT cache stuff
             // We kinda want to be sure we're taking away precious time for nothing.
             const bool start_gathering_stats = nodes > 500'000 && timeRatioLeft > 0.9;
-            if (start_gathering_stats)
+            if (start_gathering_stats && !mainThread->ftWeightCachePreanalyzer)
             {
                 mainThread->ftWeightCachePreanalyzer =
                   std::make_unique<SearchManager::WeightCachePreanalyzerType>();
             }
 
-            if (mainThread->ftWeightCachePreanalyzer)
+            if (mainThread->ftWeightCachePreanalyzer && !mainThread->ftWeightCache)
             {
                 const bool materialize_cache = nodes > 1'000'000 && timeRatioLeft > 0.8;
                 if (materialize_cache)
