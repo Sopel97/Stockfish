@@ -38,6 +38,7 @@
 #include "timeman.h"
 #include "types.h"
 #include "nnue/nnue_accumulator.h"
+#include "numa.h"
 
 namespace Stockfish {
 
@@ -136,7 +137,7 @@ struct SharedState {
     SharedState(const OptionsMap&           optionsMap,
                 ThreadPool&                 threadPool,
                 TranspositionTable&         transpositionTable,
-                const Eval::NNUE::Networks& nets) :
+                const NumaReplicated<Eval::NNUE::Networks>& nets) :
         options(optionsMap),
         threads(threadPool),
         tt(transpositionTable),
@@ -145,7 +146,7 @@ struct SharedState {
     const OptionsMap&           options;
     ThreadPool&                 threads;
     TranspositionTable&         tt;
-    const Eval::NNUE::Networks& networks;
+    const NumaReplicated<Eval::NNUE::Networks>& networks;
 };
 
 class Worker;
@@ -236,7 +237,7 @@ class NullSearchManager: public ISearchManager {
 // of the search history, and storing data required for the search.
 class Worker {
    public:
-    Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t);
+    Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t, NumaReplicatedAccessToken);
 
     // Called at instantiation to initialize Reductions tables
     // Reset histories, usually before a new game
@@ -294,6 +295,7 @@ class Worker {
     Value     rootDelta;
 
     size_t thread_idx;
+    NumaReplicatedAccessToken numaAccessToken;
 
     // Reductions lookup table initialized at startup
     std::array<int, MAX_MOVES> reductions;  // [depth or moveNumber]
@@ -306,7 +308,7 @@ class Worker {
     const OptionsMap&           options;
     ThreadPool&                 threads;
     TranspositionTable&         tt;
-    const Eval::NNUE::Networks& networks;
+    const NumaReplicated<Eval::NNUE::Networks>& networks;
 
     // Used by NNUE
     Eval::NNUE::AccumulatorCaches refreshTable;

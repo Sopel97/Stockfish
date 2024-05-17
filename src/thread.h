@@ -26,10 +26,12 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <functional>
 
 #include "position.h"
 #include "search.h"
 #include "thread_win32_osx.h"
+#include "numa.h"
 
 namespace Stockfish {
 
@@ -44,15 +46,18 @@ using Value = int;
 // the search is finished, it goes back to idle_loop() waiting for a new signal.
 class Thread {
    public:
-    Thread(Search::SharedState&, std::unique_ptr<Search::ISearchManager>, size_t);
+    Thread(Search::SharedState&, std::unique_ptr<Search::ISearchManager>, size_t, NumaReplicatedAccessToken, std::function<void()>);
     virtual ~Thread();
 
-    void   idle_loop();
+    void   idle_loop(std::function<void()> threadInitFunc);
     void   start_searching();
+    void   clear_worker();
+    void   run_custom_job(std::function<void()> f);
     void   wait_for_search_finished();
     size_t id() const { return idx; }
 
     std::unique_ptr<Search::Worker> worker;
+    std::function<void()> jobFunc;
 
    private:
     std::mutex              mutex;
@@ -60,6 +65,7 @@ class Thread {
     size_t                  idx, nthreads;
     bool                    exit = false, searching = true;  // Set before starting std::thread
     NativeThread            stdThread;
+    NumaReplicatedAccessToken numaAccessToken;
 };
 
 
@@ -67,25 +73,34 @@ class Thread {
 // parking and, most importantly, launching a thread. All the access to threads
 // is done through this class.
 class ThreadPool {
-
    public:
+    ThreadPool() {}
+
     ~ThreadPool() {
         // destroy any existing thread(s)
         if (threads.size() > 0)
         {
             main_thread()->wait_for_search_finished();
 
-            while (threads.size() > 0)
-                delete threads.back(), threads.pop_back();
+            threads.clear();
         }
     }
 
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
+
     void start_thinking(const OptionsMap&, Position&, StateListPtr&, Search::LimitsType);
+    void run_on_thread(size_t threadId, std::function<void()> f);
+    void wait_on_thread(size_t threadId);
+    size_t num_threads() const;
     void clear();
-    void set(Search::SharedState, const Search::SearchManager::UpdateContext&);
+    void set(const NumaConfig& numaConfig, Search::SharedState, const Search::SearchManager::UpdateContext&);
 
     Search::SearchManager* main_manager();
-    Thread*                main_thread() const { return threads.front(); }
+    Thread*                main_thread() const { return threads.front().get(); }
     uint64_t               nodes_searched() const;
     uint64_t               tb_hits() const;
     Thread*                get_best_thread() const;
@@ -103,12 +118,12 @@ class ThreadPool {
 
    private:
     StateListPtr         setupStates;
-    std::vector<Thread*> threads;
+    std::vector<std::unique_ptr<Thread>> threads;
 
     uint64_t accumulate(std::atomic<uint64_t> Search::Worker::*member) const {
 
         uint64_t sum = 0;
-        for (Thread* th : threads)
+        for (auto&& th : threads)
             sum += (th->worker.get()->*member).load(std::memory_order_relaxed);
         return sum;
     }

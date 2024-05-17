@@ -24,6 +24,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -73,6 +74,30 @@ using AlignedPtr = std::unique_ptr<T, AlignedDeleter<T>>;
 template<typename T>
 using LargePagePtr = std::unique_ptr<T, LargePageDeleter<T>>;
 
+struct PipeDeleter {
+    void operator()(FILE* file) const {
+        if (file != nullptr) {
+            pclose(file);
+        }
+    }
+};
+
+#if defined(__linux__)
+
+inline std::string get_system_command_output(const std::string& command) {
+    std::unique_ptr<FILE, PipeDeleter> pipe(popen(command.c_str(), "r"));
+    if (!pipe) 
+        std::exit(EXIT_FAILURE);
+
+    std::string result;
+    char buffer[1024];
+    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr)
+        result += buffer;
+
+    return result;
+}
+
+#endif
 
 void dbg_hit_on(bool cond, int slot = 0);
 void dbg_mean_of(int64_t value, int slot = 0);
@@ -88,6 +113,23 @@ inline TimePoint now() {
       .count();
 }
 
+inline std::vector<std::string> split(const std::string& s, const std::string& delimiter) {
+    size_t begin = 0;
+    std::vector<std::string> res;
+
+    for(;;) {
+        const size_t end = s.find(delimiter, begin);
+        if (end == std::string::npos)
+            break;
+
+        res.emplace_back(s.substr(begin, end - begin));
+        begin = end + delimiter.size();
+    }
+
+    res.emplace_back(s.substr(begin));
+
+    return res;
+}
 
 enum SyncCout {
     IO_LOCK,
@@ -192,15 +234,6 @@ inline uint64_t mul_hi64(uint64_t a, uint64_t b) {
     uint64_t c3 = aL * bH + uint32_t(c2);
     return aH * bH + (c2 >> 32) + (c3 >> 32);
 #endif
-}
-
-// Under Windows it is not possible for a process to run on more than one
-// logical processor group. This usually means being limited to using max 64
-// cores. To overcome this, some special platform-specific API should be
-// called to set group affinity for each thread. Original code from Texel by
-// Peter Österlund.
-namespace WinProcGroup {
-void bind_this_thread(size_t idx);
 }
 
 
