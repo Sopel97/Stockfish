@@ -133,6 +133,9 @@ void Engine::set_numa_config_from_option(const std::string& o) {
     } else {
         numaContext.set_numa_config(NumaConfig::from_string(o));
     }
+
+    // Force reallocation of threads in case affinites need to change.
+    resize_threads();
 }
 
 void Engine::resize_threads() { 
