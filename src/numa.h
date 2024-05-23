@@ -578,6 +578,7 @@ public:
   ~NumaReplicated() override = default;
 
   const T& operator[](NumaReplicatedAccessToken token) const {
+    assert(token.get_numa_index() < instances.size());
     return *(instances[token.get_numa_index()]);
   }
 
@@ -591,6 +592,7 @@ public:
 
   template <typename FuncT>
   void modify_and_replicate(FuncT&& f) {
+    std::cout << "modify and replicate\n";
     auto source = std::move(instances[0]);
     std::forward<FuncT>(f)(*source);
     replicate_from(std::move(*source));
@@ -624,6 +626,8 @@ private:
       // and reuse the source value, avoiding one copy operation.
       instances.emplace_back(std::make_unique<T>(std::move(source)));
     }
+
+    std::cout << "replicated to " << instances.size() << " instances\n";
   }
 };
 
