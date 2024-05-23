@@ -86,6 +86,12 @@ class ThreadPool {
         }
     }
 
+    ThreadPool(const ThreadPool&) = delete;
+    ThreadPool(ThreadPool&&) = delete;
+
+    ThreadPool& operator=(const ThreadPool&) = delete;
+    ThreadPool& operator=(ThreadPool&&) = delete;
+
     void start_thinking(const OptionsMap&, Position&, StateListPtr&, Search::LimitsType);
     void run_on_thread(size_t threadId, std::function<void()> f);
     void wait_on_thread(size_t threadId);
