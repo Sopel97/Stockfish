@@ -77,11 +77,13 @@ Thread::~Thread() {
 
 // Wakes up the thread that will start the search
 void Thread::start_searching() {
+    assert(worker != nullptr);
     run_custom_job([this]() { worker->start_searching(); });
 }
 
 // Wakes up the thread that will start the search
 void Thread::clear_worker() {
+    assert(worker != nullptr);
     run_custom_job([this]() { worker->clear(); });
 }
 
