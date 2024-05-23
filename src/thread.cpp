@@ -150,8 +150,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
     {
         main_thread()->wait_for_search_finished();
 
-        while (threads.size() > 0)
-            delete threads.back(), threads.pop_back();
+        threads.clear();
     }
 
     const size_t requested = sharedState.options["Threads"];
@@ -186,7 +185,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
                 }
             };
 
-            threads.push_back(new Thread(sharedState, std::move(manager), threadId, token, std::move(threadInitFunc)));
+            threads.emplace_back(std::make_unique<Thread>(sharedState, std::move(manager), threadId, token, std::move(threadInitFunc)));
         }
 
         clear();
@@ -201,10 +200,10 @@ void ThreadPool::clear() {
     if (threads.size() == 0)
         return;
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         th->clear_worker();
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         th->wait_for_search_finished();
 
     main_manager()->callsCnt                 = 0;
@@ -272,7 +271,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     // be deduced from a fen string, so set() clears them and they are set from
     // setupStates->back() later. The rootState is per thread, earlier states are shared
     // since they are read-only.
-    for (Thread* th : threads) {
+    for (auto&& th : threads) {
         th->run_custom_job([&]() {
             th->worker->limits = limits;
             th->worker->nodes = th->worker->tbHits = th->worker->nmpMinPly =
@@ -285,7 +284,7 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
         });
     }
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         th->wait_for_search_finished();
 
     main_thread()->start_searching();
@@ -293,14 +292,14 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
 
 Thread* ThreadPool::get_best_thread() const {
 
-    Thread* bestThread = threads.front();
+    Thread* bestThread = threads.front().get();
     Value   minScore   = VALUE_NONE;
 
     std::unordered_map<Move, int64_t, Move::MoveHash> votes(
       2 * std::min(size(), bestThread->worker->rootMoves.size()));
 
     // Find the minimum score of all threads
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         minScore = std::min(minScore, th->worker->rootMoves[0].score);
 
     // Vote according to score and depth, and select the best thread
@@ -308,10 +307,10 @@ Thread* ThreadPool::get_best_thread() const {
         return (th->worker->rootMoves[0].score - minScore + 14) * int(th->worker->completedDepth);
     };
 
-    for (Thread* th : threads)
-        votes[th->worker->rootMoves[0].pv[0]] += thread_voting_value(th);
+    for (auto&& th : threads)
+        votes[th->worker->rootMoves[0].pv[0]] += thread_voting_value(th.get());
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
     {
         const auto bestThreadScore = bestThread->worker->rootMoves[0].score;
         const auto newThreadScore  = th->worker->rootMoves[0].score;
@@ -332,26 +331,26 @@ Thread* ThreadPool::get_best_thread() const {
 
         // Note that we make sure not to pick a thread with truncated-PV for better viewer experience.
         const bool betterVotingValue =
-          thread_voting_value(th) * int(newThreadPV.size() > 2)
+          thread_voting_value(th.get()) * int(newThreadPV.size() > 2)
           > thread_voting_value(bestThread) * int(bestThreadPV.size() > 2);
 
         if (bestThreadInProvenWin)
         {
             // Make sure we pick the shortest mate / TB conversion
             if (newThreadScore > bestThreadScore)
-                bestThread = th;
+                bestThread = th.get();
         }
         else if (bestThreadInProvenLoss)
         {
             // Make sure we pick the shortest mated / TB conversion
             if (newThreadInProvenLoss && newThreadScore < bestThreadScore)
-                bestThread = th;
+                bestThread = th.get();
         }
         else if (newThreadInProvenWin || newThreadInProvenLoss
                  || (newThreadScore > VALUE_TB_LOSS_IN_MAX_PLY
                      && (newThreadMoveVote > bestThreadMoveVote
                          || (newThreadMoveVote == bestThreadMoveVote && betterVotingValue))))
-            bestThread = th;
+            bestThread = th.get();
     }
 
     return bestThread;
@@ -362,7 +361,7 @@ Thread* ThreadPool::get_best_thread() const {
 // Will be invoked by main thread after it has started searching
 void ThreadPool::start_searching() {
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         if (th != threads.front())
             th->start_searching();
 }
@@ -372,7 +371,7 @@ void ThreadPool::start_searching() {
 
 void ThreadPool::wait_for_search_finished() const {
 
-    for (Thread* th : threads)
+    for (auto&& th : threads)
         if (th != threads.front())
             th->wait_for_search_finished();
 }

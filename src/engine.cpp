@@ -144,8 +144,7 @@ void Engine::resize_threads() {
     threads.set(numaContext.get_numa_config(), {options, threads, tt, networks}, updateContext); 
 
     // Reallocate the hash with the new threadpool size
-    threads.wait_for_search_finished();
-    tt.resize(options["Hash"], threads);
+    set_tt_size(options["Hash"]);
 }
 
 void Engine::set_tt_size(size_t mb) {

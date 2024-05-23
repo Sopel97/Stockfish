@@ -75,15 +75,14 @@ class Thread {
 class ThreadPool {
    public:
     ThreadPool() {}
-    
+
     ~ThreadPool() {
         // destroy any existing thread(s)
         if (threads.size() > 0)
         {
             main_thread()->wait_for_search_finished();
 
-            while (threads.size() > 0)
-                delete threads.back(), threads.pop_back();
+            threads.clear();
         }
     }
 
@@ -101,7 +100,7 @@ class ThreadPool {
     void set(const NumaConfig& numaConfig, Search::SharedState, const Search::SearchManager::UpdateContext&);
 
     Search::SearchManager* main_manager();
-    Thread*                main_thread() const { return threads.front(); }
+    Thread*                main_thread() const { return threads.front().get(); }
     uint64_t               nodes_searched() const;
     uint64_t               tb_hits() const;
     Thread*                get_best_thread() const;
@@ -119,12 +118,12 @@ class ThreadPool {
 
    private:
     StateListPtr         setupStates;
-    std::vector<Thread*> threads;
+    std::vector<std::unique_ptr<Thread>> threads;
 
     uint64_t accumulate(std::atomic<uint64_t> Search::Worker::*member) const {
 
         uint64_t sum = 0;
-        for (Thread* th : threads)
+        for (auto&& th : threads)
             sum += (th->worker.get()->*member).load(std::memory_order_relaxed);
         return sum;
     }

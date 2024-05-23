@@ -428,7 +428,7 @@ void Search::Worker::iterative_deepening() {
             skill.pick_best(rootMoves, multiPV);
 
         // Use part of the gained time from a previous stable move for the current move
-        for (Thread* th : threads)
+        for (auto&& th : threads)
         {
             totBestMoveChanges += th->worker->bestMoveChanges;
             th->worker->bestMoveChanges = 0;
