@@ -277,6 +277,8 @@ public:
         for (NumaIndex n = 0; n < nodes.size(); ++n) {
           float fill = static_cast<float>(occupation[n] + 1) / static_cast<float>(nodes[n].size());
           // NOTE: Do we want to perhaps fill the first available node up to 50% first before considering other nodes?
+          //       Probably not, because it would interfere with running multiple instances. We basically shouldn't
+          //       favor any particular node.
           if (fill < bestNodeFill) {
             bestNode = n;
             bestNodeFill = fill;
