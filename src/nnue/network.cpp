@@ -133,9 +133,10 @@ Network<Arch, Transformer>::Network(const Network<Arch, Transformer>& other) :
         *featureTransformer = *other.featureTransformer;
     }
     for (std::size_t i = 0; i < LayerStacks; ++i) {
-        if (other.network[i])
+        if (other.network[i]) {
             Detail::initialize(network[i]);
             *(network[i]) = *(other.network[i]);
+        }
     }
 }
 
@@ -149,9 +150,10 @@ Network<Arch, Transformer>& Network<Arch, Transformer>::operator=(const Network<
         *featureTransformer = *other.featureTransformer;
     }
     for (std::size_t i = 0; i < LayerStacks; ++i) {
-        if (other.network[i])
+        if (other.network[i]) {
             Detail::initialize(network[i]);
             *(network[i]) = *(other.network[i]);
+        }
     }
 
     return *this;
