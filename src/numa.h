@@ -262,6 +262,15 @@ public:
     return requiresMemoryReplication;
   }
 
+  bool suggests_binding_threads(CpuIndex numThreads) const {
+    // If we can reasonably determine that the threads can't be contained
+    // by the OS within the first NUMA node then we advise distributing
+    // and binding threads. When the threads are not bound we can only use
+    // NUMA memory replicated objects from the first node, so when the OS
+    // has to schedule on other nodes we lose performance.
+    return numThreads > nodes[0].size() / 2;
+  }
+
   std::vector<NumaIndex> distribute_threads_among_numa_nodes(CpuIndex numThreads) const {
     std::vector<NumaIndex> ns;
 
