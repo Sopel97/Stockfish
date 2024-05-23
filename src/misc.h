@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <optional>
 
 #define stringify2(x) #x
 #define stringify(x) stringify2(x)
@@ -84,10 +85,10 @@ struct PipeDeleter {
 
 #if defined(__linux__)
 
-inline std::string get_system_command_output(const std::string& command) {
+inline std::optional<std::string> get_system_command_output(const std::string& command) {
     std::unique_ptr<FILE, PipeDeleter> pipe(popen(command.c_str(), "r"));
     if (!pipe) 
-        std::exit(EXIT_FAILURE);
+        return std::nullopt;
 
     std::string result;
     char buffer[1024];

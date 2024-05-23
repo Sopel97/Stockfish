@@ -115,32 +115,38 @@ public:
     std::cout << "created numa config\n";
   }
 
-  static NumaConfig empty() {
-    return NumaConfig(EmptyNodeTag{});
+  static NumaConfig uniform() {
+    return {};
   }
 
-  static NumaConfig from_system() {
+  static NumaConfig from_system(bool respectProcessAffinity = true) {
     NumaConfig cfg = empty();
 
 #if defined(__linux__)
 
     // On linux things are straightforward, since there's no processor groups and
     // any thread can be scheduled on all processors.
-    std::istringstream ss(get_system_command_output("lscpu -e=cpu,node"));
+    auto lscpuOpt = get_system_command_output("lscpu -e=cpu,node");
+    if (lscpuOpt.has_value()) {
 
-    // skip the list header
-    ss.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+      std::istringstream ss(*lscpuOpt);
 
-    for(;;) {
-      CpuIndex c;
-      NumaIndex n;
+      // skip the list header
+      ss.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-      ss >> c >> n;
+      for(;;) {
+        CpuIndex c;
+        NumaIndex n;
 
-      if (!ss)
-        break;
+        ss >> c >> n;
 
-      cfg.add_cpu_to_node(n, c);
+        if (!ss)
+          break;
+
+        cfg.add_cpu_to_node(n, c);
+      }
+    } else {
+      cfg = uniform();
     }
 
 #elif defined(_WIN32)
@@ -199,10 +205,14 @@ public:
 #else
 
     // Fallback for unsupported systems.
-    const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
-    cfg.add_cpu_range_to_node(NumaIndex{0}, CpuIndex{0}, numCpus-1);
+    cfg = uniform();
 
 #endif
+
+    if (respectProcessAffinity) {
+      // TODO: filter processors that are not in the current process' affinity mask
+      //       nodes that would become empty should get removed
+    }
 
     cfg.requiresMemoryReplication = cfg.nodes.size() != 1;
 
@@ -436,6 +446,10 @@ private:
   // and speeding up initialization, which is the vast majority of
   // machines Stockfish is being ran on.
   bool requiresMemoryReplication;
+
+  static NumaConfig empty() {
+    return NumaConfig(EmptyNodeTag{});
+  }
 
   struct EmptyNodeTag {};
 
