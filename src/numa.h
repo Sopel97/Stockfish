@@ -103,6 +103,10 @@ using NumaIndex = size_t;
 
 // Designed as immutable, because there is no good reason to alter an already existing config
 // in a way that doesn't require recreating it completely.
+// The CPU (processor) numbers always correspond to the actual numbering used by the system.
+// The NUMA node numbers MAY NOT correspond to the system's numbering of the NUMA nodes.
+// In particular, empty nodes may be removed, or the user may create custom nodes.
+// Empty nodes may still exist.
 class NumaConfig {
 public:
   NumaConfig() :
@@ -115,12 +119,68 @@ public:
     std::cout << "created numa config\n";
   }
 
-  static NumaConfig uniform() {
-    return {};
+  static std::set<CpuIndex> get_process_affinity() const {
+    std::set<CpuIndex> cpus;
+
+#if defined(__linux__)
+
+    // cpu_set_t by default holds 1024 entries. This may not be enough soon,
+    // but there is no easy way to determine how many threads there actually is.
+    // In this case we just choose a reasonable upper bound.
+    static constexpr CpuIndex MaxNumCpus = 1024 * 64;
+
+    cpu_set_t* mask = CPU_ALLOC(MaxNumCpus);
+    if (mask == nullptr)
+        exit(EXIT_FAILURE);
+
+    const size_t masksize = CPU_ALLOC_SIZE(MaxNumCpus);
+
+    CPU_ZERO_S(masksize, mask);
+    
+    const int status = sched_getaffinity(0, masksize, mask);
+
+    if (status != 0) {
+      CPU_FREE(mask);
+      std::exit(EXIT_FAILURE);
+    }
+
+    for (CpuIndex c = 0; c < MaxNumCpus; ++c)
+      if (CPU_ISSET_S(c, masksize, mask))
+        cpus.insert(c);
+
+    CPU_FREE(mask);
+
+#elif defined(_WIN32)
+#else
+
+    // For other systems we assume the process is allowed to execute on all processors.
+    const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
+    for (CpuIndex c = 0; c < numCpus; ++c)
+      cpus.insert(c);
+
+#endif
+
+    return cpus;
   }
 
   static NumaConfig from_system(bool respectProcessAffinity = true) {
     NumaConfig cfg = empty();
+
+    std::set<CpuIndex> allowedCpus;
+
+    if (respectProcessAffinity) {
+      // TODO: filter processors that are not in the current process' affinity mask
+      //       nodes that would become empty should get removed
+      allowedCpus = get_process_affinity();
+    } else {
+      const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
+      for (CpuIndex c = 0; c < numCpus; ++c)
+        allowedCpus.insert(c);
+    }
+
+    auto is_cpu_allowed = [&](CpuIndex c) {
+      return allowedCpus.count(c) == 1;
+    };
 
 #if defined(__linux__)
 
@@ -143,10 +203,14 @@ public:
         if (!ss)
           break;
 
-        cfg.add_cpu_to_node(n, c);
+        if (is_cpu_allowed(c))
+          cfg.add_cpu_to_node(n, c);
       }
     } else {
-      cfg = uniform();
+      const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
+      for (CpuIndex c = 0; c < numCpus; ++c)
+        if (is_cpu_allowed(c))
+          cfg.add_cpu_to_node(NodeIndex{0}, c)
     }
 
 #elif defined(_WIN32)
@@ -168,8 +232,9 @@ public:
         procnum.Reserved = 0;
         USHORT nodeNumber;
         const BOOL status = GetNumaProcessorNodeEx(&procnum, &nodeNumber);
-        if (status != 0 && nodeNumber != std::numeric_limits<USHORT>::max()) {
-          cfg.add_cpu_to_node(nodeNumber, static_cast<CpuIndex>(procGroup) * 64 + static_cast<CpuIndex>(number));
+        const CpuIndex c = static_cast<CpuIndex>(procGroup) * 64 + static_cast<CpuIndex>(number);
+        if (status != 0 && nodeNumber != std::numeric_limits<USHORT>::max() && is_cpu_allowed(c)) {
+          cfg.add_cpu_to_node(nodeNumber, c);
         }
       }
     }
@@ -208,11 +273,6 @@ public:
     cfg = uniform();
 
 #endif
-
-    if (respectProcessAffinity) {
-      // TODO: filter processors that are not in the current process' affinity mask
-      //       nodes that would become empty should get removed
-    }
 
     cfg.requiresMemoryReplication = cfg.nodes.size() != 1;
 
