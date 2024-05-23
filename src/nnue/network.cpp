@@ -155,6 +155,8 @@ Network<Arch, Transformer>& Network<Arch, Transformer>::operator=(const Network<
             int numa_node = -1;
             get_mempolicy(&numa_node, NULL, 0, (void*)(ptr + offset), MPOL_F_NODE | MPOL_F_ADDR);
             std::cout << numa_node; 
+            if (offset % (4096*64)==0)
+                std::cout << std::endl;
         }
     }
     for (std::size_t i = 0; i < LayerStacks; ++i) {
