@@ -26,6 +26,7 @@
 #include <optional>
 #include <type_traits>
 #include <vector>
+#include <numaif.h>
 
 #include "../evaluate.h"
 #include "../incbin/incbin.h"
@@ -148,6 +149,13 @@ Network<Arch, Transformer>& Network<Arch, Transformer>::operator=(const Network<
     if (other.featureTransformer) {
         Detail::initialize(featureTransformer);
         *featureTransformer = *other.featureTransformer;
+
+        void* ptr = &*featureTransformer;
+        for (size_t offset = 0; offset < sizeof(*featureTransformer); offset += 4096) {
+            int numa_node = -1;
+            get_mempolicy(&numa_node, NULL, 0, (void*)(ptr + offset), MPOL_F_NODE | MPOL_F_ADDR);
+            std::cout << numa_node; 
+        }
     }
     for (std::size_t i = 0; i < LayerStacks; ++i) {
         if (other.network[i]) {

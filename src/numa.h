@@ -92,6 +92,9 @@ inline int get_current_cpu() {
   return sched_getcpu();
 #elif defined(_WIN32)
   return GetCurrentProcessorNumber();
+#else
+  // Should not be used on other systems
+  std::exit(EXIT_FAILURE);
 #endif
 
 }
@@ -223,12 +226,12 @@ public:
 
         auto parts = split(cpuStr, "-");
         if (parts.size() == 1) {
-          const CpuIndex c = CpuIndex{std::stoull(parts[0])};
+          const CpuIndex c = CpuIndex(std::stoull(parts[0]));
           if (!cfg.add_cpu_to_node(n, c))
             std::exit(EXIT_FAILURE);
         } else if (parts.size() == 2) {
-          const CpuIndex cfirst = CpuIndex{std::stoull(parts[0])};
-          const CpuIndex clast = CpuIndex{std::stoull(parts[1])};
+          const CpuIndex cfirst = CpuIndex(std::stoull(parts[0]));
+          const CpuIndex clast = CpuIndex(std::stoull(parts[1]));
           if (!cfg.add_cpu_range_to_node(n, cfirst, clast))
             std::exit(EXIT_FAILURE);
         } else {

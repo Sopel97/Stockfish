@@ -559,6 +559,7 @@ ifeq ($(COMP),gcc)
 		profile_make = clang-profile-make
 		profile_use = clang-profile-use
 	endif
+	LDFLAGS += -lnuma
 endif
 
 ### On mingw use Windows threads, otherwise POSIX
