@@ -542,31 +542,13 @@ public:
   using ReplicatorFuncType = std::function<T(const T&)>;
 
   NumaReplicated(NumaReplicationContext& ctx) :
-    NumaReplicatedBase(ctx),
-    replicatorFunc([](const T& src) -> T { return src; }) 
+    NumaReplicatedBase(ctx)
   {
     replicate_from(T{});
   }
 
   NumaReplicated(NumaReplicationContext& ctx, T&& source) :
-    NumaReplicatedBase(ctx),
-    replicatorFunc([](const T& src) -> T { return src; }) 
-  {
-    replicate_from(std::move(source));
-  }
-
-  template <typename FuncT>
-  NumaReplicated(NumaReplicationContext& ctx, FuncT&& func) :
-    NumaReplicatedBase(ctx),
-    replicatorFunc(std::forward<FuncT>(func)) 
-  {
-    replicate_from(T{});
-  }
-
-  template <typename FuncT>
-  NumaReplicated(NumaReplicationContext& ctx, T&& source, FuncT&& func) :
-    NumaReplicatedBase(ctx),
-    replicatorFunc(std::forward<FuncT>(func)) 
+    NumaReplicatedBase(ctx)
   {
     replicate_from(std::move(source));
   }
@@ -574,7 +556,6 @@ public:
   NumaReplicated(const NumaReplicated&) = delete;
   NumaReplicated(NumaReplicated&& other) noexcept : 
     NumaReplicatedBase(std::move(other)),
-    replicatorFunc(std::exchange(other.replicatorFunc, nullptr)),
     instances(std::exchange(other.instances, {}))
   {
 
@@ -583,7 +564,6 @@ public:
   NumaReplicated& operator=(const NumaReplicated&) = delete;
   NumaReplicated& operator=(NumaReplicated&& other) noexcept {
     NumaReplicatedBase::operator=(*this, std::move(other));
-    replicatorFunc = std::exchange(other.replicatorFunc, nullptr);
     instances = std::exchange(other.instances, {});
 
     return *this;
@@ -624,7 +604,6 @@ public:
   }
 
 private:
-  ReplicatorFuncType replicatorFunc;
   std::vector<std::unique_ptr<T>> instances;
 
   void replicate_from(T&& source) {
@@ -635,11 +614,11 @@ private:
     const NumaConfig& cfg = get_numa_config();
     if (cfg.requires_memory_replication()) {
       for (NumaIndex n = 0; n < cfg.num_numa_nodes(); ++n) {
-        cfg.execute_on_numa_node(n, [this, &source](){ instances.emplace_back(std::make_unique<T>(replicatorFunc(source))); });
+        cfg.execute_on_numa_node(n, [this, &source](){ instances.emplace_back(std::make_unique<T>(source)); });
       }
     } else {
       for (NumaIndex n = 0; n + 1 < cfg.num_numa_nodes(); ++n) {
-        instances.emplace_back(std::make_unique<T>(replicatorFunc(source)));
+        instances.emplace_back(std::make_unique<T>(source));
       }
       // We take advantage of the fact that replication is not required
       // and reuse the source value, avoiding one copy operation.

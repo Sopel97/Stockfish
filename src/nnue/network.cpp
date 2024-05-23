@@ -128,10 +128,15 @@ Network<Arch, Transformer>::Network(const Network<Arch, Transformer>& other) :
     evalFile(other.evalFile),
     embeddedType(other.embeddedType)
 {
-    initialize();
-    *featureTransformer = *other.featureTransformer;
-    for (std::size_t i = 0; i < LayerStacks; ++i)
-        *(network[i]) = *(other.network[i]);
+    if (other.featureTransformer) {
+        Detail::initialize(featureTransformer);
+        *featureTransformer = *other.featureTransformer;
+    }
+    for (std::size_t i = 0; i < LayerStacks; ++i) {
+        if (other.network[i])
+            Detail::initialize(network[i]);
+            *(network[i]) = *(other.network[i]);
+    }
 }
 
 template<typename Arch, typename Transformer>
@@ -139,10 +144,15 @@ Network<Arch, Transformer>& Network<Arch, Transformer>::operator=(const Network<
     evalFile = other.evalFile;
     embeddedType = other.embeddedType;
 
-    initialize();
-    *featureTransformer = *other.featureTransformer;
-    for (std::size_t i = 0; i < LayerStacks; ++i)
-        *(network[i]) = *(other.network[i]);
+    if (other.featureTransformer) {
+        Detail::initialize(featureTransformer);
+        *featureTransformer = *other.featureTransformer;
+    }
+    for (std::size_t i = 0; i < LayerStacks; ++i) {
+        if (other.network[i])
+            Detail::initialize(network[i]);
+            *(network[i]) = *(other.network[i]);
+    }
 
     return *this;
 }
