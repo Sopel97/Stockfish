@@ -50,6 +50,7 @@ Engine::Engine(std::string path) :
     binaryDirectory(CommandLine::get_binary_directory(path)),
     numaContext(NumaConfig::from_system()),
     states(new std::deque<StateInfo>(1)),
+    threads(),
     networks(numaContext, NN::Networks(
       NN::NetworkBig({EvalFileDefaultNameBig, "None", ""}, NN::EmbeddedNNUEType::BIG),
       NN::NetworkSmall({EvalFileDefaultNameSmall, "None", ""}, NN::EmbeddedNNUEType::SMALL))) {

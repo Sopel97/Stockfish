@@ -73,8 +73,9 @@ class Thread {
 // parking and, most importantly, launching a thread. All the access to threads
 // is done through this class.
 class ThreadPool {
-
    public:
+    ThreadPool() {}
+    
     ~ThreadPool() {
         // destroy any existing thread(s)
         if (threads.size() > 0)
