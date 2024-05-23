@@ -111,7 +111,7 @@ class NumaConfig {
 public:
   NumaConfig() :
     highestCpuIndex(0),
-    requiresMemoryReplication(false)
+    customAffinity(false)
   {
     const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
     std::cout << "creating numa config with " << numCpus << " cpus\n";
@@ -274,8 +274,6 @@ public:
 
 #endif
 
-    cfg.requiresMemoryReplication = cfg.nodes.size() != 1;
-
     return cfg;
   }
 
@@ -308,6 +306,8 @@ public:
       n += 1;
     }
 
+    cfg.customAffinity = true;
+
     return cfg;
   }
 
@@ -329,7 +329,7 @@ public:
   }
 
   bool requires_memory_replication() const {
-    return requiresMemoryReplication;
+    return customAffinity || nodes.size() > 1;
   }
 
   bool suggests_binding_threads(CpuIndex numThreads) const {
@@ -338,7 +338,37 @@ public:
     // and binding threads. When the threads are not bound we can only use
     // NUMA memory replicated objects from the first node, so when the OS
     // has to schedule on other nodes we lose performance.
-    return numThreads > nodes[0].size() / 2;
+    // We also suggest binding if there's enough threads to distribute among nodes
+    // with minimal disparity.
+    // We try to ignore small nodes, in particular the empty ones.
+
+    // If the affinity set by the user does not match the affinity given by the OS
+    // then binding is necessary to ensure the threads are running on correct processors.
+    if (customAffinity)
+      return true;
+
+    // We obviously can't distribute a single thread, so a single thread should never be bound.
+    if (numThreads <= 1)
+      return false;
+
+    size_t largestNodeSize = 0;
+    for (auto&& cpus : nodes) {
+      if (cpus.size() > largestNodeSize)
+        largestNodeSize = cpus.size();
+    }
+
+    auto is_node_small = [largestNodeSize](const std::set<CpuIndex>& node) {
+      static constexpr double SmallNodeThreshold = 0.6;
+      return static_cast<double>(cpus.size()) / static_cast<double>(largestNodeSize) <= SmallNodeThreshold;
+    };
+
+    size_t numNotSmallNodes = 0;
+    for (auto&& cpus : nodes) {
+      if (!is_node_small(cpus))
+        numNotSmallNodes += 1;
+    }
+
+    return (numThreads > largestNodeSize / 2 || numThreads >= numNotSmallNodes * 4) && nodes.size() > 1;
   }
 
   std::vector<NumaIndex> distribute_threads_among_numa_nodes(CpuIndex numThreads) const {
@@ -500,12 +530,7 @@ private:
   std::map<CpuIndex, NumaIndex> nodeByCpu;
   CpuIndex highestCpuIndex;
 
-  // When we read the system's NUMA configuration we can know for certain
-  // that the system only has a single NUMA node. This can be used to prevent
-  // unnecessary copying on such systems, reducing worst case memory usage 
-  // and speeding up initialization, which is the vast majority of
-  // machines Stockfish is being ran on.
-  bool requiresMemoryReplication;
+  bool customAffinity;
 
   static NumaConfig empty() {
     return NumaConfig(EmptyNodeTag{});
@@ -515,7 +540,7 @@ private:
 
   NumaConfig(EmptyNodeTag) :
     highestCpuIndex(0),
-    requiresMemoryReplication(true)
+    customAffinity(false)
   {
 
   }
@@ -704,9 +729,7 @@ private:
         cfg.execute_on_numa_node(n, [this, &source](){ instances.emplace_back(std::make_unique<T>(source)); });
       }
     } else {
-      for (NumaIndex n = 0; n + 1 < cfg.num_numa_nodes(); ++n) {
-        instances.emplace_back(std::make_unique<T>(source));
-      }
+      assert(cfg.num_numa_nodes() == 1);
       // We take advantage of the fact that replication is not required
       // and reuse the source value, avoiding one copy operation.
       instances.emplace_back(std::make_unique<T>(std::move(source)));
