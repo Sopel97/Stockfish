@@ -219,7 +219,7 @@ public:
       const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
       for (CpuIndex c = 0; c < numCpus; ++c)
         if (is_cpu_allowed(c))
-          cfg.add_cpu_to_node(NumaIndex{0}, c)
+          cfg.add_cpu_to_node(NumaIndex{0}, c);
     }
 
 #elif defined(_WIN32)
