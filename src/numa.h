@@ -368,7 +368,7 @@ public:
 
     auto is_node_small = [largestNodeSize](const std::set<CpuIndex>& node) {
       static constexpr double SmallNodeThreshold = 0.6;
-      return static_cast<double>(cpus.size()) / static_cast<double>(largestNodeSize) <= SmallNodeThreshold;
+      return static_cast<double>(node.size()) / static_cast<double>(largestNodeSize) <= SmallNodeThreshold;
     };
 
     size_t numNotSmallNodes = 0;
