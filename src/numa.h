@@ -151,6 +151,15 @@ public:
     CPU_FREE(mask);
 
 #elif defined(_WIN32)
+
+    // Windows is problematic due to multiple ways of setting affinity, processor groups,
+    // and behaviour changes between versions. It's unclear if we can support this feature
+    // on Windows at all. For now we assume that the process is allowed to execute on all processors.
+    // TODO: investigate support possibility
+    const CpuIndex numCpus = CpuIndex{std::max<CpuIndex>(1, std::thread::hardware_concurrency())};
+    for (CpuIndex c = 0; c < numCpus; ++c)
+      cpus.insert(c);
+
 #else
 
     // For other systems we assume the process is allowed to execute on all processors.
