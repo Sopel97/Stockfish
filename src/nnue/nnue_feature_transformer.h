@@ -396,7 +396,7 @@ class TranslatedFeatureUpdateList {
         {
             const FeatureSet::MoveKeyType key = FeatureSet::make_move_key<Perspective>(ksq, dp);
             auto                          e   = cache->find(key);
-            if (false && e.has_value())
+            if (e.has_value())
             {
                 added.push_back(*e);
                 // Early return, don't add them normally
