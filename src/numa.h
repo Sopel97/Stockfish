@@ -328,7 +328,7 @@ class NumaConfig {
 #endif
 
         // We have to ensure no empty NUMA nodes persist.
-        remove_empty_numa_nodes();
+        cfg.remove_empty_numa_nodes();
 
         return cfg;
     }
