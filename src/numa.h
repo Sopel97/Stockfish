@@ -797,7 +797,7 @@ class NumaReplicated: public NumaReplicatedBase {
         const NumaConfig& cfg = get_numa_config();
 
         instances.resize(cfg.num_numa_nodes());
-        
+
         if (cfg.requires_memory_replication())
         {
             for (NumaIndex n = 0; n < cfg.num_numa_nodes(); ++n)
@@ -807,7 +807,7 @@ class NumaReplicated: public NumaReplicatedBase {
                 if (!cfg.is_numa_node_empty(n))
                 {
                     cfg.execute_on_numa_node(
-                      n, [this, &source]() { instances[n] = std::make_unique<T>(source); });
+                      n, [this, n, &source]() { instances[n] = std::make_unique<T>(source); });
                 }
             }
         }
