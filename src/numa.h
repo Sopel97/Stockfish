@@ -793,9 +793,11 @@ class NumaReplicated: public NumaReplicatedBase {
 
     void replicate_from(T&& source) {
         instances.clear();
-        instances.resize(cfg.num_numa_nodes());
 
         const NumaConfig& cfg = get_numa_config();
+
+        instances.resize(cfg.num_numa_nodes());
+        
         if (cfg.requires_memory_replication())
         {
             for (NumaIndex n = 0; n < cfg.num_numa_nodes(); ++n)
@@ -814,7 +816,7 @@ class NumaReplicated: public NumaReplicatedBase {
             assert(cfg.num_numa_nodes() == 1);
             // We take advantage of the fact that replication is not required
             // and reuse the source value, avoiding one copy operation.
-            instances.emplace_back(std::make_unique<T>(std::move(source)));
+            instances[0] = std::make_unique<T>(std::move(source));
         }
     }
 };
