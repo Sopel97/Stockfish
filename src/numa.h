@@ -389,6 +389,14 @@ class NumaConfig {
 
     CpuIndex num_cpus() const { return nodeByCpu.size(); }
 
+    NumaIndex get_first_available_numa_node() const {
+        for (NumaIndex n = 0; n < nodes.size(); ++n)
+            if (!nodes[n].empty())
+                return n;
+
+        std::exit(EXIT_FAILURE);
+    }
+
     bool requires_memory_replication() const { return customAffinity || nodes.size() > 1; }
 
     std::string to_string() const {

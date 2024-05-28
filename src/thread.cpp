@@ -179,7 +179,7 @@ void ThreadPool::set(const NumaConfig&                           numaConfig,
         while (threads.size() < requested)
         {
             const size_t    threadId = threads.size();
-            const NumaIndex numaId   = doBindThreads ? boundThreadToNumaNode[threadId] : 0;
+            const NumaIndex numaId   = doBindThreads ? boundThreadToNumaNode[threadId] : numaConfig.get_first_available_numa_node();
             auto            manager  = threadId == 0 ? std::unique_ptr<Search::ISearchManager>(
                              std::make_unique<Search::SearchManager>(updateContext))
                                                      : std::make_unique<Search::NullSearchManager>();
