@@ -389,7 +389,7 @@ class NumaConfig {
 
     CpuIndex num_cpus() const { return nodeByCpu.size(); }
 
-    bool is_numa_node_empty(NumaIndex n) { return nodes[n].empty(); }
+    bool is_numa_node_empty(NumaIndex n) const { return nodes[n].empty(); }
 
     NumaIndex get_first_available_numa_node() const {
         for (NumaIndex n = 0; n < nodes.size(); ++n)
