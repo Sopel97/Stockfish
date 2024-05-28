@@ -776,15 +776,17 @@ class NumaReplicated: public NumaReplicatedBase {
 
     template<typename FuncT>
     void modify_and_replicate(FuncT&& f) {
-        auto source = std::move(instances[0]);
+        const NumaConfig& cfg = get_numa_config();
+        auto source = std::move(instances[cfg.get_first_available_numa_node()]);
         std::forward<FuncT>(f)(*source);
         replicate_from(std::move(*source));
     }
 
     void on_numa_config_changed() override {
-        // Use the first one as the source. It doesn't matter which one we use, because they all must
+        // Use the first available one as the source. It doesn't matter which one we use, because they all must
         // be identical, but the first one is guaranteed to exist.
-        auto source = std::move(instances[0]);
+        const NumaConfig& cfg = get_numa_config();
+        auto source = std::move(instances[cfg.get_first_available_numa_node()]);
         replicate_from(std::move(*source));
     }
 
