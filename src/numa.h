@@ -145,6 +145,8 @@ class NumaConfig {
             if (CPU_ISSET_S(c, masksize, mask))
                 cpus.insert(c);
 
+        std::cerr << cpus.size() << '\n';
+
         CPU_FREE(mask);
 
 #elif defined(_WIN32)
@@ -190,6 +192,8 @@ class NumaConfig {
             for (CpuIndex c = 0; c < SYSTEM_THREADS_NB; ++c)
                 allowedCpus.insert(c);
         }
+
+        std::cerr << allowedCpus.size() << '\n';
 
         auto is_cpu_allowed = [&](CpuIndex c) { return allowedCpus.count(c) == 1; };
 
