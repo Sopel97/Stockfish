@@ -103,6 +103,7 @@ class NumaConfig {
    public:
     NumaConfig() :
         highestCpuIndex(0),
+        firstAvailableNumaNode(std::numeric_limits<NumaIndex>::max()),
         customAffinity(false) {
         const auto numCpus = SYSTEM_THREADS_NB;
         add_cpu_range_to_node(NumaIndex{0}, CpuIndex{0}, numCpus - 1);
@@ -396,11 +397,10 @@ class NumaConfig {
     bool is_numa_node_empty(NumaIndex n) const { return nodes[n].empty(); }
 
     NumaIndex get_first_available_numa_node() const {
-        for (NumaIndex n = 0; n < nodes.size(); ++n)
-            if (!nodes[n].empty())
-                return n;
+        if (firstAvailableNumaNode >= nodes.size())
+            std::exit(EXIT_FAILURE);
 
-        std::exit(EXIT_FAILURE);
+        return firstAvailableNumaNode;
     }
 
     bool requires_memory_replication() const { return customAffinity || nodes.size() > 1; }
@@ -653,6 +653,7 @@ class NumaConfig {
     std::vector<std::set<CpuIndex>> nodes;
     std::map<CpuIndex, NumaIndex>   nodeByCpu;
     CpuIndex                        highestCpuIndex;
+    NumaIndex                       firstAvailableNumaNode;
 
     bool customAffinity;
 
@@ -662,6 +663,7 @@ class NumaConfig {
 
     NumaConfig(EmptyNodeTag) :
         highestCpuIndex(0),
+        firstAvailableNumaNode(std::numeric_limits<NumaIndex>::max()),
         customAffinity(false) {}
 
     // Returns true if successful
@@ -679,6 +681,9 @@ class NumaConfig {
 
         if (c > highestCpuIndex)
             highestCpuIndex = c;
+
+        if (n < firstAvailableNumaNode)
+            firstAvailableNumaNode = n;
 
         return true;
     }
@@ -702,6 +707,9 @@ class NumaConfig {
 
         if (clast > highestCpuIndex)
             highestCpuIndex = clast;
+
+        if (n < firstAvailableNumaNode)
+            firstAvailableNumaNode = n;
 
         return true;
     }
@@ -732,31 +740,36 @@ class NumaReplicatedBase {
 
 // We force boxing with a unique_ptr. If this becomes an issue due to added indirection we
 // may need to add an option for a custom boxing type.
-// When the NUMA config changes the value stored at the index 0 is replicated to other nodes.
+// When the NUMA config changes the value stored at the first available NUMA node is replicated to other nodes.
+// Does NOT replicate to empty NUMA nodes.
 template<typename T>
 class NumaReplicated: public NumaReplicatedBase {
    public:
     using ReplicatorFuncType = std::function<T(const T&)>;
 
     NumaReplicated(NumaReplicationContext& ctx) :
-        NumaReplicatedBase(ctx) {
+        NumaReplicatedBase(ctx),
+        firstAvailableNumaNode(ctx.get_numa_config().get_first_available_numa_node()) {
         replicate_from(T{});
     }
 
     NumaReplicated(NumaReplicationContext& ctx, T&& source) :
-        NumaReplicatedBase(ctx) {
+        NumaReplicatedBase(ctx),
+        firstAvailableNumaNode(ctx.get_numa_config().get_first_available_numa_node()) {
         replicate_from(std::move(source));
     }
 
     NumaReplicated(const NumaReplicated&) = delete;
     NumaReplicated(NumaReplicated&& other) noexcept :
         NumaReplicatedBase(std::move(other)),
-        instances(std::exchange(other.instances, {})) {}
+        instances(std::exchange(other.instances, {})),
+        firstAvailableNumaNode(other.firstAvailableNumaNode) {}
 
     NumaReplicated& operator=(const NumaReplicated&) = delete;
     NumaReplicated& operator=(NumaReplicated&& other) noexcept {
         NumaReplicatedBase::operator=(*this, std::move(other));
         instances = std::exchange(other.instances, {});
+        firstAvailableNumaNode = other.firstAvailableNumaNode;
 
         return *this;
     }
@@ -774,14 +787,13 @@ class NumaReplicated: public NumaReplicatedBase {
         return *(instances[token.get_numa_index()]);
     }
 
-    const T& operator*() const { return *(instances[0]); }
+    const T& operator*() const { return *(instances[firstAvailableNumaNode]); }
 
-    const T* operator->() const { return instances[0].get(); }
+    const T* operator->() const { return instances[firstAvailableNumaNode].get(); }
 
     template<typename FuncT>
     void modify_and_replicate(FuncT&& f) {
-        const NumaConfig& cfg = get_numa_config();
-        auto source = std::move(instances[cfg.get_first_available_numa_node()]);
+        auto source = std::move(instances[firstAvailableNumaNode]);
         std::forward<FuncT>(f)(*source);
         replicate_from(std::move(*source));
     }
@@ -790,7 +802,8 @@ class NumaReplicated: public NumaReplicatedBase {
         // Use the first available one as the source. It doesn't matter which one we use, because they all must
         // be identical, but the first one is guaranteed to exist.
         const NumaConfig& cfg = get_numa_config();
-        auto source = std::move(instances[cfg.get_first_available_numa_node()]);
+        firstAvailableNumaNode = cfg.get_first_available_numa_node();
+        auto source = std::move(instances[firstAvailableNumaNode]);
         replicate_from(std::move(*source));
     }
 
