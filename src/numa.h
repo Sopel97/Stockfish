@@ -327,6 +327,9 @@ class NumaConfig {
 
 #endif
 
+        // We have to ensure no empty NUMA nodes persist.
+        remove_empty_numa_nodes();
+
         return cfg;
     }
 
@@ -340,6 +343,8 @@ class NumaConfig {
         NumaIndex n = 0;
         for (auto&& nodeStr : split(s, ":"))
         {
+            bool addedAnyCpuInThisNode = false;
+
             for (const std::string& cpuStr : split(nodeStr, ","))
             {
                 if (cpuStr.empty())
@@ -364,8 +369,12 @@ class NumaConfig {
                 {
                     std::exit(EXIT_FAILURE);
                 }
+
+                addedAnyCpuInThisNode = true;
             }
-            n += 1;
+
+            if (addedAnyCpuInThisNode)
+                n += 1;
         }
 
         cfg.customAffinity = true;
@@ -649,6 +658,14 @@ class NumaConfig {
     NumaConfig(EmptyNodeTag) :
         highestCpuIndex(0),
         customAffinity(false) {}
+
+    void remove_empty_numa_nodes() {
+        std::vector<std::set<CpuIndex>> newNodes;
+        for (auto&& cpus : nodes)
+            if (!cpus.empty())
+                newNodes.emplace_back(std::move(cpus));
+        nodes = std::move(newNodes);
+    }
 
     // Returns true if successful
     // Returns false if failed, i.e. when the cpu is already present
