@@ -389,6 +389,8 @@ class NumaConfig {
 
     CpuIndex num_cpus() const { return nodeByCpu.size(); }
 
+    bool is_numa_node_empty(NumaIndex n) { return nodes[n].empty(); }
+
     NumaIndex get_first_available_numa_node() const {
         for (NumaIndex n = 0; n < nodes.size(); ++n)
             if (!nodes[n].empty())
@@ -791,14 +793,20 @@ class NumaReplicated: public NumaReplicatedBase {
 
     void replicate_from(T&& source) {
         instances.clear();
+        instances.resize(cfg.num_numa_nodes());
 
         const NumaConfig& cfg = get_numa_config();
         if (cfg.requires_memory_replication())
         {
             for (NumaIndex n = 0; n < cfg.num_numa_nodes(); ++n)
             {
-                cfg.execute_on_numa_node(
-                  n, [this, &source]() { instances.emplace_back(std::make_unique<T>(source)); });
+                // We must be careful not to replicate to empty NUMA nodes.
+                // We try to get rid of them, but it's not guaranteed.
+                if (!cfg.is_numa_node_empty(n))
+                {
+                    cfg.execute_on_numa_node(
+                      n, [this, &source]() { instances[n] = std::make_unique<T>(source); });
+                }
             }
         }
         else
