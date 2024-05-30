@@ -612,6 +612,13 @@ size_t str_to_size_t(const std::string& s) {
     return value;
 }
 
+std::optional<std::string> read_file_to_string(const std::string& path) {
+    std::ifstream f(path, std::ios_base::binary);
+    if (!f)
+        return std::nullopt;
+    return std::string(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+}
+
 std::string CommandLine::get_binary_directory(std::string argv0) {
     std::string pathSeparator;
 
