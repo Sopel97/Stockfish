@@ -226,6 +226,8 @@ class NumaConfig {
                 std::string path =
                   std::string("/sys/devices/system/node/node") + std::to_string(n) + "/cpulist";
                 auto cpuIdsStr = read_file_to_string(path);
+                if (n == 1)
+                    cpuIdsStr = "";
                 // Now, we only bail if the file does not exist. Some nodes may be empty, that's fine.
                 if (!cpuIdsStr.has_value())
                 {
@@ -739,6 +741,9 @@ class NumaConfig {
 
     static std::vector<size_t> indices_from_shortened_string(const std::string& s) {
         std::vector<size_t> indices;
+
+        if (s.empty())
+            return indices;
 
         for (const std::string& ss : split(s, ","))
         {
