@@ -69,9 +69,11 @@ public:
     Bound ttBound;
     Value ttEval;
     bool ttPv;
+    int ply;
 
-    ProbedTTEntry(TranspositionTable& tt, const Position& pos, int ply, Move ttMoveOverride) {
+    ProbedTTEntry(TranspositionTable& tt, const Position& pos, int p, Move ttMoveOverride) {
         ttPtr = &tt;
+        ply = p;
         posKey = pos.key();
         entryPtr  = tt.probe(posKey, hit);
 
@@ -91,16 +93,16 @@ public:
         ttPv    = hit && tte.is_pv();
     }
 
-    void save(Value value, int ply, bool isPv, Bound bound, Depth depth, Move move, Value eval)
+    void save()
     {
         entryPtr->save(
             posKey, 
-            value_to_tt(value, ply),
-            isPv,
-            bound,
-            depth,
-            move,
-            eval,
+            value_to_tt(ttValue, ply),
+            ttPv,
+            ttBound,
+            ttDepth,
+            ttMove,
+            ttEval,
             ttPtr->generation()
         );
     }
@@ -726,8 +728,13 @@ Value Search::Worker::search(
 
                 if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
                 {
-                    tte.save(value, ss->ply, ss->ttPv, b,
-                              std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE);
+                    tte.ttValue = value;
+                    tte.ttPv = ss->ttPv;
+                    tte.ttBound = b;
+                    tte.ttDepth = std::min(MAX_PLY - 1, depth + 6);
+                    tte.ttMove = Move::none();
+                    tte.ttEval = VALUE_NONE;
+                    tte.save();
 
                     return value;
                 }
@@ -782,8 +789,13 @@ Value Search::Worker::search(
         ss->staticEval = eval = to_corrected_static_eval(unadjustedStaticEval, *thisThread, pos);
 
         // Static evaluation is saved as it was before adjustment by correction history
-        tte.save(VALUE_NONE, ss->ply, ss->ttPv, BOUND_NONE, DEPTH_UNSEARCHED, Move::none(),
-                  unadjustedStaticEval);
+        tte.ttValue = VALUE_NONE;
+        tte.ttPv = ss->ttPv;
+        tte.ttBound = BOUND_NONE;
+        tte.ttDepth = DEPTH_UNSEARCHED;
+        tte.ttMove = Move::none();
+        tte.ttEval = unadjustedStaticEval;
+        tte.save();
     }
 
     // Use static evaluation difference to improve quiet move ordering (~9 Elo)
@@ -937,8 +949,13 @@ Value Search::Worker::search(
                 if (value >= probCutBeta)
                 {
                     // Save ProbCut data into transposition table
-                    tte.save(value, ss->ply, ss->ttPv, BOUND_LOWER, depth - 3,
-                              move, unadjustedStaticEval);
+                    tte.ttValue = value;
+                    tte.ttPv = ss->ttPv;
+                    tte.ttBound = BOUND_LOWER;
+                    tte.ttDepth = depth - 3;
+                    tte.ttMove = move;
+                    tte.ttEval = unadjustedStaticEval;
+                    tte.save();
                     return std::abs(value) < VALUE_TB_WIN_IN_MAX_PLY ? value - (probCutBeta - beta)
                                                                      : value;
                 }
@@ -1417,12 +1434,17 @@ moves_loop:  // When in check, search starts here
 
     // Write gathered information in transposition table
     // Static evaluation is saved as it was before correction history
-    if (!excludedMove && !(rootNode && thisThread->pvIdx))
-        tte.save(bestValue, ss->ply, ss->ttPv,
-                  bestValue >= beta    ? BOUND_LOWER
+    if (!excludedMove && !(rootNode && thisThread->pvIdx)) {
+        tte.ttValue = bestValue;
+        tte.ttPv = ss->ttPv;
+        tte.ttBound = bestValue >= beta    ? BOUND_LOWER
                   : PvNode && bestMove ? BOUND_EXACT
-                                       : BOUND_UPPER,
-                  depth, bestMove, unadjustedStaticEval);
+                                       : BOUND_UPPER;
+        tte.ttDepth = depth;
+        tte.ttMove = bestMove;
+        tte.ttEval = unadjustedStaticEval;
+        tte.save();
+    }
 
     // Adjust correction history
     if (!ss->inCheck && (!bestMove || !pos.capture(bestMove))
@@ -1551,9 +1573,15 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
         {
             if (std::abs(bestValue) < VALUE_TB_WIN_IN_MAX_PLY && !PvNode)
                 bestValue = (3 * bestValue + beta) / 4;
-            if (!ss->ttHit)
-                tte.save(bestValue, ss->ply, false, BOUND_LOWER,
-                          DEPTH_UNSEARCHED, Move::none(), unadjustedStaticEval);
+            if (!ss->ttHit) {
+                tte.ttValue = bestValue;
+                tte.ttPv = false;
+                tte.ttBound = BOUND_LOWER;
+                tte.ttDepth = DEPTH_UNSEARCHED;
+                tte.ttMove = Move::none();
+                tte.ttEval = unadjustedStaticEval;
+                tte.save();
+            }
 
             return bestValue;
         }
@@ -1692,9 +1720,12 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
 
     // Save gathered info in transposition table
     // Static evaluation is saved as it was before adjustment by correction history
-    tte.save(bestValue, ss->ply, tte.ttPv,
-              bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, ttDepthThreshold, bestMove,
-              unadjustedStaticEval);
+    tte.ttValue = bestValue;
+    tte.ttBound = bestValue >= beta ? BOUND_LOWER : BOUND_UPPER;
+    tte.ttDepth = ttDepthThreshold;
+    tte.ttMove = bestMove;
+    tte.ttEval = unadjustedStaticEval;
+    tte.save();
 
     assert(bestValue > -VALUE_INFINITE && bestValue < VALUE_INFINITE);
 
