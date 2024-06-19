@@ -190,12 +190,6 @@ inline uint32_t simple_hash(uint32_t x, uint32_t y) {
     return x + 0x9e3779b9 + (y<<6) + (y>>2);
 }
 
-enum struct FeatureRowOperation
-{
-    Add,
-    Sub
-};
-
 class FeatureTransformerKey2
 {
 public:
@@ -227,14 +221,6 @@ public:
     size_t get_index() const
     {
         return simple_hash(a, r) % Capacity;
-    }
-
-    std::pair<FeatureTransformerKey2, FeatureRowOperation> normalized() const
-    {
-        if (r < a)
-            return std::make_pair(*this, FeatureRowOperation::Add);
-        else
-            return std::make_pair(FeatureTransformerKey2(a, r), FeatureRowOperation::Sub);
     }
 
     IndexType get_added() const
@@ -293,38 +279,37 @@ public:
 
     // Returns nullptr on unsuccessful probe
     template <typename FT>
-    std::pair<const WeightType*, FeatureRowOperation> probe(const FT& ft, FeatureTransformerKey2 key)
+    const WeightType* probe(const FT& ft, FeatureTransformerKey2 key)
     {
-        const auto& [norm_key, op] = key.normalized();
-        const size_t idx = norm_key.get_index<Capacity>();
+        const size_t idx = key.get_index<Capacity>();
         auto& entry = mappings[idx];
         
-        //dbg_hit_on(entry.key == norm_key, 0);
-        //dbg_hit_on(entry.key == norm_key && entry.materialized, 1);
-        //dbg_hit_on(entry.key == norm_key && !entry.materialized && entry.count + HIT_GAIN >= MATERIALIZE_THRESHOLD, 2);
-        //dbg_hit_on(entry.key != norm_key && entry.count <= 1, 3);
+        //dbg_hit_on(entry.key == key, 0);
+        //dbg_hit_on(entry.key == key && entry.materialized, 1);
+        //dbg_hit_on(entry.key == key && !entry.materialized && entry.count + HIT_GAIN >= MATERIALIZE_THRESHOLD, 2);
+        //dbg_hit_on(entry.key != key && entry.count <= 1, 3);
 
-        if (entry.key == norm_key)
+        if (entry.key == key)
         {
             entry.count += HIT_GAIN;
             
             if (entry.materialized)
-                return std::make_pair(&(weights[idx * TransformedFeatureDimensions]), op);
+                return &(weights[idx * TransformedFeatureDimensions]);
             else if (entry.count >= MATERIALIZE_THRESHOLD)
             {
                 WeightType* w = &(weights[idx * TransformedFeatureDimensions]);
-                ft.set_feature_weights(w, norm_key);
+                ft.set_feature_weights(w, key);
 
                 entry.materialized = true;
 
-                return std::make_pair(w, op);
+                return w;
             }
         }
         else
         {
             if (entry.count <= 1)
             {
-                entry.key = norm_key;
+                entry.key = key;
                 entry.count = HIT_GAIN;
                 entry.materialized = false;
             }
@@ -334,7 +319,7 @@ public:
             }
         }
 
-        return std::make_pair(nullptr, FeatureRowOperation::Add);
+        return nullptr;
     }
 
 private:
@@ -674,27 +659,13 @@ class FeatureTransformer {
             auto accOut = reinterpret_cast<vec_t*>(
             &(states_to_update[0]->*accPtr).accumulation[Perspective][0]);
 
-            const WeightType* cached_w = nullptr;
-            FeatureRowOperation op;
-            if (ft_cache != nullptr)
-                std::tie(cached_w, op) = ft_cache->probe(*this, FeatureTransformerKey2(removed[0][0], added[0][0]));
-            
-            if (cached_w != nullptr)
+            const WeightType* cached_w;
+            if (ft_cache != nullptr && (cached_w = ft_cache->probe(*this, FeatureTransformerKey2(removed[0][0], added[0][0]))) != nullptr)
             {
                 auto columnA  = reinterpret_cast<const vec_t*>(cached_w);
-                if (op == FeatureRowOperation::Add)
-                {
-                    for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
-                            ++k)
-                        accOut[k] = vec_add_16(accIn[k], columnA[k]);
-                }
-                else
-                {
-                    assert(op == FeatureRowOperation::Sub);
-                    for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
-                            ++k)
-                        accOut[k] = vec_sub_16(accIn[k], columnA[k]);
-                }
+                for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
+                        ++k)
+                    accOut[k] = vec_add_16(accIn[k], columnA[k]);
             }
             else
             {
