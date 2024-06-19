@@ -189,10 +189,10 @@ static constexpr int BestRegisterCount() {
 #endif
 
 struct MoveKeyTypeHashFunc {
-    uint64_t operator()(FeatureSet::MoveKeyType v) const noexcept { return splitmix64_hash(v); }
+    uint64_t operator()(FeatureSet::QuietMoveKeyType v) const noexcept { return splitmix64_hash(v); }
 };
 
-static constexpr FeatureSet::MoveKeyType MoveKeyTombstone    = ~uint64_t(0);
+static constexpr FeatureSet::QuietMoveKeyType MoveKeyTombstone    = ~FeatureSet::QuietMoveKeyType(0);
 static constexpr size_t                  HashMaxSearchLength = 3;
 
 class FeatureTransformerWeightCachePreanalyzer {
@@ -205,9 +205,15 @@ class FeatureTransformerWeightCachePreanalyzer {
         if (move.type_of() == CASTLING || type_of(pos.piece_on(move.to_sq())) == KING)
             return;
 
-        const FeatureSet::MoveKeyType keys[COLOR_NB] = {
-          FeatureSet::make_move_key<WHITE>(pos.square<KING>(WHITE), pos.state()->dirtyPiece),
-          FeatureSet::make_move_key<BLACK>(pos.square<KING>(BLACK), pos.state()->dirtyPiece)};
+        auto& dp = pos.state()->dirtyPiece;
+        // We only care about the first entry, as that's the piece that was moved.
+        // We only care if we can gain an update.
+        if (dp.from[0] == SQ_NONE || dp.to[0] == SQ_NONE)
+            return;
+
+        const FeatureSet::QuietMoveKeyType keys[COLOR_NB] = {
+          FeatureSet::make_quiet_move_key<WHITE>(pos.square<KING>(WHITE), dp.from[0], dp.to[0], dp.piece[0]),
+          FeatureSet::make_quiet_move_key<BLACK>(pos.square<KING>(BLACK), dp.from[0], dp.to[0], dp.piece[0])};
 
         auto [w, w_emplaced] = dpHistogram.find_or_emplace(keys[WHITE], 0);
         auto [b, b_emplaced] = dpHistogram.find_or_emplace(keys[BLACK], 0);
@@ -222,8 +228,8 @@ class FeatureTransformerWeightCachePreanalyzer {
 
     size_t size() const { return numUniqueEntries; }
 
-    std::vector<std::pair<FeatureSet::MoveKeyType, uint64_t>> get_top(size_t count = std::numeric_limits<size_t>::max()) const {
-        std::vector<std::pair<FeatureSet::MoveKeyType, uint64_t>> res = dpHistogram.get_populated();
+    std::vector<std::pair<FeatureSet::QuietMoveKeyType, uint64_t>> get_top(size_t count = std::numeric_limits<size_t>::max()) const {
+        std::vector<std::pair<FeatureSet::QuietMoveKeyType, uint64_t>> res = dpHistogram.get_populated();
 
         if (res.size() <= count)
         {
@@ -277,7 +283,7 @@ class FeatureTransformerWeightCachePreanalyzer {
     }
 
    private:
-    UnreliableInsertionHashTable<FeatureSet::MoveKeyType, uint64_t, MoveKeyTypeHashFunc>
+    UnreliableInsertionHashTable<FeatureSet::QuietMoveKeyType, uint64_t, MoveKeyTypeHashFunc>
       dpHistogram;
     size_t numUniqueEntries;
 };
@@ -345,7 +351,7 @@ class FeatureTransformerWeightCache {
 
     size_t size() const { return numEntries; }
 
-    std::optional<FeatureWeightPtrs> find(FeatureSet::MoveKeyType key) const {
+    std::optional<FeatureWeightPtrs> find(FeatureSet::QuietMoveKeyType key) const {
         const auto it = keyToWeightsIndex.find(key);
         if (it == nullptr)
             return std::nullopt;
@@ -356,7 +362,7 @@ class FeatureTransformerWeightCache {
     }
 
    private:
-    UnreliableInsertionHashTable<FeatureSet::MoveKeyType, IndexType, MoveKeyTypeHashFunc>
+    UnreliableInsertionHashTable<FeatureSet::QuietMoveKeyType, IndexType, MoveKeyTypeHashFunc>
       keyToWeightsIndex;
 
     std::unique_ptr<WeightType[]>     weightsBuffer;
@@ -367,14 +373,14 @@ class FeatureTransformerWeightCache {
 
     template<typename Network>
     void
-    fill_weights_for_feature(IndexType index, FeatureSet::MoveKeyType key, const Network& net) {
+    fill_weights_for_feature(IndexType index, FeatureSet::QuietMoveKeyType key, const Network& net) {
         static_assert(TransformedFeatureDimensions
                       == Network::FeatureTransformerType::HalfDimensions);
 
         const auto& ft = net.get_feature_transformer();
 
         FeatureSet::IndexList removed, added;
-        FeatureSet::decode_move_key(key, removed, added);
+        FeatureSet::decode_quiet_move_key(key, removed, added);
 
         // Difference calculation for the deactivated features
         const IndexType offset     = index * TransformedFeatureDimensions;
@@ -407,21 +413,22 @@ class TranslatedFeatureUpdateList {
       const FeatureTransformerWeightCache<TransformedFeatureDimensions>* cache) {
         FeatureSet::IndexList r, a;
 
-        if (cache)
+        if (cache && dp.dirty_num > 0 && dp.from[0] != SQ_NONE && dp.to[0] != SQ_NONE)
         {
-            const FeatureSet::MoveKeyType key = FeatureSet::make_move_key<Perspective>(ksq, dp);
+            const FeatureSet::QuietMoveKeyType key = FeatureSet::make_quiet_move_key<Perspective>(ksq, dp.from[0], dp.to[0], dp.piece[0]);
             auto                          e   = cache->find(key);
-            // dbg_hit_on(e.has_value());
+            //dbg_hit_on(e.has_value());
             if (e.has_value())
             {   
                 added.push_back(*e);
-                // Early return, don't add them normally
-                return;
             }
             else
             {
-                FeatureSet::decode_move_key(key, r, a);
+                FeatureSet::decode_quiet_move_key(key, r, a);
             }
+
+            // Add remaining indices (starting from index 1)
+            FeatureSet::append_changed_indices<Perspective, 1>(ksq, dp, r, a);
         }
         else
         {

@@ -505,10 +505,10 @@ void Search::Worker::iterative_deepening() {
 
             if (ftWeightCachePreanalyzer)
             {
-                const bool materialize_cache = ((rootDepth > 10 && nodes > (1 << 16)) || ftWeightCachePreanalyzer->size() >= FtWeightCacheSize * 8) && timeRatioLeft > 0.8;
+                const bool materialize_cache = ((rootDepth > 9 && nodes > (1 << 14)) || ftWeightCachePreanalyzer->size() >= FtWeightCacheSize * 4) && timeRatioLeft > 0.8;
                 if (materialize_cache)
                 {
-                    // ftWeightCachePreanalyzer->print();
+                    //ftWeightCachePreanalyzer->print();
                     ftWeightCache = WeightCacheType(
                       *ftWeightCachePreanalyzer, networks[numaAccessToken].big, FtWeightCacheSize);
                     ftWeightCachePreanalyzer.reset();

@@ -53,12 +53,12 @@ template IndexType HalfKAv2_hm::make_index<WHITE>(Square s, Piece pc, Square ksq
 template IndexType HalfKAv2_hm::make_index<BLACK>(Square s, Piece pc, Square ksq);
 
 // Get a list of indices for recently changed features
-template<Color Perspective>
+template<Color Perspective, int Start>
 void HalfKAv2_hm::append_changed_indices(Square            ksq,
                                          const DirtyPiece& dp,
                                          IndexList&        removed,
                                          IndexList&        added) {
-    for (int i = 0; i < dp.dirty_num; ++i)
+    for (int i = Start; i < dp.dirty_num; ++i)
     {
         if (dp.from[i] != SQ_NONE)
             removed.push_back(make_index<Perspective>(dp.from[i], dp.piece[i], ksq));
@@ -106,6 +106,22 @@ HalfKAv2_hm::MoveKeyType HalfKAv2_hm::make_move_key(Square ksq, const DirtyPiece
     return key;
 }
 
+
+template<Color Perspective>
+HalfKAv2_hm::QuietMoveKeyType HalfKAv2_hm::make_quiet_move_key(Square ksq, Square from, Square to, Piece pc) {
+    static_assert(sizeof(QuietMoveKeyType) * 8 >= 2 * DimensionsBits);
+
+    assert(from != SQ_NONE);
+    assert(to != SQ_NONE);
+
+    QuietMoveKeyType key = 0;
+
+    key |= make_index<Perspective>(from, pc, ksq) << (1 * DimensionsBits);
+    key |= make_index<Perspective>(to, pc, ksq) << (0 * DimensionsBits);
+
+    return key;
+}
+
 void HalfKAv2_hm::decode_move_key(HalfKAv2_hm::MoveKeyType key,
                                   IndexList&               removed,
                                   IndexList&               added) {
@@ -142,12 +158,37 @@ void HalfKAv2_hm::decode_move_key(HalfKAv2_hm::MoveKeyType key,
     }
 }
 
+void HalfKAv2_hm::decode_quiet_move_key(HalfKAv2_hm::QuietMoveKeyType key,
+                                  IndexList&               removed,
+                                  IndexList&               added) {
+    constexpr MoveKeyType DimensionsMask = (MoveKeyType(1) << DimensionsBits) - 1;
+
+    IndexType r0 = (key >> (1 * DimensionsBits)) & DimensionsMask;
+    IndexType a0 = (key >> (0 * DimensionsBits)) & DimensionsMask;
+
+    assert(r0 < Dimensions);
+    assert(r0 != 0);
+    removed.push_back(r0);
+
+    assert(a0 < Dimensions);
+    assert(a0 != 0);     
+    added.push_back(a0);
+}
+
 // Explicit template instantiations
 template void HalfKAv2_hm::append_changed_indices<WHITE>(Square            ksq,
                                                          const DirtyPiece& dp,
                                                          IndexList&        removed,
                                                          IndexList&        added);
 template void HalfKAv2_hm::append_changed_indices<BLACK>(Square            ksq,
+                                                         const DirtyPiece& dp,
+                                                         IndexList&        removed,
+                                                         IndexList&        added);
+template void HalfKAv2_hm::append_changed_indices<WHITE, 1>(Square            ksq,
+                                                         const DirtyPiece& dp,
+                                                         IndexList&        removed,
+                                                         IndexList&        added);
+template void HalfKAv2_hm::append_changed_indices<BLACK, 1>(Square            ksq,
                                                          const DirtyPiece& dp,
                                                          IndexList&        removed,
                                                          IndexList&        added);
@@ -158,6 +199,9 @@ template HalfKAv2_hm::MoveKeyType HalfKAv2_hm::make_move_key<WHITE>(Square      
                                                                     const DirtyPiece& dp);
 template HalfKAv2_hm::MoveKeyType HalfKAv2_hm::make_move_key<BLACK>(Square            ksq,
                                                                     const DirtyPiece& dp);
+                                                                    
+template HalfKAv2_hm::QuietMoveKeyType HalfKAv2_hm::make_quiet_move_key<WHITE>(Square ksq, Square from, Square to, Piece pc);
+template HalfKAv2_hm::QuietMoveKeyType HalfKAv2_hm::make_quiet_move_key<BLACK>(Square ksq, Square from, Square to, Piece pc);
 
 int HalfKAv2_hm::update_cost(const StateInfo* st) { return st->dirtyPiece.dirty_num; }
 

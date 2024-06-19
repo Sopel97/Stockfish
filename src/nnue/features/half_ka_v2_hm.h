@@ -79,6 +79,7 @@ class HalfKAv2_hm {
     static_assert(DimensionsBits == 15);
 
     using MoveKeyType = uint64_t;
+    using QuietMoveKeyType = uint32_t;
 
 #define B(v) (v * PS_NB)
     // clang-format off
@@ -137,14 +138,19 @@ class HalfKAv2_hm {
     static void append_active_indices(const Position& pos, IndexList& active);
 
     // Get a list of indices for recently changed features
-    template<Color Perspective>
+    template<Color Perspective, int Start = 0>
     static void
     append_changed_indices(Square ksq, const DirtyPiece& dp, IndexList& removed, IndexList& added);
 
     template<Color Perspective>
     static MoveKeyType make_move_key(Square ksq, const DirtyPiece& dp);
+    
+    template<Color Perspective>
+    static QuietMoveKeyType make_quiet_move_key(Square ksq, Square from, Square to, Piece pc);
 
     static void decode_move_key(MoveKeyType key, IndexList& removed, IndexList& added);
+
+    static void decode_quiet_move_key(QuietMoveKeyType key, IndexList& removed, IndexList& added);
 
     // Returns the cost of updating one perspective, the most costly one.
     // Assumes no refresh needed.
