@@ -246,7 +246,8 @@ class UnreliableInsertionHashTable: public HashFunc {
 
     // If the element is already present it will be returned with the
     // value unchanged.
-    EntryType* find_or_emplace(const KeyType& k, const ValueType& v) {
+    // The second returned value tells whether insertion took place.
+    std::pair<EntryType*, bool> find_or_emplace(const KeyType& k, const ValueType& v) {
         size_t i = get_ideal_spot_index(k);
         if (i + maxSearchLength >= capacity)
         {
@@ -254,14 +255,14 @@ class UnreliableInsertionHashTable: public HashFunc {
             for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
-                    return data.get() + i;
+                    return std::make_pair(data.get() + i, false);
 
                 if (data[i].first == tombstone)
                 {
                     data[i].first  = k;
                     data[i].second = v;
                     numPopulated += 1;
-                    return data.get() + i;
+                    return std::make_pair(data.get() + i, true);
                 }
 
                 ++i;
@@ -274,21 +275,21 @@ class UnreliableInsertionHashTable: public HashFunc {
             for (size_t j = 0; j <= maxSearchLength; ++j)
             {
                 if (data[i].first == k)
-                    return data.get() + i;
+                    return std::make_pair(data.get() + i, false);
 
                 if (data[i].first == tombstone)
                 {
                     data[i].first  = k;
                     data[i].second = v;
                     numPopulated += 1;
-                    return data.get() + i;
+                    return std::make_pair(data.get() + i, true);
                 }
 
                 ++i;
             }
         }
 
-        return nullptr;
+        return std::make_pair(nullptr, false);
     }
 
     const EntryType* find(const KeyType& k) const {

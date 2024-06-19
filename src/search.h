@@ -192,9 +192,6 @@ class SearchManager: public ISearchManager {
     using UpdateIter     = std::function<void(const InfoIteration&)>;
     using UpdateBestmove = std::function<void(std::string_view, std::string_view)>;
 
-    using WeightCacheType            = Eval::NNUE::FtWeightCacheType;
-    using WeightCachePreanalyzerType = typename WeightCacheType::PreanalyzerType;
-
     struct UpdateContext {
         UpdateShort    onUpdateNoMoves;
         UpdateFull     onUpdateFull;
@@ -227,13 +224,6 @@ class SearchManager: public ISearchManager {
     size_t id;
 
     const UpdateContext& updates;
-
-    std::unique_ptr<WeightCachePreanalyzerType> ftWeightCachePreanalyzer;
-    std::unique_ptr<WeightCacheType>            ftWeightCache;
-
-    // This one is used for one subsequent search, until it's replaced
-    // by the new one.
-    std::unique_ptr<WeightCacheType> prevFtWeightCache;
 };
 
 class NullSearchManager: public ISearchManager {
@@ -247,6 +237,9 @@ class NullSearchManager: public ISearchManager {
 // of the search history, and storing data required for the search.
 class Worker {
    public:
+    using WeightCacheType            = Eval::NNUE::FtWeightCacheType;
+    using WeightCachePreanalyzerType = typename WeightCacheType::PreanalyzerType;
+
     Worker(SharedState&, std::unique_ptr<ISearchManager>, size_t, NumaReplicatedAccessToken);
 
     // Called at instantiation to initialize Reductions tables
@@ -323,9 +316,15 @@ class Worker {
     // Used by NNUE
     Eval::NNUE::AccumulatorCaches refreshTable;
 
-    // If not nullptr then this value, and all objects pointed to it, must be valid
-    // for the duration of the search.
-    std::atomic<const SearchManager::WeightCacheType*> ftWeightCache;
+    WeightCacheType            ftWeightCache;
+    std::unique_ptr<WeightCachePreanalyzerType> ftWeightCachePreanalyzer;
+
+    const WeightCacheType* get_ft_weight_cache_for_eval() const {
+        if (ftWeightCache.size() == 0)
+            return nullptr;
+        else
+            return &ftWeightCache;
+    }
 
     friend class Stockfish::ThreadPool;
     friend class SearchManager;

@@ -193,13 +193,13 @@ struct MoveKeyTypeHashFunc {
 };
 
 static constexpr FeatureSet::MoveKeyType MoveKeyTombstone    = ~uint64_t(0);
-static constexpr size_t                  HashCapacity        = 1 << 16;
 static constexpr size_t                  HashMaxSearchLength = 3;
 
 class FeatureTransformerWeightCachePreanalyzer {
    public:
-    FeatureTransformerWeightCachePreanalyzer() :
-        dpHistogram(MoveKeyTombstone, HashCapacity, HashMaxSearchLength) {}
+    FeatureTransformerWeightCachePreanalyzer(size_t capacity) :
+        dpHistogram(MoveKeyTombstone, capacity, HashMaxSearchLength),
+        numUniqueEntries(0) {}
 
     void after_do_move(const Position& pos, Move move) {
         if (move.type_of() == CASTLING || type_of(pos.piece_on(move.to_sq())) == KING)
@@ -209,34 +209,38 @@ class FeatureTransformerWeightCachePreanalyzer {
           FeatureSet::make_move_key<WHITE>(pos.square<KING>(WHITE), pos.state()->dirtyPiece),
           FeatureSet::make_move_key<BLACK>(pos.square<KING>(BLACK), pos.state()->dirtyPiece)};
 
-        auto w = dpHistogram.find_or_emplace(keys[WHITE], 0);
-        auto b = dpHistogram.find_or_emplace(keys[BLACK], 0);
+        auto [w, w_emplaced] = dpHistogram.find_or_emplace(keys[WHITE], 0);
+        auto [b, b_emplaced] = dpHistogram.find_or_emplace(keys[BLACK], 0);
         if (w)
             w->second += 1;
         if (b)
             b->second += 1;
+
+        numUniqueEntries += w_emplaced;
+        numUniqueEntries += b_emplaced;
     }
 
-    std::vector<FeatureSet::MoveKeyType> get_top(size_t count) const {
-        std::vector<FeatureSet::MoveKeyType> res;
+    size_t size() const { return numUniqueEntries; }
 
-        if (dpHistogram.size() <= count)
+    std::vector<std::pair<FeatureSet::MoveKeyType, uint64_t>> get_top(size_t count = std::numeric_limits<size_t>::max()) const {
+        std::vector<std::pair<FeatureSet::MoveKeyType, uint64_t>> res = dpHistogram.get_populated();
+
+        if (res.size() <= count)
         {
-            res = dpHistogram.get_populated_keys();
+            // use whole of res
         }
         else
         {
-            auto       v   = dpHistogram.get_populated();
-            const auto nth = v.begin() + (count + 1);
-            std::nth_element(v.begin(), nth, v.end(), [](const auto& lhs, const auto& rhs) {
+            const auto nth = res.begin() + (count + 1);
+            std::nth_element(res.begin(), nth, res.end(), [](const auto& lhs, const auto& rhs) {
                 return lhs.second > rhs.second;
             });
-            res.reserve(count);
-            for (size_t i = 0; i < count; ++i)
-                res.emplace_back(v[i].first);
+            res.resize(count);
         }
 
         assert(res.size() <= count);
+
+        std::sort(res.begin(), res.end(), [](const auto& lhs, const auto& rhs) { return lhs.second > rhs.second; });
 
         return res;
     }
@@ -245,11 +249,11 @@ class FeatureTransformerWeightCachePreanalyzer {
         auto v = dpHistogram.get_populated();
         std::sort(v.begin(), v.end(),
                   [](const auto& lhs, const auto& rhs) { return lhs.second > rhs.second; });
-        std::cout << v.size() << '\n';
+        std::cerr << v.size() << '\n';
         for (size_t i = 0; i < 32 && i < v.size(); ++i)
         {
             auto el = v[i];
-            std::cout << el.first << ": " << el.second << '\n';
+            std::cerr << el.first << ": " << el.second << '\n';
         }
 
         int total_moves = 0;
@@ -267,7 +271,7 @@ class FeatureTransformerWeightCachePreanalyzer {
             double pct = double(top_moves) / total_moves * 100.0;
             if ((i & (i - 1)) == 0)
             {
-                std::cout << i << ": " << pct << "%\n";
+                std::cerr << i << ": " << pct << "%\n";
             }
         }
     }
@@ -275,6 +279,7 @@ class FeatureTransformerWeightCachePreanalyzer {
    private:
     UnreliableInsertionHashTable<FeatureSet::MoveKeyType, uint64_t, MoveKeyTypeHashFunc>
       dpHistogram;
+    size_t numUniqueEntries;
 };
 
 struct FeatureWeightPtrs {
@@ -293,17 +298,22 @@ class FeatureTransformerWeightCache {
    public:
     using PreanalyzerType = FeatureTransformerWeightCachePreanalyzer;
 
+    FeatureTransformerWeightCache() :
+        keyToWeightsIndex(MoveKeyTombstone, 1, HashMaxSearchLength),
+        numEntries(0) {
+    }
+
     template<typename Network>
     FeatureTransformerWeightCache(const FeatureTransformerWeightCachePreanalyzer& preanalyzer,
                                   const Network&                                  net,
-                                  size_t                                          numEntries_) :
-        keyToWeightsIndex(MoveKeyTombstone, HashCapacity, HashMaxSearchLength),
-        numEntries(numEntries_) {
+                                  size_t                                          maxSize) :
+        keyToWeightsIndex(MoveKeyTombstone, maxSize * 2, HashMaxSearchLength), // overallocate hash table because it doesn't guarantee insertion
+        numEntries(0) {
         // Overallocate for alignment.
-        weightsBuffer     = std::make_unique<WeightType[]>(numEntries * TransformedFeatureDimensions
+        weightsBuffer     = std::make_unique<WeightType[]>(maxSize * TransformedFeatureDimensions
                                                        + CacheLineSize / sizeof(WeightType));
         psqtWeightsBuffer = std::make_unique<PSQTWeightType[]>(
-          numEntries * PSQTBuckets + CacheLineSize / sizeof(PSQTWeightType));
+          maxSize * PSQTBuckets + CacheLineSize / sizeof(PSQTWeightType));
 
         weights     = align_ptr_up<CacheLineSize>(weightsBuffer.get());
         psqtWeights = align_ptr_up<CacheLineSize>(psqtWeightsBuffer.get());
@@ -311,21 +321,29 @@ class FeatureTransformerWeightCache {
         assert(weights - weightsBuffer.get() < CacheLineSize);
         assert(psqtWeights - psqtWeightsBuffer.get() < CacheLineSize);
 
-        IndexType index = 0;
-        for (FeatureSet::MoveKeyType key : preanalyzer.get_top(numEntries))
+        // We conservatively fetch maxSize * 2 elements because some may not get inserted.
+        // However, we don't want to fetch all of them, not to stall the search.
+        for (auto [key, count] : preanalyzer.get_top(maxSize * 2))
         {
-            auto v = keyToWeightsIndex.find_or_emplace(key, index);
+            auto [v, emplaced] = keyToWeightsIndex.find_or_emplace(key, numEntries);
             // Insertion may fail, though it shouldn't because we're using the same size
-            if (v)
+            // We also don't want to overwrite existing entries.
+            if (emplaced)
             {
-                assert(v->second == index);
-                fill_weights_for_feature(index, key, net);
-                index += 1;
+                assert(v != nullptr);
+                assert(v->second == numEntries);
+                fill_weights_for_feature(numEntries, key, net);
+                numEntries += 1;
+
+                if (numEntries >= maxSize)
+                    break;
             }
         }
 
-        assert(index <= numEntries);
+        assert(numEntries <= maxSize);
     }
+
+    size_t size() const { return numEntries; }
 
     std::optional<FeatureWeightPtrs> find(FeatureSet::MoveKeyType key) const {
         const auto it = keyToWeightsIndex.find(key);
@@ -393,8 +411,9 @@ class TranslatedFeatureUpdateList {
         {
             const FeatureSet::MoveKeyType key = FeatureSet::make_move_key<Perspective>(ksq, dp);
             auto                          e   = cache->find(key);
+            // dbg_hit_on(e.has_value());
             if (e.has_value())
-            {
+            {   
                 added.push_back(*e);
                 // Early return, don't add them normally
                 return;
@@ -748,35 +767,86 @@ class FeatureTransformer {
         {
             assert(states_to_update[0]);
 
-            for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
-            {
-                // Load accumulator
-                auto accTileIn = reinterpret_cast<const vec_t*>(
-                  &(st->*accPtr).accumulation[Perspective][j * TileHeight]);
-                auto accTileOut = reinterpret_cast<vec_t*>(
-                    &(states_to_update[0]->*accPtr).accumulation[Perspective][j * TileHeight]);
+            // Load accumulator
+            auto accIn = reinterpret_cast<const vec_t*>(
+                &(st->*accPtr).accumulation[Perspective]);
+            auto accOut = reinterpret_cast<vec_t*>(
+                &(states_to_update[0]->*accPtr).accumulation[Perspective]);
 
-                // Difference calculation for the activated features
-                auto column =
-                    reinterpret_cast<const vec_t*>(featureChanges[0].added[0].baseWeights + j * TileHeight);
-                for (IndexType k = 0; k < NumRegs; ++k)
-                    accTileOut[k] = vec_add_16(accTileIn[k], column[k]);
+            // Difference calculation for the activated features
+            auto column =
+                reinterpret_cast<const vec_t*>(featureChanges[0].added[0].baseWeights);
+            
+            for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
+                    ++k)
+                accOut[k] = vec_add_16(accIn[k], column[k]);
+
+            // Load accumulator
+            auto accPsqtIn = reinterpret_cast<const psqt_vec_t*>(
+                &(st->*accPtr).psqtAccumulation[Perspective]);
+            auto accPsqtOut = reinterpret_cast<psqt_vec_t*>(
+                &(states_to_update[0]->*accPtr)
+                    .psqtAccumulation[Perspective]);
+
+            // Difference calculation for the activated features
+            auto columnPsqt =
+                reinterpret_cast<const psqt_vec_t*>(featureChanges[0].added[0].basePsqtWeights);
+            for (std::size_t k = 0; k < PSQTBuckets * sizeof(std::int32_t) / sizeof(psqt_vec_t);
+                    ++k)
+                accPsqtOut[k] = vec_add_psqt_32(accPsqtIn[k], columnPsqt[k]);
+        }
+        else if (N == 1 && (featureChanges[0].removed.size() == 1 || featureChanges[0].removed.size() == 2) && featureChanges[0].added.size() == 1)
+        {
+            assert(states_to_update[0]);
+
+            auto accIn =
+              reinterpret_cast<const vec_t*>(&(st->*accPtr).accumulation[Perspective][0]);
+            auto accOut = reinterpret_cast<vec_t*>(
+              &(states_to_update[0]->*accPtr).accumulation[Perspective][0]);
+
+            auto            columnR0 = reinterpret_cast<const vec_t*>(featureChanges[0].removed[0].baseWeights);
+            auto            columnA  = reinterpret_cast<const vec_t*>(featureChanges[0].added[0].baseWeights);
+
+            if (featureChanges[0].removed.size() == 1)
+            {
+                for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
+                     ++k)
+                    accOut[k] = vec_add_16(vec_sub_16(accIn[k], columnR0[k]), columnA[k]);
+            }
+            else
+            {
+                auto            columnR1 = reinterpret_cast<const vec_t*>(featureChanges[0].removed[1].baseWeights);
+
+                for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
+                     ++k)
+                    accOut[k] = vec_sub_16(vec_add_16(accIn[k], columnA[k]),
+                                           vec_add_16(columnR0[k], columnR1[k]));
             }
 
-            for (IndexType j = 0; j < PSQTBuckets / PsqtTileHeight; ++j)
-            {
-                // Load accumulator
-                auto accTilePsqtIn = reinterpret_cast<const psqt_vec_t*>(
-                  &(st->*accPtr).psqtAccumulation[Perspective][j * PsqtTileHeight]);
-                auto accTilePsqtOut = reinterpret_cast<psqt_vec_t*>(
-                    &(states_to_update[0]->*accPtr)
-                        .psqtAccumulation[Perspective][j * PsqtTileHeight]);
+            auto accPsqtIn =
+              reinterpret_cast<const psqt_vec_t*>(&(st->*accPtr).psqtAccumulation[Perspective][0]);
+            auto accPsqtOut = reinterpret_cast<psqt_vec_t*>(
+              &(states_to_update[0]->*accPtr).psqtAccumulation[Perspective][0]);
 
-                // Difference calculation for the activated features
-                auto columnPsqt =
-                    reinterpret_cast<const psqt_vec_t*>(featureChanges[0].added[0].basePsqtWeights + j * PsqtTileHeight);
-                for (std::size_t k = 0; k < NumPsqtRegs; ++k)
-                    accTilePsqtOut[k] = vec_add_psqt_32(accTilePsqtIn[k], columnPsqt[k]);
+            auto columnPsqtR0 = reinterpret_cast<const psqt_vec_t*>(featureChanges[0].removed[0].basePsqtWeights);
+            auto columnPsqtA = reinterpret_cast<const psqt_vec_t*>(featureChanges[0].added[0].basePsqtWeights);
+
+            if (featureChanges[0].removed.size() == 1)
+            {
+                for (std::size_t k = 0; k < PSQTBuckets * sizeof(std::int32_t) / sizeof(psqt_vec_t);
+                     ++k)
+                    accPsqtOut[k] = vec_add_psqt_32(vec_sub_psqt_32(accPsqtIn[k], columnPsqtR0[k]),
+                                                    columnPsqtA[k]);
+            }
+            else
+            {
+                auto columnPsqtR1 = reinterpret_cast<const psqt_vec_t*>(featureChanges[0].removed[1].basePsqtWeights);
+
+                for (std::size_t k = 0; k < PSQTBuckets * sizeof(std::int32_t) / sizeof(psqt_vec_t);
+                     ++k)
+                    accPsqtOut[k] =
+                      vec_sub_psqt_32(vec_add_psqt_32(accPsqtIn[k], columnPsqtA[k]),
+                                      vec_add_psqt_32(columnPsqtR0[k], columnPsqtR1[k]));
             }
         }
         else
