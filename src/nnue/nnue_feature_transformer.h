@@ -284,10 +284,10 @@ public:
         const size_t idx = key.get_index<Capacity>();
         auto& entry = mappings[idx];
         
-        //dbg_hit_on(entry.key == key, 0);
-        //dbg_hit_on(entry.key == key && entry.materialized, 1);
-        //dbg_hit_on(entry.key == key && !entry.materialized && entry.count + HIT_GAIN >= MATERIALIZE_THRESHOLD, 2);
-        //dbg_hit_on(entry.key != key && entry.count <= 1, 3);
+        dbg_hit_on(entry.key == key, 0);
+        dbg_hit_on(entry.key == key && entry.materialized, 1);
+        dbg_hit_on(entry.key == key && !entry.materialized && entry.count + HIT_GAIN >= MATERIALIZE_THRESHOLD, 2);
+        dbg_hit_on(entry.key != key && entry.count <= 1, 3);
 
         if (entry.key == key)
         {
@@ -307,7 +307,7 @@ public:
         }
         else
         {
-            if (entry.count <= 1)
+            if (entry.count <= MISS_PENALTY)
             {
                 entry.key = key;
                 entry.count = HIT_GAIN;
@@ -320,6 +320,54 @@ public:
         }
 
         return nullptr;
+    }
+
+    // Returns false on unsuccessful apply
+    template <typename FT>
+    bool probe_and_apply(const FT& ft, FeatureTransformerKey2 key, const vec_t* in, vec_t* out)
+    {
+        const size_t idx = key.get_index<Capacity>();
+        auto& entry = mappings[idx];
+
+        //dbg_hit_on(entry.key == key, 0);
+        //dbg_hit_on(entry.key == key && entry.materialized, 1);
+        //dbg_hit_on(entry.key == key && !entry.materialized && entry.count + HIT_GAIN >= MATERIALIZE_THRESHOLD, 2);
+        //dbg_hit_on(entry.key != key && entry.count <= 1, 3);
+
+        if (entry.key == key)
+        {
+            entry.count += HIT_GAIN;
+            
+            WeightType* w = &(weights[idx * TransformedFeatureDimensions]);
+            if (entry.materialized)
+            {
+                ft.add_feature_weights(w, in, out);
+                return false;
+            }
+            else if (entry.count >= MATERIALIZE_THRESHOLD)
+            {
+                ft.add_store_feature_weights(w, key, in, out);
+
+                entry.materialized = true;
+
+                return false;
+            }
+        }
+        else
+        {
+            if (entry.count <= MISS_PENALTY)
+            {
+                entry.key = key;
+                entry.count = HIT_GAIN;
+                entry.materialized = false;
+            }
+            else
+            {
+                entry.count -= MISS_PENALTY;
+            }
+        }
+
+        return false;
     }
 
 private:
@@ -565,7 +613,7 @@ class FeatureTransformer {
         hint_common_access_for_perspective<BLACK>(pos, cache, ft_cache);
     }
 
-    void set_feature_weights(WeightType* w, FeatureTransformerKey2 key) const {
+    void add_store_feature_weights(WeightType* w, FeatureTransformerKey2 key, const vec_t* in, vec_t* out) const {
         auto accOut = reinterpret_cast<vec_t*>(w);
 
         const IndexType offsetR0 = HalfDimensions * key.get_removed();
@@ -575,8 +623,21 @@ class FeatureTransformer {
 
         for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
                 ++k)
-            accOut[k] = vec_sub_16(columnA[k], columnR0[k]);
+        {
+            auto c = vec_sub_16(columnA[k], columnR0[k]);
+            accOut[k] = c;
+            out[k] = vec_add_16(in[k], c);
+        }
     }
+
+    void add_feature_weights(WeightType* w, const vec_t* in, vec_t* out) const {
+        auto column = reinterpret_cast<const vec_t*>(w);
+
+        for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
+                ++k)
+            out[k] = vec_add_16(in[k], column[k]);
+    }
+
 
    private:
     template<Color Perspective>
@@ -659,15 +720,7 @@ class FeatureTransformer {
             auto accOut = reinterpret_cast<vec_t*>(
             &(states_to_update[0]->*accPtr).accumulation[Perspective][0]);
 
-            const WeightType* cached_w;
-            if (ft_cache != nullptr && (cached_w = ft_cache->probe(*this, FeatureTransformerKey2(removed[0][0], added[0][0]))) != nullptr)
-            {
-                auto columnA  = reinterpret_cast<const vec_t*>(cached_w);
-                for (IndexType k = 0; k < HalfDimensions * sizeof(std::int16_t) / sizeof(vec_t);
-                        ++k)
-                    accOut[k] = vec_add_16(accIn[k], columnA[k]);
-            }
-            else
+            if(ft_cache == nullptr || !ft_cache->probe_and_apply(*this, FeatureTransformerKey2(removed[0][0], added[0][0]), accIn, accOut))
             {
                 const IndexType offsetR0 = HalfDimensions * removed[0][0];
                 auto            columnR0 = reinterpret_cast<const vec_t*>(&weights[offsetR0]);
