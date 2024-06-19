@@ -265,6 +265,32 @@ public:
 
     FeatureTransformerWeightCache() {}
 
+    void age_pow2(int32_t shift)
+    {
+        for (auto& e : mappings)
+            e.count >>= shift;
+    }
+
+    void age_log2()
+    {
+        for (auto& e : mappings)
+            e.count = msb(e.count);
+    }
+
+    void set_counts(int32_t count)
+    {
+        for (auto& e : mappings)
+        {
+            if (e.count > count)
+                e.count = count;
+        }
+    }
+
+    void reset_counts()
+    {
+        set_counts(HIT_GAIN);
+    }
+
     // Returns nullptr on unsuccessful probe
     template <typename FT>
     std::pair<const WeightType*, FeatureRowOperation> probe(const FT& ft, FeatureTransformerKey2 key)
