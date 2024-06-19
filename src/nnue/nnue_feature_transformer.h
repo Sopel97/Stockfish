@@ -189,7 +189,7 @@ static constexpr int BestRegisterCount() {
 #endif
 
 struct MoveKeyTypeHashFunc {
-    uint64_t operator()(FeatureSet::QuietMoveKeyType v) const noexcept { return splitmix64_hash(v); }
+    uint64_t operator()(FeatureSet::QuietMoveKeyType v) const noexcept { return v; }
 };
 
 static constexpr FeatureSet::QuietMoveKeyType MoveKeyTombstone    = ~FeatureSet::QuietMoveKeyType(0);
