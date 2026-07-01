@@ -207,7 +207,7 @@ class FeatureTransformer {
         accumulatorStack.evaluate(pos, *this, cache);
         const auto& accumulatorState = accumulatorStack.latest();
 
-        const Color perspectives[2]  = {pos.side_to_move(), ~pos.side_to_move()};
+        const Color perspectives[2]  = {~pos.side_to_move(), pos.side_to_move()};
         const auto& psqtAccumulation = accumulatorState.psqtAccumulation;
         const auto  psqt =
           (psqtAccumulation[perspectives[0]][bucket] - psqtAccumulation[perspectives[1]][bucket])
