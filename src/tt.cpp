@@ -60,21 +60,43 @@ static constexpr u8 BOUND_MASK      = 0b11 << BOUND_SHIFT;
 static constexpr u8 PV_SHIFT        = BOUND_SHIFT + 2;
 static constexpr u8 PV_MASK         = 1 << PV_SHIFT;
 
-struct TTEntry {
+struct alignas(u64) RestTyped {
+    u8   depth8;
+    u8   genBound8;
+    Move move16;
+    i16  value16;
+    i16  eval16;
+};
+static_assert(sizeof(RestTyped) == 8);
+
+struct alignas(16) TTEntry {
 
     // Extract data from the TT entry. We have to convert TT internal bitfields
     // to external types.
     TTData read() const {
-        return TTData{Move(move16),
-                      Value(value16),
-                      Value(eval16),
-                      Depth(DEPTH_NONE + depth8),
-                      Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT),
-                      bool(genBound8 & PV_MASK)};
+        const u64 r = u64(rest);
+        RestTyped rr;
+        std::memcpy(&rr, &r, sizeof(RestTyped));
+        return TTData{rr.move16,
+                      rr.value16,
+                      rr.eval16,
+                      Depth(DEPTH_NONE + rr.depth8),
+                      Bound((rr.genBound8 & BOUND_MASK) >> BOUND_SHIFT),
+                      bool(rr.genBound8 & PV_MASK)};
     }
 
     // Check if the TT entry is occupied
-    bool is_occupied() const { return bool(depth8); }
+    u8 depth8() const {
+        const u64 r = u64(rest); 
+        RestTyped rr;
+        std::memcpy(&rr, &r, sizeof(RestTyped));
+        return rr.depth8; 
+    }
+
+    // Check if the TT entry is occupied
+    bool is_occupied() const {
+        return bool(depth8()); 
+    }
 
     // Insert data in the TT entry
     void save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, u8 curr_generation);
@@ -82,16 +104,25 @@ struct TTEntry {
     // Return TT entry age
     u8 relative_age(const u8 curr_generation) const;
 
+    int d8minusrelage(const u8 curr_generation) const {
+        const u64 r = u64(rest); 
+        RestTyped rr;
+        std::memcpy(&rr, &r, sizeof(RestTyped));
+        const u8 rd = (curr_generation - rr.genBound8) & GENERATION_MASK;
+        return rr.depth8 - 8 * rd;
+    }
+
    private:
     friend class TranspositionTable;
     friend struct TTWriter;
 
-    RelaxedAtomic<u16>  key16;
-    RelaxedAtomic<u8>   depth8;
-    RelaxedAtomic<u8>   genBound8;
-    RelaxedAtomic<Move> move16;
-    RelaxedAtomic<i16>  value16;
-    RelaxedAtomic<i16>  eval16;
+    RelaxedAtomic<u64>  key64;
+    RelaxedAtomic<u64>  rest;
+    //    RelaxedAtomic<u8>   depth8;
+    //    RelaxedAtomic<u8>   genBound8;
+    //    RelaxedAtomic<Move> move16;
+    //    RelaxedAtomic<i16>  value16;
+    //    RelaxedAtomic<i16>  eval16;
 };
 
 
@@ -100,37 +131,47 @@ struct TTEntry {
 // types to internal bitfields.
 void TTEntry::save(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, u8 curr_generation) {
+    const u64 key = key64;
+    const u64 r = u64(rest); 
+    RestTyped rr;
+    std::memcpy(&rr, &r, sizeof(RestTyped));
 
     // Preserve the old ttmove if we don't have a new one
-    if (m || u16(k) != key16)
-        move16 = m;
+    if (m || u64(k) != key)
+        rr.move16 = m;
 
     // Overwrite less valuable entries (cheapest checks first)
-    if (b == BOUND_EXACT || u16(k) != key16 || d - DEPTH_NONE + 2 * pv > depth8 - 4
+    if (b == BOUND_EXACT || u64(k) != key || d - DEPTH_NONE + 2 * pv > rr.depth8 - 4
         || relative_age(curr_generation))
     {
         assert(d > DEPTH_NONE);
         assert(d - DEPTH_NONE < 256);
         assert(curr_generation <= GENERATION_MASK);  // TT::new_search() plays nice
 
-        key16     = u16(k);
-        depth8    = u8(d - DEPTH_NONE);
-        genBound8 = u8(curr_generation | b << BOUND_SHIFT | u8(pv) << PV_SHIFT);
-        value16   = i16(v);
-        eval16    = i16(ev);
+        key64        = u64(k);
+        rr.depth8    = u8(d - DEPTH_NONE);
+        rr.genBound8 = u8(curr_generation | b << BOUND_SHIFT | u8(pv) << PV_SHIFT);
+        rr.value16   = i16(v);
+        rr.eval16    = i16(ev);
     }
 
     // Secondary aging. Important for elementary mate finding.
     // (*Scaler) Secondary aging on entries relevant to singular extensions
     // generally scales poorly and requires VVLTC verification.
-    else if (depth8 + DEPTH_NONE >= 5
-             && Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT) != BOUND_EXACT)
+    else if (rr.depth8 + DEPTH_NONE >= 5
+             && Bound((rr.genBound8 & BOUND_MASK) >> BOUND_SHIFT) != BOUND_EXACT)
     {
-        auto v16 = value16;
+        auto v16 = rr.value16;
 
         // Guard against racy underflows, default to "unoccupied"
         if (std::abs(v16) < VALUE_INFINITE && is_decisive(v16))
-            depth8 = std::max(int(depth8) - 1, 0);
+            rr.depth8 = std::max(int(rr.depth8) - 1, 0);
+    }
+
+    u64 rst;
+    std::memcpy(&rst, &rr, sizeof(RestTyped));
+    if (rst != r) {
+        rest = rst;
     }
 }
 
@@ -138,7 +179,10 @@ void TTEntry::save(
 // i.e. we require 0 - 1 == 31. Unsigned subtraction guarantees the required
 // borrowing regardless of the upper pv/bound bits.
 u8 TTEntry::relative_age(const u8 curr_generation) const {
-    return (curr_generation - genBound8) & GENERATION_MASK;
+    const u64 r = u64(rest); 
+    RestTyped rr;
+    std::memcpy(&rr, &r, sizeof(RestTyped));
+    return (curr_generation - rr.genBound8) & GENERATION_MASK;
 }
 
 
@@ -154,8 +198,14 @@ void TTWriter::write(
 
 // Flag a TTEntry as useless (decrementing the stored depth by the given penalty)
 void TTWriter::penalize(int penalty) {
+    const u64 r = u64(entry->rest); 
+    RestTyped rr;
+    std::memcpy(&rr, &r, sizeof(RestTyped));
     // Guard against racy underflows, default to "unoccupied"
-    entry->depth8 = std::max(int(entry->depth8) - penalty, 0);
+    rr.depth8 = std::max(int(rr.depth8) - penalty, 0);
+    u64 rst;
+    std::memcpy(&rst, &rr, sizeof(RestTyped));
+    entry->rest = rst;
 }
 
 
@@ -165,14 +215,13 @@ void TTWriter::penalize(int penalty) {
 // divide the size of a cache line for best performance, as the cacheline is
 // prefetched when possible.
 
-static constexpr int ClusterSize = 3;
+static constexpr int ClusterSize = 4;
 
 struct Cluster {
     TTEntry entry[ClusterSize];
-    char    padding[2];  // Pad to 32 bytes
 };
 
-static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
+static_assert(sizeof(Cluster) == 64, "Suboptimal Cluster size");
 
 
 // Sets the size of the transposition table, measured in megabytes.
@@ -270,10 +319,10 @@ u8 TranspositionTable::generation() const { return generation8; }
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
 
     TTEntry* const tte   = first_entry(key);
-    const u16      key16 = u16(key);  // Use the low 16 bits as key inside the cluster
+    const u64      key64 = u64(key);  // Use the low 16 bits as key inside the cluster
 
     for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16)
+        if (tte[i].key64 == key64)
             // This gap is the main place for read races.
             // After `read()` completes that copy is final, but may be self-inconsistent.
             return {tte[i].is_occupied(), tte[i].read(), TTWriter(&tte[i])};
@@ -281,8 +330,7 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
     // Find an entry to be replaced according to the replacement strategy
     TTEntry* replace = tte;
     for (int i = 1; i < ClusterSize; ++i)
-        if (replace->depth8 - 8 * replace->relative_age(generation8)
-            > tte[i].depth8 - 8 * tte[i].relative_age(generation8))
+        if (replace->d8minusrelage(generation8) > tte[i].d8minusrelage(generation8))
             replace = &tte[i];
 
     return {false, TTData{Move::none(), VALUE_NONE, VALUE_NONE, DEPTH_NONE, BOUND_NONE, false},
